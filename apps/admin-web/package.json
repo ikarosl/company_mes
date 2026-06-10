@@ -1,0 +1,32 @@
+{
+  "name": "@company/admin-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "vitest run --config ../../vitest.config.js --passWithNoTests"
+  },
+  "dependencies": {
+    "@company/api-contract": "workspace:*",
+    "@company/auth-client": "workspace:*",
+    "@company/constants": "workspace:*",
+    "@company/request": "workspace:*",
+    "@company/ui": "workspace:*",
+    "@company/utils": "workspace:*",
+    "@element-plus/icons-vue": "catalog:",
+    "element-plus": "catalog:",
+    "nprogress": "catalog:",
+    "pinia": "catalog:",
+    "vue": "catalog:",
+    "vue-router": "catalog:"
+  },
+  "devDependencies": {
+    "@types/nprogress": "catalog:",
+    "@vitejs/plugin-vue": "catalog:",
+    "vite": "catalog:",
+    "vue-tsc": "catalog:"
+  }
+}

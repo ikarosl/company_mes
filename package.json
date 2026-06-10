@@ -1,0 +1,44 @@
+{
+  "name": "company-mes",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.18.2",
+  "engines": {
+    "node": ">=22.18.0",
+    "pnpm": ">=10.18.2"
+  },
+  "scripts": {
+    "dev:packages": "pnpm -r --parallel --filter \"./packages/*\" dev",
+    "dev:backend": "pnpm -r --parallel --filter \"./packages/*\" --filter @company/backend dev",
+    "dev:admin": "pnpm -r --parallel --filter \"./packages/*\" --filter @company/admin-web dev",
+    "dev:workstation": "pnpm -r --parallel --filter \"./packages/*\" --filter @company/workstation-web dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint:prettier": "prettier --write \"**/*.{js,ts,mjs,cjs,json,tsx,css,less,scss,vue,html,md}\"",
+    "lint:eslint": "eslint",
+    "lint:spellcheck": "cspell lint \"(packages|apps)/**/*.{js,ts,mjs,cjs,json,css,less,scss,vue,html,md}\"",
+    "prepare": "husky",
+    "precommit": "lint-staged"
+  },
+  "devDependencies": {
+    "@cspell/dict-lorem-ipsum": "^4.0.5",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "catalog:",
+    "@vitejs/plugin-vue": "catalog:",
+    "cspell": "^10.0.0",
+    "eslint": "^10.4.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.5",
+    "eslint-plugin-vue": "^10.9.1",
+    "globals": "^17.6.0",
+    "happy-dom": "catalog:",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.5",
+    "prettier": "^3.8.3",
+    "typescript": "catalog:",
+    "typescript-eslint": "^8.59.4",
+    "vitest": "catalog:",
+    "vue": "catalog:"
+  }
+}

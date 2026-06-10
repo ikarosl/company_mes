@@ -1,0 +1,30 @@
+{
+  "name": "@company/ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "vue-tsc -p tsconfig.build.json --noEmit",
+    "dev": "vue-tsc -p tsconfig.build.json --noEmit --watch --preserveWatchOutput",
+    "test": "vitest run --config ../../vitest.config.js --passWithNoTests"
+  },
+  "dependencies": {
+    "@company/utils": "workspace:*"
+  },
+  "peerDependencies": {
+    "vue": "catalog:"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "catalog:",
+    "@vue/test-utils": "catalog:",
+    "happy-dom": "catalog:",
+    "vue": "catalog:",
+    "vue-tsc": "catalog:"
+  }
+}
