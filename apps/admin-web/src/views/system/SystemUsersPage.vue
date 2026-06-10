@@ -204,7 +204,7 @@ import type {
   SystemRoleOption,
   SystemUserListItem,
 } from '@company/api-contract';
-import { systemApi } from '../api/system';
+import { systemApi } from '../../api/system';
 
 type UserForm = {
   username: string;

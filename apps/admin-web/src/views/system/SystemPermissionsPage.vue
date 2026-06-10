@@ -28,7 +28,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import type { SystemPermissionListItem } from '@company/api-contract';
-import { systemApi } from '../api/system';
+import { systemApi } from '../../api/system';
 
 const permissions = ref<SystemPermissionListItem[]>([]);
 const loading = ref(false);

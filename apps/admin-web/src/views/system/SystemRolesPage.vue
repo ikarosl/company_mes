@@ -122,7 +122,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { Plus, Refresh, Setting } from '@element-plus/icons-vue';
 import type { SystemRoleListItem, SystemUserListItem } from '@company/api-contract';
-import { systemApi } from '../api/system';
+import { systemApi } from '../../api/system';
 
 type RoleWithUpdateTime = SystemRoleListItem & {
   updatedAt?: string | null;

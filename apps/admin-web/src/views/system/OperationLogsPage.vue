@@ -84,7 +84,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
 import type { OperationLogListItem } from '@company/api-contract';
-import { systemApi } from '../api/system';
+import { systemApi } from '../../api/system';
 
 const loading = ref(false);
 const detailVisible = ref(false);

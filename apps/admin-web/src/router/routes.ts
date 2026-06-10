@@ -7,16 +7,16 @@ import DashboardPage from '../views/DashboardPage.vue';
 import LoginPage from '../views/LoginPage.vue';
 // import MaterialBatchesPage from '../views/MaterialBatchesPage.vue';
 import NoPermissionPage from '../views/NoPermissionPage.vue';
-import OperationLogsPage from '../views/OperationLogsPage.vue';
+import OperationLogsPage from '../views/system/OperationLogsPage.vue';
 import PlannedBlankPage from '../views/PlannedBlankPage.vue';
 // import ProcessTemplatesPage from '../views/ProcessTemplatesPage.vue';
 // import ProductionBatchDetailPage from '../views/ProductionBatchDetailPage.vue';
 // import ProductionBatchesPage from '../views/ProductionBatchesPage.vue';
 // import ProductionTasksPage from '../views/ProductionTasksPage.vue';
 // import StorageShipmentPage from '../views/StorageShipmentPage.vue';
-import SystemPermissionsPage from '../views/SystemPermissionsPage.vue';
-import SystemRolesPage from '../views/SystemRolesPage.vue';
-import SystemUsersPage from '../views/SystemUsersPage.vue';
+import SystemPermissionsPage from '../views/system/SystemPermissionsPage.vue';
+import SystemRolesPage from '../views/system/SystemRolesPage.vue';
+import SystemUsersPage from '../views/system/SystemUsersPage.vue';
 // import TraceQueryPage from '../views/TraceQueryPage.vue';
 
 const plannedPage = (
