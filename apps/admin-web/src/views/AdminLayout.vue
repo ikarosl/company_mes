@@ -67,25 +67,45 @@ const menuGroups: MenuGroup[] = [
         path: '/system/permissions',
         permission: PERMISSIONS.system.permissions.page,
       },
-      { title: '日志管理', path: '/system/logs', permission: PERMISSIONS.system.page },
+      { title: '日志管理', path: '/system/logs', permission: PERMISSIONS.system.logs.page },
     ],
   },
   {
     title: '产品管理',
     index: '/product',
     items: [
-      { title: '生产工序管理', path: '/product/processes' },
-      { title: '产品分类管理', path: '/product/categories' },
-      { title: '产品信息管理', path: '/product/products' },
-      { title: '工艺路线', path: '/product/routes' },
+      {
+        title: '生产工序管理',
+        path: '/product/processes',
+        permission: PERMISSIONS.product.processes.page,
+      },
+      {
+        title: '产品分类管理',
+        path: '/product/categories',
+        permission: PERMISSIONS.product.categories.page,
+      },
+      {
+        title: '产品信息管理',
+        path: '/product/products',
+        permission: PERMISSIONS.product.products.page,
+      },
+      { title: '工艺路线', path: '/product/routes', permission: PERMISSIONS.product.routes.page },
     ],
   },
   {
     title: '仓储管理',
     index: '/warehouse',
     items: [
-      { title: '库存管理', path: '/warehouse/inventory' },
-      { title: '出入库管理', path: '/warehouse/transactions' },
+      {
+        title: '库存管理',
+        path: '/warehouse/inventory',
+        permission: PERMISSIONS.warehouse.inventory.page,
+      },
+      {
+        title: '出入库管理',
+        path: '/warehouse/transactions',
+        permission: PERMISSIONS.warehouse.transactions.page,
+      },
     ],
   },
   {
@@ -95,39 +115,55 @@ const menuGroups: MenuGroup[] = [
       {
         title: '工单管理',
         path: '/production/orders',
-        permission: PERMISSIONS.productionTasks.page,
+        permission: PERMISSIONS.production.orders.page,
       },
       {
         title: '任务管理',
         path: '/production/tasks',
-        permission: PERMISSIONS.productionBatches.page,
+        permission: PERMISSIONS.production.tasks.page,
       },
-      { title: '物料分配', path: '/production/material-allocations' },
+      {
+        title: '物料分配',
+        path: '/production/material-allocation',
+        permission: PERMISSIONS.production.materialAllocation.page,
+      },
       {
         title: '派工管理',
         path: '/production/dispatch',
-        permission: PERMISSIONS.batchStepRecords.page,
+        permission: PERMISSIONS.production.tasks.dispatch,
       },
-      { title: '生产执行记录', path: '/production/execution-records' },
+      {
+        title: '生产执行记录',
+        path: '/production/execution-records',
+        permission: PERMISSIONS.production.tasks.start,
+      },
     ],
   },
   {
     title: '质量管理',
     index: '/quality',
     items: [
-      { title: '检验记录', path: '/quality/inspections', permission: PERMISSIONS.inspections.page },
-      { title: '返工记录', path: '/quality/reworks' },
+      {
+        title: '检验记录',
+        path: '/quality/inspections',
+        permission: PERMISSIONS.quality.inspections.page,
+      },
+      { title: '返工记录', path: '/quality/reworks', permission: PERMISSIONS.quality.reworks.page },
     ],
   },
   {
     title: '员工端',
     index: '/worker',
-    items: [{ title: '我的任务', path: '/worker/tasks' }],
+    items: [
+      { title: '我的任务', path: '/worker/tasks', permission: PERMISSIONS.worker.tasks.page },
+    ],
   },
   {
     title: '检测端',
     index: '/inspector',
-    items: [{ title: '检测任务', path: '/inspector/tasks' }],
+    items: [
+      { title: '检测任务', path: '/inspector/tasks', permission: PERMISSIONS.inspector.tasks.page },
+    ],
   },
 ];
 

@@ -10,8 +10,8 @@ import { SystemLogRepository } from './system-log.repository.js';
 export class SystemLogController {
   constructor(@Inject(SystemLogRepository) private readonly logs: SystemLogRepository) {}
 
-  @RequirePermission(PERMISSIONS.system.page)
-  @Get('operation-logs')
+  @RequirePermission(PERMISSIONS.system.logs.view)
+  @Get('logs')
   operationLogs(
     @Query('logType') logType?: string,
     @Query('module') module?: string,

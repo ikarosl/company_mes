@@ -35,14 +35,13 @@ export const systemApi = {
     }),
   changeUserStatus: (id: string, data: UpdateSystemUserStatusPayload) =>
     requestData<SystemUserListItem>({
-      url: `${SYSTEM_API.users}/${id}/status`,
-      method: 'PATCH',
-      data,
+      url: `${SYSTEM_API.users}/${id}/${Number(data.status) === 1 ? 'enable' : 'disable'}`,
+      method: 'PUT',
     }),
   resetUserPassword: (id: string, data: ResetSystemUserPasswordPayload) =>
     requestData<{ success: boolean }>({
-      url: `${SYSTEM_API.users}/${id}/password`,
-      method: 'PATCH',
+      url: `${SYSTEM_API.users}/${id}/reset-password`,
+      method: 'PUT',
       data,
     }),
   assignUserRoles: (id: string, data: AssignSystemUserRolesPayload) =>
@@ -73,7 +72,7 @@ export const systemApi = {
     }),
   listOperationLogs: (params?: QueryParams) =>
     requestPageItems<OperationLogListItem>({
-      url: SYSTEM_API.operationLogs,
+      url: SYSTEM_API.logs,
       method: 'GET',
       params,
     }),
