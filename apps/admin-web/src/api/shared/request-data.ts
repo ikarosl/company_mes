@@ -16,6 +16,11 @@ export type QueryParams = PageQuery & {
   logType?: string;
   module?: string;
   userId?: string;
+  productAttribute?: string;
+  productType?: string;
+  categoryId?: string;
+  acquireMethod?: string;
+  routeId?: string;
 };
 
 export const requestData = async <T>(config: {

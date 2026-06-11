@@ -66,7 +66,6 @@ export const PERMISSIONS = {
       update: 'product:categories:update',
       enable: 'product:categories:enable',
       disable: 'product:categories:disable',
-      configSpec: 'product:categories:config-spec',
     },
     processes: {
       page: 'product:processes:view',

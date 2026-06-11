@@ -9,6 +9,10 @@ import LoginPage from '../views/LoginPage.vue';
 import NoPermissionPage from '../views/NoPermissionPage.vue';
 import OperationLogsPage from '../views/system/OperationLogsPage.vue';
 import PlannedBlankPage from '../views/PlannedBlankPage.vue';
+import ProductCategoriesPage from '../views/product/ProductCategoriesPage.vue';
+import ProductsPage from '../views/product/ProductsPage.vue';
+import ProcessesPage from '../views/product/ProcessesPage.vue';
+import ProcessRoutesPage from '../views/product/ProcessRoutesPage.vue';
 // import ProcessTemplatesPage from '../views/ProcessTemplatesPage.vue';
 // import ProductionBatchDetailPage from '../views/ProductionBatchDetailPage.vue';
 // import ProductionBatchesPage from '../views/ProductionBatchesPage.vue';
@@ -105,38 +109,46 @@ export const routes: RouteRecordRaw[] = [
         PERMISSIONS.warehouse.transactions.page,
       ),
 
-      plannedPage(
-        'product/processes',
-        'product-processes',
-        '生产工序管理',
-        '产品管理',
-        ['查看', '新增', '编辑', '启停', '上传工序文件'],
-        PERMISSIONS.product.processes.page,
-      ),
-      plannedPage(
-        'product/categories',
-        'product-categories',
-        '产品分类管理',
-        '产品管理',
-        ['查看', '新增', '编辑', '启停', '配置规格参数'],
-        PERMISSIONS.product.categories.page,
-      ),
-      plannedPage(
-        'product/products',
-        'product-products',
-        '产品信息管理',
-        '产品管理',
-        ['查看', '新增', '编辑', '启停', '维护规格参数', '绑定默认工艺路线', '维护产品用料清单'],
-        PERMISSIONS.product.products.page,
-      ),
-      plannedPage(
-        'product/routes',
-        'product-routes',
-        '工艺路线',
-        '产品管理',
-        ['查看', '新增', '编辑', '删除', '启停', '配置工序顺序'],
-        PERMISSIONS.product.routes.page,
-      ),
+      {
+        path: 'product/processes',
+        name: 'product-processes',
+        component: ProcessesPage,
+        meta: {
+          title: '生产工序管理',
+          section: '产品管理',
+          permission: PERMISSIONS.product.processes.page,
+        },
+      },
+      {
+        path: 'product/categories',
+        name: 'product-categories',
+        component: ProductCategoriesPage,
+        meta: {
+          title: '产品分类管理',
+          section: '产品管理',
+          permission: PERMISSIONS.product.categories.page,
+        },
+      },
+      {
+        path: 'product/products',
+        name: 'product-products',
+        component: ProductsPage,
+        meta: {
+          title: '产品信息管理',
+          section: '产品管理',
+          permission: PERMISSIONS.product.products.page,
+        },
+      },
+      {
+        path: 'product/routes',
+        name: 'product-routes',
+        component: ProcessRoutesPage,
+        meta: {
+          title: '工艺路线',
+          section: '产品管理',
+          permission: PERMISSIONS.product.routes.page,
+        },
+      },
       plannedPage(
         'product/products/:id/materials',
         'product-product-materials',
