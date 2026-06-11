@@ -223,7 +223,6 @@ VALUES
   (73, 70, '编辑产品分类', 'product:categories:update', 'api', NULL, 'PUT', '/product-categories/{id}', 233, 1),
   (74, 70, '启用产品分类', 'product:categories:enable', 'api', NULL, 'PUT', '/product-categories/{id}/enable', 234, 1),
   (75, 70, '停用产品分类', 'product:categories:disable', 'api', NULL, 'PUT', '/product-categories/{id}/disable', 235, 1),
-  (76, 70, '配置规格参数', 'product:categories:config-spec', 'api', NULL, 'PUT', '/product-categories/{id}/specs', 236, 1),
   (80, 50, '生产工序', 'product:processes:view', 'page', '/product/processes', 'GET', '/processes', 250, 1),
   (81, 80, '生产工序详情', 'product:processes:detail', 'api', NULL, 'GET', '/processes/{id}', 251, 1),
   (82, 80, '新增生产工序', 'product:processes:create', 'api', NULL, 'POST', '/processes', 252, 1),

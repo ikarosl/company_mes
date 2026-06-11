@@ -5,10 +5,11 @@ import { AuthModule } from './auth/auth.module.js';
 import { DatabaseModule } from './database/database.module.js';
 import { AuditInterceptor } from './operation-log/audit.interceptor.js';
 import { OperationLogModule } from './operation-log/operation-log.module.js';
+import { ProductModule } from './product/product.module.js';
 import { SystemModule } from './system/system.module.js';
 
 @Module({
-  imports: [DatabaseModule, OperationLogModule, AuthModule, SystemModule],
+  imports: [DatabaseModule, OperationLogModule, AuthModule, SystemModule, ProductModule],
   controllers: [AppController],
   providers: [
     {
