@@ -111,8 +111,62 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="permissionDialogVisible" title="分配权限" width="80%">
-      <div class="permission-dialog-space"></div>
+    <el-dialog
+      v-model="permissionDialogVisible"
+      title="分配权限"
+      width="80%"
+      class="permission-dialog"
+      :close-on-click-modal="false"
+    >
+      <!-- 角色信息头 -->
+      <div class="perm-role-header">
+        <div class="perm-role-info-row">
+          <span class="perm-role-info-item">
+            <span class="perm-info-label">角色名称：</span>
+            <span class="perm-info-value">{{ editingRole?.name }}</span>
+          </span>
+          <span class="perm-role-info-item">
+            <span class="perm-info-label">角色编码：</span>
+            <span class="perm-info-value">{{ editingRole?.code }}</span>
+          </span>
+          <span class="perm-role-info-item perm-role-desc-item">
+            <span class="perm-info-label">角色描述：</span>
+            <span class="perm-info-value">{{ editingRole?.description ?? '-' }}</span>
+          </span>
+        </div>
+      </div>
+
+      <!-- 主体：左侧树 + 右侧权限详情 -->
+      <div class="perm-body">
+        <!-- 左侧：模块树 -->
+        <div class="perm-tree-panel">
+          <div class="perm-panel-header">权限配置</div>
+          <el-tree
+            :data="permissionTree"
+            :props="treeProps"
+            node-key="id"
+            show-checkbox
+            highlight-current
+          >
+            <template #default="{ node, data }">
+              <span
+                :style="{
+                  cursor: node.level >= 3 ? 'not-allowed' : 'pointer',
+                  color: node.level >= 3 ? '#b0b8c4' : undefined,
+                }"
+              >
+                {{ data.name }}
+              </span>
+            </template>
+          </el-tree>
+        </div>
+
+        <!-- 右侧：权限详情表格 -->
+        <div class="perm-detail-panel">
+          <div class="perm-panel-header">权限详情</div>
+          <div class="perm-empty">请从左侧选择一个功能模块查看权限详情</div>
+        </div>
+      </div>
     </el-dialog>
   </div>
 </template>
@@ -121,7 +175,11 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { Plus, Refresh, Setting } from '@element-plus/icons-vue';
-import type { SystemRoleListItem, SystemUserListItem } from '@company/api-contract';
+import type {
+  SystemPermissionTreeNode,
+  SystemRoleListItem,
+  SystemUserListItem,
+} from '@company/api-contract';
 import { systemApi } from '../../api/system';
 
 type RoleWithUpdateTime = SystemRoleListItem & {
@@ -136,6 +194,18 @@ const loading = ref(false);
 const roleDialogVisible = ref(false);
 const permissionDialogVisible = ref(false);
 const editingRoleId = ref<string | null>(null);
+
+// 权限弹窗状态
+const permissionTree = ref<SystemPermissionTreeNode[]>([]);
+const editingRole = ref<SystemRoleListItem | null>(null);
+
+/** el-tree 属性配置：第三级（node.level >= 3）勾选框禁用仅展示 */
+const treeProps = {
+  label: 'name',
+  children: 'children',
+  disabled: (_data: unknown, node: { level: number }) => node.level >= 3,
+};
+
 const currentPage = ref(1);
 const pageSize = ref(10);
 const query = reactive({
@@ -255,9 +325,16 @@ const submitRole = () => {
   ElMessage.warning('角色新增/编辑接口尚未接入');
 };
 
-const openAssignPermissions = (row: SystemRoleListItem) => {
+const openAssignPermissions = async (row: SystemRoleListItem) => {
+  editingRole.value = row;
   editingRoleId.value = row.id;
   permissionDialogVisible.value = true;
+
+  try {
+    permissionTree.value = await systemApi.listPermissionTree();
+  } catch {
+    ElMessage.error('加载权限数据失败');
+  }
 };
 
 const deleteRole = (row: SystemRoleListItem) => {
@@ -490,8 +567,122 @@ onMounted(loadPageData);
   box-shadow: 0 0 0 1px #dcdfe6 inset;
 }
 
-.permission-dialog-space {
-  min-height: 560px;
+/* ====== 权限分配弹窗 ====== */
+.permission-dialog :deep(.el-dialog__body) {
+  padding: 0 20px 10px;
+}
+
+.perm-role-header {
+  padding: 16px 20px;
+  margin:12px 0;
+  border-bottom: 1px solid #ebeef5;
+  background: #fafafa;
+}
+
+.perm-role-info-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 40px;
+}
+
+.perm-role-info-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.perm-role-desc-item {
+  flex: 1;
+  min-width: 200px;
+}
+
+.perm-info-label {
+  color: #606266;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.perm-info-value {
+  color: #303846;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.perm-body {
+  display: flex;
+  gap: 16px;
+  min-height: 460px;
+}
+
+.perm-tree-panel {
+  flex: 0 0 260px;
+  overflow-y: auto;
+  border: 1px solid #e4e7ed;
+  border-radius: 4px;
+}
+
+.perm-detail-panel {
+  flex: 1;
+  overflow: hidden;
+  border: 1px solid #e4e7ed;
+  border-radius: 4px;
+}
+
+.perm-panel-header {
+  height: 40px;
+  padding: 0 16px;
+  border-bottom: 1px solid #ebeef5;
+  background: #fafafa;
+  color: #303846;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 40px;
+}
+
+.perm-tree-panel :deep(.el-tree) {
+  padding: 8px 0;
+}
+
+.perm-tree-panel :deep(.el-tree-node__content) {
+  height: 36px;
+}
+
+.perm-table {
+  width: 100%;
+}
+
+.perm-table :deep(.el-table__header th) {
+  height: 44px;
+  background: #fafafa;
+  color: #303846;
+  font-weight: 600;
+}
+
+.perm-table :deep(.el-table__row) {
+  height: 44px;
+}
+
+.perm-table :deep(.el-checkbox__inner) {
+  width: 16px;
+  height: 16px;
+  border-color: #7b8aa0;
+  border-radius: 4px;
+}
+
+.perm-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 400px;
+  color: #909399;
+  font-size: 14px;
+}
+
+.perm-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 @media (max-width: 1120px) {

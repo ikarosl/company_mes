@@ -1,4 +1,5 @@
 import {
+  type AssignSystemRolePermissionsPayload,
   type AssignSystemUserRolesPayload,
   type CreateSystemUserPayload,
   type OperationLogListItem,
@@ -6,8 +7,10 @@ import {
   SYSTEM_API,
   type SystemDepartmentOption,
   type SystemPermissionListItem,
+  type SystemPermissionTreeNode,
   type SystemRoleListItem,
   type SystemRoleOption,
+  type SystemRolePermissionDetail,
   type SystemUserListItem,
   type UpdateSystemUserPayload,
   type UpdateSystemUserStatusPayload,
@@ -69,6 +72,22 @@ export const systemApi = {
     requestData<SystemPermissionListItem[]>({
       url: SYSTEM_API.permissions,
       method: 'GET',
+    }),
+  listPermissionTree: () =>
+    requestData<SystemPermissionTreeNode[]>({
+      url: `${SYSTEM_API.permissions}/tree`,
+      method: 'GET',
+    }),
+  getRolePermissions: (id: string) =>
+    requestData<SystemRolePermissionDetail>({
+      url: `${SYSTEM_API.roles}/${id}/permissions`,
+      method: 'GET',
+    }),
+  assignRolePermissions: (id: string, data: AssignSystemRolePermissionsPayload) =>
+    requestData<SystemRolePermissionDetail>({
+      url: `${SYSTEM_API.roles}/${id}/permissions`,
+      method: 'PUT',
+      data,
     }),
   listOperationLogs: (params?: QueryParams) =>
     requestPageItems<OperationLogListItem>({
