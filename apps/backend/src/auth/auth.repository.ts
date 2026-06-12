@@ -104,6 +104,52 @@ export class AuthRepository {
     );
   }
 
+  /** 持久化一条 refreshToken 记录，每用户只保留最新一条 */
+  async saveRefreshToken(userId: string, jti: string, expiresAt: Date) {
+    await this.database.execute(
+      `
+        DELETE FROM refresh_tokens
+        WHERE user_id = ?
+      `,
+      [userId],
+    );
+
+    await this.database.execute(
+      `
+        INSERT INTO refresh_tokens (user_id, jti, expires_at)
+        VALUES (?, ?, ?)
+      `,
+      [userId, jti, expiresAt],
+    );
+  }
+
+  /** 按 jti 查找有效 refreshToken 记录 */
+  async findRefreshToken(jti: string) {
+    const rows = await this.database.query<RowDataPacket[]>(
+      `
+        SELECT id, user_id, expires_at
+        FROM refresh_tokens
+        WHERE jti = ?
+          AND expires_at > NOW()
+        LIMIT 1
+      `,
+      [jti],
+    );
+
+    return rows[0] ?? null;
+  }
+
+  /** 按 jti 删除 refreshToken（登出/撤销） */
+  async deleteRefreshToken(jti: string) {
+    await this.database.execute(
+      `
+        DELETE FROM refresh_tokens
+        WHERE jti = ?
+      `,
+      [jti],
+    );
+  }
+
   toProfile(
     user: Pick<UserRow, 'id' | 'username' | 'display_name'>,
     roles: string[],

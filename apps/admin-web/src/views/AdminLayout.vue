@@ -133,7 +133,7 @@ const menuGroups: MenuGroup[] = [
         permission: PERMISSIONS.production.tasks.dispatch,
       },
       {
-        title: '生产执行记录',
+        title: '生产报工',
         path: '/production/execution-records',
         permission: PERMISSIONS.production.tasks.start,
       },
