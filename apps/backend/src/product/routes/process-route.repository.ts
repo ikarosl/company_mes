@@ -8,7 +8,6 @@ import {
 import type { ResultSetHeader } from 'mysql2';
 import type { RowDataPacket } from 'mysql2/promise';
 import type {
-  ConfigureProcessRouteProductsPayload,
   ConfigureProcessRouteStepsPayload,
   CreateProcessRoutePayload,
   ProcessRouteStepPayload,
@@ -57,22 +56,22 @@ export class ProcessRouteRepository {
         r.id,
         r.route_code,
         r.route_name,
+        r.product_category_id,
+        c.product_attribute,
+        c.product_type,
         r.version,
         r.status,
         r.remark,
         COUNT(DISTINCT s.id) AS step_count,
         GROUP_CONCAT(DISTINCT COALESCE(p.process_name, s.process_name) ORDER BY s.step_order SEPARATOR ' -> ') AS process_summary,
-        COUNT(DISTINCT pr.id) AS product_count,
-        GROUP_CONCAT(DISTINCT pr.id ORDER BY pr.id) AS product_ids,
-        GROUP_CONCAT(DISTINCT pr.product_name ORDER BY pr.id) AS product_names,
         r.created_at,
         r.updated_at
       FROM process_routes r
       LEFT JOIN process_route_steps s ON s.route_id = r.id AND s.is_deleted = 0
       LEFT JOIN processes p ON p.id = s.process_id AND p.is_deleted = 0
-      LEFT JOIN products pr ON pr.default_route_id = r.id AND pr.is_deleted = 0
+      LEFT JOIN product_categories c ON c.id = r.product_category_id AND c.is_deleted = 0
       WHERE ${where}
-      GROUP BY r.id, r.route_code, r.route_name, r.version, r.status, r.remark, r.created_at, r.updated_at
+      GROUP BY r.id, r.route_code, r.route_name, r.product_category_id, c.product_attribute, c.product_type, r.version, r.status, r.remark, r.created_at, r.updated_at
       ORDER BY r.id DESC
       LIMIT ? OFFSET ?
     `,
@@ -92,20 +91,23 @@ export class ProcessRouteRepository {
   async createRoute(payload: CreateProcessRoutePayload) {
     const routeCode = readRequiredString(payload.routeCode, 'Missing route code');
     const routeName = readRequiredString(payload.routeName, 'Missing route name');
+    const productCategoryId = nullableId(payload.productCategoryId);
     const status = readTinyStatus(payload.status ?? 1);
 
     await this.assertRouteCodeAvailable(routeCode);
+    await this.assertCategoryAvailable(productCategoryId);
 
     const result = (await this.database.execute(
       `
       INSERT INTO process_routes (
-        route_code, route_name, version, status, remark, created_at, updated_at
+        route_code, route_name, product_category_id, version, status, remark, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, NOW(), NOW())
+      VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
     `,
       [
         routeCode,
         routeName,
+        productCategoryId,
         normalizeOptionalString(payload.version),
         status,
         normalizeOptionalString(payload.remark),
@@ -125,15 +127,21 @@ export class ProcessRouteRepository {
       payload.routeName === undefined
         ? current.route_name
         : readRequiredString(payload.routeName, 'Missing route name');
+    const productCategoryId =
+      payload.productCategoryId === undefined
+        ? current.product_category_id
+        : nullableId(payload.productCategoryId);
     const status = payload.status === undefined ? current.status : readTinyStatus(payload.status);
 
     await this.assertRouteCodeAvailable(routeCode, id);
+    await this.assertCategoryAvailable(productCategoryId);
 
     await this.database.execute(
       `
       UPDATE process_routes
       SET route_code = ?,
         route_name = ?,
+        product_category_id = ?,
         version = ?,
         status = ?,
         remark = ?,
@@ -143,6 +151,7 @@ export class ProcessRouteRepository {
       [
         routeCode,
         routeName,
+        productCategoryId,
         payload.version === undefined ? current.version : normalizeOptionalString(payload.version),
         status,
         payload.remark === undefined ? current.remark : normalizeOptionalString(payload.remark),
@@ -155,7 +164,6 @@ export class ProcessRouteRepository {
 
   async deleteRoute(id: number) {
     await this.getRouteRow(id);
-    await this.assertRouteNotUsed(id);
 
     await this.database.transaction(async (connection) => {
       await execute(
@@ -229,33 +237,6 @@ export class ProcessRouteRepository {
           ],
         );
       }
-    });
-
-    return this.getRoute(id);
-  }
-
-  async configureRouteProducts(id: number, payload: ConfigureProcessRouteProductsPayload) {
-    await this.getRouteRow(id);
-    const productIds = this.normalizeProductIds(payload.productIds);
-
-    await this.database.transaction(async (connection) => {
-      await execute(
-        connection,
-        'UPDATE products SET default_route_id = NULL, updated_at = NOW() WHERE default_route_id = ? AND is_deleted = 0',
-        [id],
-      );
-
-      if (!productIds.length) {
-        return;
-      }
-
-      await this.assertProductsAvailable(productIds);
-      const placeholders = productIds.map(() => '?').join(', ');
-      await execute(
-        connection,
-        `UPDATE products SET default_route_id = ?, updated_at = NOW() WHERE id IN (${placeholders}) AND is_deleted = 0`,
-        [id, ...productIds],
-      );
     });
 
     return this.getRoute(id);
@@ -362,7 +343,7 @@ export class ProcessRouteRepository {
   private async getRouteRow(id: number) {
     const [row] = await this.database.query<ProcessRouteRow[]>(
       `
-      SELECT id, route_code, route_name, version, status, remark
+      SELECT id, route_code, route_name, product_category_id, version, status, remark
       FROM process_routes
       WHERE id = ? AND is_deleted = 0
       LIMIT 1
@@ -384,22 +365,22 @@ export class ProcessRouteRepository {
         r.id,
         r.route_code,
         r.route_name,
+        r.product_category_id,
+        c.product_attribute,
+        c.product_type,
         r.version,
         r.status,
         r.remark,
         COUNT(DISTINCT s.id) AS step_count,
         GROUP_CONCAT(DISTINCT COALESCE(p.process_name, s.process_name) ORDER BY s.step_order SEPARATOR ' -> ') AS process_summary,
-        COUNT(DISTINCT pr.id) AS product_count,
-        GROUP_CONCAT(DISTINCT pr.id ORDER BY pr.id) AS product_ids,
-        GROUP_CONCAT(DISTINCT pr.product_name ORDER BY pr.id) AS product_names,
         r.created_at,
         r.updated_at
       FROM process_routes r
       LEFT JOIN process_route_steps s ON s.route_id = r.id AND s.is_deleted = 0
       LEFT JOIN processes p ON p.id = s.process_id AND p.is_deleted = 0
-      LEFT JOIN products pr ON pr.default_route_id = r.id AND pr.is_deleted = 0
+      LEFT JOIN product_categories c ON c.id = r.product_category_id AND c.is_deleted = 0
       WHERE r.id = ? AND r.is_deleted = 0
-      GROUP BY r.id, r.route_code, r.route_name, r.version, r.status, r.remark, r.created_at, r.updated_at
+      GROUP BY r.id, r.route_code, r.route_name, r.product_category_id, c.product_attribute, c.product_type, r.version, r.status, r.remark, r.created_at, r.updated_at
       LIMIT 1
     `,
       [id],
@@ -448,31 +429,6 @@ export class ProcessRouteRepository {
     return row;
   }
 
-  private normalizeProductIds(productIds: string[]) {
-    if (!Array.isArray(productIds)) {
-      throw new BadRequestException('Invalid products');
-    }
-
-    const ids = productIds.map((id) => nullableId(id)).filter((id): id is number => id !== null);
-    return [...new Set(ids)];
-  }
-
-  private async assertProductsAvailable(productIds: number[]) {
-    const placeholders = productIds.map(() => '?').join(', ');
-    const rows = await this.database.query<RowDataPacket[]>(
-      `
-      SELECT id
-      FROM products
-      WHERE id IN (${placeholders}) AND status = 1 AND is_deleted = 0
-    `,
-      productIds,
-    );
-
-    if (rows.length !== productIds.length) {
-      throw new BadRequestException('Product not found or disabled');
-    }
-  }
-
   private async assertRouteCodeAvailable(routeCode: string, ignoredRouteId?: number) {
     const params: QueryParam[] = [routeCode];
     const ignoredClause = ignoredRouteId ? ' AND id <> ?' : '';
@@ -496,19 +452,23 @@ export class ProcessRouteRepository {
     }
   }
 
-  private async assertRouteNotUsed(routeId: number) {
+  private async assertCategoryAvailable(categoryId: number | null) {
+    if (categoryId === null) {
+      return;
+    }
+
     const [row] = await this.database.query<RowDataPacket[]>(
       `
       SELECT id
-      FROM products
-      WHERE default_route_id = ? AND is_deleted = 0
+      FROM product_categories
+      WHERE id = ? AND status = 1 AND is_deleted = 0
       LIMIT 1
     `,
-      [routeId],
+      [categoryId],
     );
 
-    if (row) {
-      throw new BadRequestException('Route is bound to products and cannot be deleted');
+    if (!row) {
+      throw new BadRequestException('Product category not found or disabled');
     }
   }
 

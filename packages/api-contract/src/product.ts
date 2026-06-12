@@ -180,14 +180,14 @@ export interface ProcessRouteListItem {
   id: string;
   routeCode: string;
   routeName: string;
+  productCategoryId: string | null;
+  productAttribute: string | null;
+  productType: string | null;
   version: string | null;
   status: number;
   remark: string | null;
   stepCount: number;
   processSummary: string;
-  productCount: number;
-  productIds: string[];
-  productNames: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -199,6 +199,7 @@ export interface ProcessRouteDetail extends ProcessRouteListItem {
 export interface CreateProcessRoutePayload {
   routeCode: string;
   routeName: string;
+  productCategoryId?: string | null;
   version?: string | null;
   status?: number | boolean;
   remark?: string | null;
@@ -207,6 +208,7 @@ export interface CreateProcessRoutePayload {
 export interface UpdateProcessRoutePayload {
   routeCode?: string;
   routeName?: string;
+  productCategoryId?: string | null;
   version?: string | null;
   status?: number | boolean;
   remark?: string | null;
@@ -216,6 +218,66 @@ export interface ConfigureProcessRouteStepsPayload {
   steps: ProcessRouteStepPayload[];
 }
 
-export interface ConfigureProcessRouteProductsPayload {
-  productIds: string[];
+export type MaterialBatchStatus = 'available' | 'partial_used' | 'used_up' | 'disabled';
+
+export interface MaterialBatchListItem {
+  id: string;
+  productId: string;
+  productModel: string;
+  productName: string;
+  productAttribute: string | null;
+  productType: string | null;
+  materialBatchNo: string;
+  supplierName: string | null;
+  receivedDate: string | null;
+  quantity: string;
+  reservedQuantity: string;
+  usedQuantity: string;
+  availableQuantity: string;
+  status: MaterialBatchStatus;
+  remark: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MaterialBatchUsageItem {
+  id: string;
+  batchId: string | null;
+  reservedQuantity: string;
+  usedQuantity: string;
+  status: string | null;
+  recordedBy: string | null;
+  recordedByName: string | null;
+  recordedAt: string | null;
+  remark: string | null;
+}
+
+export interface MaterialBatchDetail extends MaterialBatchListItem {
+  reservations: MaterialBatchUsageItem[];
+  usages: MaterialBatchUsageItem[];
+}
+
+export interface CreateMaterialBatchPayload {
+  productId: string;
+  materialBatchNo: string;
+  supplierName?: string | null;
+  receivedDate?: string | null;
+  quantity?: string | number | null;
+  status?: MaterialBatchStatus;
+  remark?: string | null;
+}
+
+export interface UpdateMaterialBatchPayload {
+  productId?: string;
+  materialBatchNo?: string;
+  supplierName?: string | null;
+  receivedDate?: string | null;
+  quantity?: string | number | null;
+  status?: MaterialBatchStatus;
+  remark?: string | null;
+}
+
+export interface StocktakeMaterialBatchPayload {
+  quantity: string | number;
+  remark?: string | null;
 }

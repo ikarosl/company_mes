@@ -13,6 +13,8 @@ import ProductCategoriesPage from '../views/product/ProductCategoriesPage.vue';
 import ProductsPage from '../views/product/ProductsPage.vue';
 import ProcessesPage from '../views/product/ProcessesPage.vue';
 import ProcessRoutesPage from '../views/product/ProcessRoutesPage.vue';
+import ProductionOrdersPage from '../views/production/ProductionOrdersPage.vue';
+import WarehouseInventoryPage from '../views/warehouse/WarehouseInventoryPage.vue';
 // import ProcessTemplatesPage from '../views/ProcessTemplatesPage.vue';
 // import ProductionBatchDetailPage from '../views/ProductionBatchDetailPage.vue';
 // import ProductionBatchesPage from '../views/ProductionBatchesPage.vue';
@@ -92,14 +94,16 @@ export const routes: RouteRecordRaw[] = [
         meta: { title: '日志管理', section: '系统管理', permission: PERMISSIONS.system.logs.page },
       },
 
-      plannedPage(
-        'warehouse/inventory',
-        'warehouse-inventory',
-        '库存管理',
-        '仓储管理',
-        ['查看库存', '新增入库', '出库', '发运', '退料', '查看出入库记录'],
-        PERMISSIONS.warehouse.inventory.page,
-      ),
+      {
+        path: 'warehouse/inventory',
+        name: 'warehouse-inventory',
+        component: WarehouseInventoryPage,
+        meta: {
+          title: '库存管理',
+          section: '仓储管理',
+          permission: PERMISSIONS.warehouse.inventory.page,
+        },
+      },
       plannedPage(
         'warehouse/transactions',
         'warehouse-transactions',
@@ -158,14 +162,16 @@ export const routes: RouteRecordRaw[] = [
         PERMISSIONS.product.products.configBom,
       ),
 
-      plannedPage(
-        'production/orders',
-        'production-orders',
-        '工单管理',
-        '生产管理',
-        ['查看', '新增', '编辑', '保存草稿', '下达工单', '关闭工单', '取消工单'],
-        PERMISSIONS.production.orders.page,
-      ),
+      {
+        path: 'production/orders',
+        name: 'production-orders',
+        component: ProductionOrdersPage,
+        meta: {
+          title: '工单管理',
+          section: '生产管理',
+          permission: PERMISSIONS.production.orders.page,
+        },
+      },
       plannedPage(
         'production/tasks',
         'production-tasks',

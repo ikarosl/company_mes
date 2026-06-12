@@ -2,16 +2,29 @@
 开发人员：Emily 2026-6-11
 描述：完成产品分类，产品信息，工艺路线，工艺管理
 数据库操作：新建了表：
-| process_route_steps    |
-| process_routes         |
-| product_categories     |
-| products               |
-| technical_files        |
-完成情况：基本CRUD功能和业务逻辑
+| process_route_steps |
+| process_routes |
+| product_categories |
+| products |
+| technical_files |
+完成情况：基本 CRUD 功能和业务逻辑
 未完成：日志，导入导出
-存在问题：
-1.产品分类和产品信息中的规格参数待定；（已解决）
-2.工序编号暂时手动，没有设计编好规则；
-3.文件上传功能暂时可以上传，存储位置为D:\Hzbeat\company_mes\apps\backend\uploads，文件名字乱码；（已解决）
-4.工序路线中没有选择适用产品（关联ID，显示产品名称）的功能；（已解决）
+存在问题： 1.产品分类和产品信息中的规格参数待定；（已解决） 2.工序编号暂时手动，没有设计编好规则； 3.文件上传功能暂时可以上传，存储位置为 D:\Hzbeat\company_mes\apps\backend\uploads，文件名字乱码；（已解决） 4.工序路线中没有选择适用产品（关联 ID，显示产品名称）的功能；（解决一半）---应该是适用产品类型 5.产品信息暂不支持搜索规格参数 6.上传的文件不能删除 7.产品信息不要库存那一栏，工艺路线那一栏待定
 --
+
+--
+开发人员：Emily 2026-6-11
+描述：完成库存管理、工单管理
+数据库操作：新建了表：
+| route_step_materials 工序用料关联表 |
+| product_materials 产品物料清单表 |
+| material_batches 物料批次表 |
+| products |
+| technical_files |
+完成情况：基本 CRUD 功能和业务逻辑
+未完成：日志，导入导出
+存在问题： 1.库存管理中的盘点和预留可以取消了，保留使用就可以（用于查看）2.工单管理中没有客户名称和订单号以及相关的搜索。3.工单管理不涉及选择工艺路线，这是任务管理（生产批次时选择工艺路线）。
+--
+
+--
+

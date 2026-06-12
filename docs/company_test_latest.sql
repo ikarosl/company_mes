@@ -26,6 +26,61 @@ CREATE DATABASE /*!32312 IF NOT EXISTS*/ `company_test` /*!40100 DEFAULT CHARACT
 USE `company_test`;
 
 --
+-- Table structure for table `batch_material_usages`
+--
+
+DROP TABLE IF EXISTS `batch_material_usages`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `batch_material_usages` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '涓婚敭',
+  `batch_id` bigint unsigned DEFAULT NULL COMMENT '鐢熶骇鎵规?ID锛宲roduction_batches 琛ㄥ缓绔嬪悗琛ュ?閿',
+  `material_batch_id` bigint unsigned NOT NULL COMMENT '鐗╂枡鎵规?ID',
+  `reserved_quantity` decimal(12,4) NOT NULL DEFAULT '0.0000' COMMENT '棰勭暀鏁伴噺',
+  `used_quantity` decimal(12,4) NOT NULL DEFAULT '0.0000' COMMENT '瀹為檯浣跨敤鏁伴噺',
+  `unit` varchar(50) DEFAULT NULL COMMENT '鍗曚綅',
+  `status` varchar(50) NOT NULL DEFAULT 'reserved' COMMENT 'reserved/part_used/used/cancelled',
+  `recorded_by` bigint unsigned DEFAULT NULL COMMENT '璁板綍浜',
+  `recorded_at` datetime DEFAULT NULL COMMENT '璁板綍鏃堕棿',
+  `remark` text COMMENT '澶囨敞',
+  `created_by` bigint unsigned DEFAULT NULL COMMENT '鍒涘缓浜',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '鍒涘缓鏃堕棿',
+  `updated_by` bigint unsigned DEFAULT NULL COMMENT '鏇存柊浜',
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '鏇存柊鏃堕棿',
+  `is_deleted` tinyint NOT NULL DEFAULT '0' COMMENT '杞?垹闄ゆ爣璁',
+  `deleted_by` bigint unsigned DEFAULT NULL COMMENT '鍒犻櫎浜',
+  `deleted_at` datetime DEFAULT NULL COMMENT '鍒犻櫎鏃堕棿',
+  PRIMARY KEY (`id`),
+  KEY `idx_batch_material_usages_batch_id` (`batch_id`),
+  KEY `idx_batch_material_usages_material_batch_id` (`material_batch_id`),
+  KEY `idx_batch_material_usages_status` (`status`),
+  KEY `idx_batch_material_usages_recorded_by` (`recorded_by`),
+  KEY `idx_batch_material_usages_is_deleted` (`is_deleted`),
+  KEY `idx_batch_material_usages_created_by` (`created_by`),
+  KEY `idx_batch_material_usages_updated_by` (`updated_by`),
+  KEY `idx_batch_material_usages_deleted_by` (`deleted_by`),
+  CONSTRAINT `fk_batch_material_usages_batch_id` FOREIGN KEY (`batch_id`) REFERENCES `production_batches` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_batch_material_usages_created_by` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_batch_material_usages_deleted_by` FOREIGN KEY (`deleted_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_batch_material_usages_material_batch_id` FOREIGN KEY (`material_batch_id`) REFERENCES `material_batches` (`id`),
+  CONSTRAINT `fk_batch_material_usages_recorded_by` FOREIGN KEY (`recorded_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_batch_material_usages_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `chk_batch_material_usages_reserved_quantity` CHECK ((`reserved_quantity` >= 0)),
+  CONSTRAINT `chk_batch_material_usages_status` CHECK ((`status` in (_utf8mb4'reserved',_utf8mb4'part_used',_utf8mb4'used',_utf8mb4'cancelled'))),
+  CONSTRAINT `chk_batch_material_usages_used_quantity` CHECK ((`used_quantity` >= 0))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='鐢熶骇鎵规?鐗╂枡棰勭暀涓庝娇鐢ㄨ〃';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `batch_material_usages`
+--
+
+LOCK TABLES `batch_material_usages` WRITE;
+/*!40000 ALTER TABLE `batch_material_usages` DISABLE KEYS */;
+/*!40000 ALTER TABLE `batch_material_usages` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
 -- Table structure for table `departments`
 --
 
@@ -60,6 +115,57 @@ INSERT INTO `departments` VALUES (1,0,'公司总部','company',0,1,'2026-06-11 1
 UNLOCK TABLES;
 
 --
+-- Table structure for table `material_batches`
+--
+
+DROP TABLE IF EXISTS `material_batches`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `material_batches` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '涓婚敭',
+  `product_id` bigint unsigned NOT NULL COMMENT '鐗╂枡瀵瑰簲鐨勪骇鍝両D锛屽悓涓?墿鏂欏厑璁稿?涓?壒娆',
+  `material_batch_no` varchar(100) NOT NULL COMMENT '鐗╂枡鎵规?鍙',
+  `supplier_name` varchar(255) DEFAULT NULL COMMENT '渚涘簲鍟嗗悕绉',
+  `received_date` date DEFAULT NULL COMMENT '鍏ュ簱/鎺ユ敹鏃ユ湡',
+  `quantity` decimal(12,4) NOT NULL DEFAULT '0.0000' COMMENT '褰撳墠搴撳瓨鍙拌处鏁伴噺',
+  `status` varchar(50) NOT NULL DEFAULT 'available' COMMENT 'available/partial_used/used_up/disabled',
+  `remark` text COMMENT '澶囨敞',
+  `created_by` bigint unsigned DEFAULT NULL COMMENT '鍒涘缓浜',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '鍒涘缓鏃堕棿',
+  `updated_by` bigint unsigned DEFAULT NULL COMMENT '鏇存柊浜',
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '鏇存柊鏃堕棿',
+  `is_deleted` tinyint NOT NULL DEFAULT '0' COMMENT '杞?垹闄ゆ爣璁',
+  `deleted_by` bigint unsigned DEFAULT NULL COMMENT '鍒犻櫎浜',
+  `deleted_at` datetime DEFAULT NULL COMMENT '鍒犻櫎鏃堕棿',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_material_batches_no_deleted` (`material_batch_no`,`is_deleted`),
+  KEY `idx_material_batches_product_id` (`product_id`),
+  KEY `idx_material_batches_supplier_name` (`supplier_name`),
+  KEY `idx_material_batches_status` (`status`),
+  KEY `idx_material_batches_is_deleted` (`is_deleted`),
+  KEY `idx_material_batches_created_by` (`created_by`),
+  KEY `idx_material_batches_updated_by` (`updated_by`),
+  KEY `idx_material_batches_deleted_by` (`deleted_by`),
+  CONSTRAINT `fk_material_batches_created_by` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_material_batches_deleted_by` FOREIGN KEY (`deleted_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_material_batches_product_id` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`),
+  CONSTRAINT `fk_material_batches_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `chk_material_batches_quantity` CHECK ((`quantity` >= 0)),
+  CONSTRAINT `chk_material_batches_status` CHECK ((`status` in (_gbk'available',_gbk'partial_used',_gbk'used_up',_gbk'disabled')))
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='鐗╂枡鎵规?琛';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `material_batches`
+--
+
+LOCK TABLES `material_batches` WRITE;
+/*!40000 ALTER TABLE `material_batches` DISABLE KEYS */;
+INSERT INTO `material_batches` VALUES (1,2,'WL-001','PCB供应商','2026-06-12',100.0000,'available',NULL,NULL,'2026-06-12 13:46:15',NULL,'2026-06-12 13:47:23',0,NULL,NULL);
+/*!40000 ALTER TABLE `material_batches` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
 -- Table structure for table `operation_logs`
 --
 
@@ -88,7 +194,7 @@ CREATE TABLE `operation_logs` (
   KEY `idx_operation_logs_result` (`result`),
   KEY `idx_operation_logs_created_at` (`created_at`),
   CONSTRAINT `fk_operation_logs_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB AUTO_INCREMENT=49 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=98 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -97,7 +203,7 @@ CREATE TABLE `operation_logs` (
 
 LOCK TABLES `operation_logs` WRITE;
 /*!40000 ALTER TABLE `operation_logs` DISABLE KEYS */;
-INSERT INTO `operation_logs` VALUES (1,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=4ms','2026-06-11 13:39:25'),(2,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 13:40:11'),(3,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-11 13:59:47'),(4,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=0ms','2026-06-11 13:59:47'),(5,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 13:59:47'),(6,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-11 14:16:24'),(7,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=4ms','2026-06-11 14:16:24'),(8,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 14:20:25'),(9,'operation','product-categories','POST /product-categories',1,NULL,'product-categories','failed',NULL,NULL,'::1','Table \'company_test.product_categories\' doesn\'t exist','2026-06-11 14:20:48'),(10,'operation','product-categories','POST /product-categories',1,NULL,'product-categories','failed',NULL,NULL,'::1','Table \'company_test.product_categories\' doesn\'t exist','2026-06-11 14:20:49'),(11,'operation','product-categories','POST /product-categories',1,NULL,'product-categories','failed',NULL,NULL,'::1','Table \'company_test.product_categories\' doesn\'t exist','2026-06-11 14:20:49'),(12,'operation','product-categories','POST /product-categories',1,NULL,'product-categories','failed',NULL,NULL,'::1','Table \'company_test.product_categories\' doesn\'t exist','2026-06-11 14:20:56'),(13,'operation','product-categories','POST /product-categories',1,NULL,'product-categories','failed',NULL,NULL,'::1','Table \'company_test.product_categories\' doesn\'t exist','2026-06-11 14:20:56'),(14,'operation','product-categories','POST /product-categories',1,NULL,'product-categories','failed',NULL,NULL,'::1','Table \'company_test.product_categories\' doesn\'t exist','2026-06-11 14:20:57'),(15,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-11 14:25:39'),(16,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 14:25:41'),(17,'operation','product-categories','POST /product-categories',1,NULL,'product-categories','success',NULL,'{\"id\": \"3\", \"status\": 1}','::1','duration=11ms','2026-06-11 14:26:27'),(18,'operation','product-categories','PUT /product-categories/2',1,2,'product-categories','success',NULL,'{\"id\": \"2\", \"status\": 1}','::1','duration=10ms','2026-06-11 14:27:55'),(19,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 14:29:41'),(20,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 14:31:15'),(21,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=2ms','2026-06-11 14:47:50'),(22,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-11 14:47:50'),(23,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-11 14:47:50'),(24,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-11 14:47:50'),(25,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=0ms','2026-06-11 14:47:50'),(26,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-11 14:47:50'),(27,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 15:05:17'),(28,'operation','products','PUT /products/1',1,1,'products','success',NULL,'{\"id\": \"1\", \"status\": 1}','::1','duration=13ms','2026-06-11 15:06:38'),(29,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=5ms','2026-06-11 15:20:14'),(30,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-11 15:20:14'),(31,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 15:24:23'),(32,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=3ms','2026-06-11 15:42:42'),(33,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-11 15:42:42'),(34,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 15:42:43'),(35,'operation','processes','PUT /processes/1',1,1,'processes','success',NULL,'{\"id\": \"1\", \"status\": 1}','::1','duration=10ms','2026-06-11 15:43:24'),(36,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=5ms','2026-06-11 15:45:58'),(37,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 15:54:17'),(38,'operation','processes','POST /processes',1,NULL,'processes','success',NULL,'{\"id\": \"3\", \"status\": 1}','::1','duration=11ms','2026-06-11 15:56:12'),(39,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-11 16:09:36'),(40,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-11 16:09:36'),(41,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 16:13:51'),(42,'operation','processes','POST /processes',1,NULL,'processes','success',NULL,'{\"id\": \"4\", \"status\": 1}','::1','duration=12ms','2026-06-11 16:27:06'),(43,'operation','processes','POST /processes/4/sop',1,4,'processes','success',NULL,'{\"id\": \"4\", \"status\": 1}','::1','duration=26ms','2026-06-11 16:27:36'),(44,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-11 16:30:07'),(45,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=0ms','2026-06-11 16:30:07'),(46,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 16:30:08'),(47,'operation','routes','PUT /routes/1/processes',1,1,'routes','success',NULL,'{\"id\": \"1\", \"status\": 1}','::1','duration=24ms','2026-06-11 16:30:27'),(48,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 16:47:14');
+INSERT INTO `operation_logs` VALUES (1,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=4ms','2026-06-11 13:39:25'),(2,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 13:40:11'),(3,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-11 13:59:47'),(4,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=0ms','2026-06-11 13:59:47'),(5,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 13:59:47'),(6,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-11 14:16:24'),(7,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=4ms','2026-06-11 14:16:24'),(8,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 14:20:25'),(9,'operation','product-categories','POST /product-categories',1,NULL,'product-categories','failed',NULL,NULL,'::1','Table \'company_test.product_categories\' doesn\'t exist','2026-06-11 14:20:48'),(10,'operation','product-categories','POST /product-categories',1,NULL,'product-categories','failed',NULL,NULL,'::1','Table \'company_test.product_categories\' doesn\'t exist','2026-06-11 14:20:49'),(11,'operation','product-categories','POST /product-categories',1,NULL,'product-categories','failed',NULL,NULL,'::1','Table \'company_test.product_categories\' doesn\'t exist','2026-06-11 14:20:49'),(12,'operation','product-categories','POST /product-categories',1,NULL,'product-categories','failed',NULL,NULL,'::1','Table \'company_test.product_categories\' doesn\'t exist','2026-06-11 14:20:56'),(13,'operation','product-categories','POST /product-categories',1,NULL,'product-categories','failed',NULL,NULL,'::1','Table \'company_test.product_categories\' doesn\'t exist','2026-06-11 14:20:56'),(14,'operation','product-categories','POST /product-categories',1,NULL,'product-categories','failed',NULL,NULL,'::1','Table \'company_test.product_categories\' doesn\'t exist','2026-06-11 14:20:57'),(15,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-11 14:25:39'),(16,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 14:25:41'),(17,'operation','product-categories','POST /product-categories',1,NULL,'product-categories','success',NULL,'{\"id\": \"3\", \"status\": 1}','::1','duration=11ms','2026-06-11 14:26:27'),(18,'operation','product-categories','PUT /product-categories/2',1,2,'product-categories','success',NULL,'{\"id\": \"2\", \"status\": 1}','::1','duration=10ms','2026-06-11 14:27:55'),(19,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 14:29:41'),(20,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 14:31:15'),(21,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=2ms','2026-06-11 14:47:50'),(22,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-11 14:47:50'),(23,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-11 14:47:50'),(24,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-11 14:47:50'),(25,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=0ms','2026-06-11 14:47:50'),(26,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-11 14:47:50'),(27,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 15:05:17'),(28,'operation','products','PUT /products/1',1,1,'products','success',NULL,'{\"id\": \"1\", \"status\": 1}','::1','duration=13ms','2026-06-11 15:06:38'),(29,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=5ms','2026-06-11 15:20:14'),(30,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-11 15:20:14'),(31,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 15:24:23'),(32,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=3ms','2026-06-11 15:42:42'),(33,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-11 15:42:42'),(34,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 15:42:43'),(35,'operation','processes','PUT /processes/1',1,1,'processes','success',NULL,'{\"id\": \"1\", \"status\": 1}','::1','duration=10ms','2026-06-11 15:43:24'),(36,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=5ms','2026-06-11 15:45:58'),(37,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 15:54:17'),(38,'operation','processes','POST /processes',1,NULL,'processes','success',NULL,'{\"id\": \"3\", \"status\": 1}','::1','duration=11ms','2026-06-11 15:56:12'),(39,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-11 16:09:36'),(40,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-11 16:09:36'),(41,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 16:13:51'),(42,'operation','processes','POST /processes',1,NULL,'processes','success',NULL,'{\"id\": \"4\", \"status\": 1}','::1','duration=12ms','2026-06-11 16:27:06'),(43,'operation','processes','POST /processes/4/sop',1,4,'processes','success',NULL,'{\"id\": \"4\", \"status\": 1}','::1','duration=26ms','2026-06-11 16:27:36'),(44,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-11 16:30:07'),(45,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=0ms','2026-06-11 16:30:07'),(46,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 16:30:08'),(47,'operation','routes','PUT /routes/1/processes',1,1,'routes','success',NULL,'{\"id\": \"1\", \"status\": 1}','::1','duration=24ms','2026-06-11 16:30:27'),(48,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 16:47:14'),(49,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-11 17:01:49'),(50,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 17:01:53'),(51,'operation','processes','POST /processes',1,NULL,'processes','success',NULL,'{\"id\": \"5\", \"status\": 1}','::1','duration=10ms','2026-06-11 17:02:39'),(52,'operation','processes','PUT /processes/5/disable',1,5,'processes','success',NULL,'{\"id\": \"5\", \"status\": 0}','::1','duration=10ms','2026-06-11 17:06:03'),(53,'operation','processes','PUT /processes/5/enable',1,5,'processes','success',NULL,'{\"id\": \"5\", \"status\": 1}','::1','duration=8ms','2026-06-11 17:06:17'),(54,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=2ms','2026-06-11 17:18:02'),(55,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=0ms','2026-06-11 17:18:02'),(56,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-11 17:18:02'),(57,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=0ms','2026-06-11 17:18:02'),(58,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-11 17:20:42'),(59,'operation','processes','POST /processes/5/sop',1,5,'processes','success',NULL,'{\"id\": \"5\", \"status\": 1}','::1','duration=27ms','2026-06-11 17:22:41'),(60,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-12 09:28:06'),(61,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-12 09:44:21'),(62,'operation','routes','PUT /routes/1/products',1,1,'routes','success',NULL,'{\"id\": \"1\", \"status\": 1}','::1','duration=16ms','2026-06-12 09:44:47'),(63,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-12 10:06:33'),(64,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=0ms','2026-06-12 10:06:33'),(65,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=0ms','2026-06-12 10:06:34'),(66,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-12 10:06:34'),(67,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-12 10:24:10'),(68,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=2ms','2026-06-12 10:43:57'),(69,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=0ms','2026-06-12 10:43:57'),(70,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-12 10:43:58'),(71,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=0ms','2026-06-12 11:16:55'),(72,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-12 11:32:33'),(73,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-12 11:49:10'),(74,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=0ms','2026-06-12 11:49:10'),(75,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-12 13:43:07'),(76,'operation','warehouse','POST /warehouse/inventory',1,NULL,'warehouse','success',NULL,'{\"id\": \"1\", \"status\": \"available\"}','::1','duration=12ms','2026-06-12 13:46:15'),(77,'operation','warehouse','PUT /warehouse/inventory/1/disable',1,1,'warehouse','success',NULL,'{\"id\": \"1\", \"status\": \"disabled\"}','::1','duration=8ms','2026-06-12 13:47:20'),(78,'operation','warehouse','PUT /warehouse/inventory/1/enable',1,1,'warehouse','success',NULL,'{\"id\": \"1\", \"status\": \"available\"}','::1','duration=10ms','2026-06-12 13:47:23'),(79,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=0ms','2026-06-12 13:59:47'),(80,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=0ms','2026-06-12 13:59:47'),(81,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-12 13:59:49'),(82,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=0ms','2026-06-12 14:20:30'),(83,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=0ms','2026-06-12 14:20:30'),(84,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-12 14:21:41'),(85,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=0ms','2026-06-12 14:27:26'),(86,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-12 14:27:34'),(87,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=3ms','2026-06-12 14:48:34'),(88,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=1ms','2026-06-12 14:48:34'),(89,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-12 14:51:25'),(90,'operation','orders','POST /orders',1,NULL,'orders','success',NULL,'{\"id\": \"1\", \"status\": \"draft\"}','::1','duration=41ms','2026-06-12 14:53:35'),(91,'operation','orders','PUT /orders/1/release',1,1,'orders','success',NULL,'{\"id\": \"1\", \"status\": \"released\"}','::1','duration=11ms','2026-06-12 14:54:04'),(92,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=0ms','2026-06-12 15:07:05'),(93,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=0ms','2026-06-12 15:07:05'),(94,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-12 15:07:06'),(95,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=0ms','2026-06-12 15:39:11'),(96,'auth','auth','POST /auth/logout',NULL,NULL,'auth','success',NULL,'{\"success\": true}','::1','duration=0ms','2026-06-12 15:39:11'),(97,'auth','auth','login',1,NULL,NULL,'success',NULL,NULL,'::1','admin','2026-06-12 15:39:12');
 /*!40000 ALTER TABLE `operation_logs` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -211,6 +317,7 @@ CREATE TABLE `process_routes` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `route_code` varchar(64) NOT NULL,
   `route_name` varchar(128) NOT NULL,
+  `product_category_id` bigint unsigned DEFAULT NULL,
   `version` varchar(64) DEFAULT NULL,
   `status` tinyint NOT NULL DEFAULT '1',
   `remark` varchar(255) DEFAULT NULL,
@@ -228,8 +335,10 @@ CREATE TABLE `process_routes` (
   KEY `idx_process_routes_created_by` (`created_by`),
   KEY `idx_process_routes_updated_by` (`updated_by`),
   KEY `idx_process_routes_deleted_by` (`deleted_by`),
+  KEY `idx_process_routes_product_category_id` (`product_category_id`),
   CONSTRAINT `fk_process_routes_created_by` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_process_routes_deleted_by` FOREIGN KEY (`deleted_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_process_routes_product_category_id` FOREIGN KEY (`product_category_id`) REFERENCES `product_categories` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_process_routes_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -240,7 +349,7 @@ CREATE TABLE `process_routes` (
 
 LOCK TABLES `process_routes` WRITE;
 /*!40000 ALTER TABLE `process_routes` DISABLE KEYS */;
-INSERT INTO `process_routes` VALUES (1,'ROUTE-CIR-STD','环形器标准工艺路线','V1.0',1,'默认工艺路线样例',NULL,'2026-06-11 15:38:06',NULL,'2026-06-11 15:38:06',0,NULL,NULL);
+INSERT INTO `process_routes` VALUES (1,'ROUTE-CIR-STD','环形器标准工艺路线',1,'V1.0',1,'默认工艺路线样例',NULL,'2026-06-11 15:38:06',NULL,'2026-06-12 10:37:46',0,NULL,NULL);
 /*!40000 ALTER TABLE `process_routes` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -280,7 +389,7 @@ CREATE TABLE `processes` (
   CONSTRAINT `fk_processes_deleted_by` FOREIGN KEY (`deleted_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_processes_sop_file_id` FOREIGN KEY (`sop_file_id`) REFERENCES `technical_files` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_processes_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -289,7 +398,7 @@ CREATE TABLE `processes` (
 
 LOCK TABLES `processes` WRITE;
 /*!40000 ALTER TABLE `processes` DISABLE KEYS */;
-INSERT INTO `processes` VALUES (1,'GX-001','装配','将各部件组装成成品',1,NULL,NULL,1,'生产工序主数据样例',NULL,'2026-06-11 16:22:31',NULL,'2026-06-11 16:22:31',0,NULL,NULL),(2,'GX-002','调试','调整产品性能参数',2,NULL,NULL,1,'生产工序主数据样例',NULL,'2026-06-11 16:22:31',NULL,'2026-06-11 16:22:31',0,NULL,NULL),(3,'GX-003','检验','看是否符合客户要求',NULL,NULL,NULL,1,'由历史路线步骤迁移生成',NULL,'2026-06-11 16:23:33',NULL,'2026-06-11 16:23:33',0,NULL,NULL),(4,'GX-004','焊接','焊接PCB',3,'3- çç©ºçæ¥å·¥èºè§ç¨.docx','/uploads/processes/1781166456931-3-_çç©ºçæ¥å·¥èºè§ç¨.docx',1,NULL,NULL,'2026-06-11 16:27:06',NULL,'2026-06-11 16:27:36',0,NULL,NULL);
+INSERT INTO `processes` VALUES (1,'GX-001','装配','将各部件组装成成品',1,NULL,NULL,1,'生产工序主数据样例',NULL,'2026-06-11 16:22:31',NULL,'2026-06-11 16:22:31',0,NULL,NULL),(2,'GX-002','调试','调整产品性能参数',2,NULL,NULL,1,'生产工序主数据样例',NULL,'2026-06-11 16:22:31',NULL,'2026-06-11 16:22:31',0,NULL,NULL),(3,'GX-003','检验','看是否符合客户要求',NULL,NULL,NULL,1,'由历史路线步骤迁移生成',NULL,'2026-06-11 16:23:33',NULL,'2026-06-11 16:23:33',0,NULL,NULL),(4,'GX-004','焊接','焊接PCB',3,'3- 真空焊接工艺规程.docx','/uploads/processes/1781166456931-3-_çç©ºçæ¥å·¥èºè§ç¨.docx',1,NULL,NULL,'2026-06-11 16:27:06',NULL,'2026-06-11 17:19:36',0,NULL,NULL),(5,'text','test','test',4,'1- 微电路制作检验规程.docx','/uploads/processes/1781169761042-1-_微电路制作检验规程.docx',1,'test',NULL,'2026-06-11 17:02:39',NULL,'2026-06-11 17:22:41',0,NULL,NULL);
 /*!40000 ALTER TABLE `processes` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -336,6 +445,122 @@ LOCK TABLES `product_categories` WRITE;
 /*!40000 ALTER TABLE `product_categories` DISABLE KEYS */;
 INSERT INTO `product_categories` VALUES (1,'成品','环形器',1,'微波器件成品分类',NULL,'2026-06-11 14:24:07',NULL,'2026-06-11 14:24:07',0,NULL,NULL),(2,'成品','PCB',1,'PCB 成品分类',NULL,'2026-06-11 14:24:07',NULL,'2026-06-11 14:49:25',0,NULL,NULL),(3,'半成品','腔体',1,NULL,NULL,'2026-06-11 14:26:27',NULL,'2026-06-11 14:26:27',0,NULL,NULL);
 /*!40000 ALTER TABLE `product_categories` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `product_materials`
+--
+
+DROP TABLE IF EXISTS `product_materials`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `product_materials` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `product_id` bigint unsigned NOT NULL,
+  `material_product_id` bigint unsigned NOT NULL,
+  `quantity_per_unit` decimal(12,4) NOT NULL,
+  `unit` varchar(50) DEFAULT NULL,
+  `is_key_material` tinyint NOT NULL DEFAULT '1',
+  `need_batch_record` tinyint NOT NULL DEFAULT '1',
+  `remark` text,
+  `created_by` bigint unsigned DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_by` bigint unsigned DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  `is_deleted` tinyint NOT NULL DEFAULT '0',
+  `deleted_by` bigint unsigned DEFAULT NULL,
+  `deleted_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_product_materials_product_material_deleted` (`product_id`,`material_product_id`,`is_deleted`),
+  KEY `idx_product_materials_product_id` (`product_id`),
+  KEY `idx_product_materials_material_product_id` (`material_product_id`),
+  KEY `idx_product_materials_is_deleted` (`is_deleted`),
+  KEY `idx_product_materials_created_by` (`created_by`),
+  KEY `idx_product_materials_updated_by` (`updated_by`),
+  KEY `idx_product_materials_deleted_by` (`deleted_by`),
+  CONSTRAINT `fk_product_materials_created_by` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_product_materials_deleted_by` FOREIGN KEY (`deleted_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_product_materials_material_product_id` FOREIGN KEY (`material_product_id`) REFERENCES `products` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_product_materials_product_id` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_product_materials_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `product_materials`
+--
+
+LOCK TABLES `product_materials` WRITE;
+/*!40000 ALTER TABLE `product_materials` DISABLE KEYS */;
+/*!40000 ALTER TABLE `product_materials` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `production_batches`
+--
+
+DROP TABLE IF EXISTS `production_batches`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `production_batches` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '涓婚敭',
+  `work_order_id` bigint unsigned NOT NULL COMMENT '宸ュ崟ID',
+  `batch_no` varchar(100) NOT NULL COMMENT '鐢熶骇鎵规?鍙',
+  `product_id` bigint unsigned NOT NULL COMMENT '浜у搧ID锛屽啑浣欏伐鍗曚骇鍝佷究浜庢煡璇㈣拷婧',
+  `route_id` bigint unsigned DEFAULT NULL COMMENT '鎵ц?宸ヨ壓璺?嚎ID',
+  `planned_quantity` decimal(12,4) NOT NULL COMMENT '鎵规?璁″垝鏁伴噺',
+  `status` varchar(50) NOT NULL DEFAULT 'pending' COMMENT 'pending/assigned/doing/completed/cancelled',
+  `material_status` varchar(50) NOT NULL DEFAULT 'ungenerated' COMMENT '鐗╂枡鐘舵?',
+  `dispatch_status` varchar(50) NOT NULL DEFAULT 'pending' COMMENT '娲惧伐鐘舵?',
+  `production_status` varchar(50) NOT NULL DEFAULT 'pending' COMMENT '鐢熶骇鐘舵?',
+  `inspection_status` varchar(50) NOT NULL DEFAULT 'pending' COMMENT '妫?獙鐘舵?',
+  `owner_id` bigint unsigned DEFAULT NULL COMMENT '鎵规?璐熻矗浜',
+  `plan_start_date` date DEFAULT NULL COMMENT '璁″垝寮??鏃ユ湡',
+  `plan_end_date` date DEFAULT NULL COMMENT '璁″垝瀹屾垚鏃ユ湡',
+  `actual_start_at` datetime DEFAULT NULL COMMENT '瀹為檯寮??鏃堕棿',
+  `actual_end_at` datetime DEFAULT NULL COMMENT '瀹為檯瀹屾垚鏃堕棿',
+  `remark` text COMMENT '澶囨敞',
+  `created_by` bigint unsigned DEFAULT NULL COMMENT '鍒涘缓浜',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '鍒涘缓鏃堕棿',
+  `updated_by` bigint unsigned DEFAULT NULL COMMENT '鏇存柊浜',
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '鏇存柊鏃堕棿',
+  `is_deleted` tinyint NOT NULL DEFAULT '0' COMMENT '杞?垹闄ゆ爣璁',
+  `deleted_by` bigint unsigned DEFAULT NULL COMMENT '鍒犻櫎浜',
+  `deleted_at` datetime DEFAULT NULL COMMENT '鍒犻櫎鏃堕棿',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_production_batches_no_deleted` (`batch_no`,`is_deleted`),
+  KEY `idx_production_batches_work_order_id` (`work_order_id`),
+  KEY `idx_production_batches_product_id` (`product_id`),
+  KEY `idx_production_batches_route_id` (`route_id`),
+  KEY `idx_production_batches_status` (`status`),
+  KEY `idx_production_batches_owner_id` (`owner_id`),
+  KEY `idx_production_batches_is_deleted` (`is_deleted`),
+  KEY `idx_production_batches_created_by` (`created_by`),
+  KEY `idx_production_batches_updated_by` (`updated_by`),
+  KEY `idx_production_batches_deleted_by` (`deleted_by`),
+  CONSTRAINT `fk_production_batches_created_by` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_production_batches_deleted_by` FOREIGN KEY (`deleted_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_production_batches_owner_id` FOREIGN KEY (`owner_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_production_batches_product_id` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`),
+  CONSTRAINT `fk_production_batches_route_id` FOREIGN KEY (`route_id`) REFERENCES `process_routes` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_production_batches_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_production_batches_work_order_id` FOREIGN KEY (`work_order_id`) REFERENCES `work_orders` (`id`),
+  CONSTRAINT `chk_production_batches_dispatch_status` CHECK ((`dispatch_status` in (_gbk'pending',_gbk'assigned'))),
+  CONSTRAINT `chk_production_batches_inspection_status` CHECK ((`inspection_status` in (_gbk'pending',_gbk'inspecting',_gbk'passed',_gbk'failed',_gbk'partial_pass'))),
+  CONSTRAINT `chk_production_batches_material_status` CHECK ((`material_status` in (_gbk'ungenerated',_gbk'unassigned',_gbk'partial_assigned',_gbk'assigned',_gbk'ready',_gbk'outbound',_gbk'shortage',_gbk'returned'))),
+  CONSTRAINT `chk_production_batches_production_status` CHECK ((`production_status` in (_gbk'pending',_gbk'doing',_gbk'completed'))),
+  CONSTRAINT `chk_production_batches_quantity` CHECK ((`planned_quantity` > 0)),
+  CONSTRAINT `chk_production_batches_status` CHECK ((`status` in (_gbk'pending',_gbk'assigned',_gbk'doing',_gbk'completed',_gbk'cancelled')))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='鐢熶骇鎵规?琛';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `production_batches`
+--
+
+LOCK TABLES `production_batches` WRITE;
+/*!40000 ALTER TABLE `production_batches` DISABLE KEYS */;
+/*!40000 ALTER TABLE `production_batches` ENABLE KEYS */;
 UNLOCK TABLES;
 
 --
@@ -389,8 +614,38 @@ CREATE TABLE `products` (
 
 LOCK TABLES `products` WRITE;
 /*!40000 ALTER TABLE `products` DISABLE KEYS */;
-INSERT INTO `products` VALUES (1,'HMITB60T180G-B2','宽带微带环形器',1,1,'pcs','self_made','[{\"key\": \"频率范围\", \"unit\": \"GHz\", \"value\": \"6-18\"}, {\"key\": \"插入损耗\", \"unit\": \"dB\", \"value\": \"0.8\"}, {\"key\": \"隔离度\", \"unit\": \"dB\", \"value\": \"18\"}]',1,'产品资料样例',NULL,'2026-06-11 14:49:25',NULL,'2026-06-11 16:43:16',0,NULL,NULL),(2,'PCB-CIR-001','环形器控制板',2,NULL,'pcs','outsourced','[{\"key\": \"板材\", \"unit\": null, \"value\": \"Rogers\"}, {\"key\": \"层数\", \"unit\": \"层\", \"value\": \"4\"}, {\"key\": \"厚度\", \"unit\": \"mm\", \"value\": \"1.6\"}]',1,'PCB 产品资料样例',NULL,'2026-06-11 14:49:25',NULL,'2026-06-11 16:43:16',0,NULL,NULL);
+INSERT INTO `products` VALUES (1,'HMITB60T180G-B2','宽带微带环形器',1,1,'pcs','self_made','[{\"key\": \"频率范围\", \"unit\": \"GHz\", \"value\": \"6-18\"}, {\"key\": \"插入损耗\", \"unit\": \"dB\", \"value\": \"0.8\"}, {\"key\": \"隔离度\", \"unit\": \"dB\", \"value\": \"18\"}]',1,'产品资料样例',NULL,'2026-06-11 14:49:25',NULL,'2026-06-12 09:44:47',0,NULL,NULL),(2,'PCB-CIR-001','环形器控制板',2,1,'pcs','outsourced','[{\"key\": \"板材\", \"unit\": null, \"value\": \"Rogers\"}, {\"key\": \"层数\", \"unit\": \"层\", \"value\": \"4\"}, {\"key\": \"厚度\", \"unit\": \"mm\", \"value\": \"1.6\"}]',1,'PCB 产品资料样例',NULL,'2026-06-11 14:49:25',NULL,'2026-06-12 09:44:47',0,NULL,NULL);
 /*!40000 ALTER TABLE `products` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `refresh_tokens`
+--
+
+DROP TABLE IF EXISTS `refresh_tokens`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `refresh_tokens` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` bigint unsigned NOT NULL,
+  `jti` char(36) NOT NULL,
+  `expires_at` datetime NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_refresh_tokens_jti` (`jti`),
+  KEY `idx_refresh_tokens_user_id` (`user_id`),
+  KEY `idx_refresh_tokens_expires_at` (`expires_at`),
+  CONSTRAINT `fk_refresh_tokens_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `refresh_tokens`
+--
+
+LOCK TABLES `refresh_tokens` WRITE;
+/*!40000 ALTER TABLE `refresh_tokens` DISABLE KEYS */;
+/*!40000 ALTER TABLE `refresh_tokens` ENABLE KEYS */;
 UNLOCK TABLES;
 
 --
@@ -454,6 +709,50 @@ INSERT INTO `roles` VALUES (1,'超级管理员','admin','系统内置超级管�
 UNLOCK TABLES;
 
 --
+-- Table structure for table `route_step_materials`
+--
+
+DROP TABLE IF EXISTS `route_step_materials`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `route_step_materials` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `route_step_id` bigint unsigned NOT NULL,
+  `product_material_id` bigint unsigned NOT NULL,
+  `remark` text,
+  `created_by` bigint unsigned DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_by` bigint unsigned DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  `is_deleted` tinyint NOT NULL DEFAULT '0',
+  `deleted_by` bigint unsigned DEFAULT NULL,
+  `deleted_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_route_step_materials_step_material_deleted` (`route_step_id`,`product_material_id`,`is_deleted`),
+  KEY `idx_route_step_materials_route_step_id` (`route_step_id`),
+  KEY `idx_route_step_materials_product_material_id` (`product_material_id`),
+  KEY `idx_route_step_materials_is_deleted` (`is_deleted`),
+  KEY `idx_route_step_materials_created_by` (`created_by`),
+  KEY `idx_route_step_materials_updated_by` (`updated_by`),
+  KEY `idx_route_step_materials_deleted_by` (`deleted_by`),
+  CONSTRAINT `fk_route_step_materials_created_by` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_route_step_materials_deleted_by` FOREIGN KEY (`deleted_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_route_step_materials_product_material_id` FOREIGN KEY (`product_material_id`) REFERENCES `product_materials` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_route_step_materials_route_step_id` FOREIGN KEY (`route_step_id`) REFERENCES `process_route_steps` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_route_step_materials_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `route_step_materials`
+--
+
+LOCK TABLES `route_step_materials` WRITE;
+/*!40000 ALTER TABLE `route_step_materials` DISABLE KEYS */;
+/*!40000 ALTER TABLE `route_step_materials` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
 -- Table structure for table `technical_files`
 --
 
@@ -485,7 +784,7 @@ CREATE TABLE `technical_files` (
   CONSTRAINT `fk_technical_files_created_by` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_technical_files_deleted_by` FOREIGN KEY (`deleted_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_technical_files_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -494,7 +793,7 @@ CREATE TABLE `technical_files` (
 
 LOCK TABLES `technical_files` WRITE;
 /*!40000 ALTER TABLE `technical_files` DISABLE KEYS */;
-INSERT INTO `technical_files` VALUES (1,'装配作业指导书.pdf','/files/processes/GX-001.pdf','sop','V1.0',1,'工序 SOP 样例',NULL,'2026-06-11 15:38:06',NULL,'2026-06-11 15:38:06',0,NULL,NULL),(2,'调试规范.pdf','/files/processes/GX-002.pdf','sop','V1.0',1,'工序 SOP 样例',NULL,'2026-06-11 15:38:06',NULL,'2026-06-11 15:38:06',0,NULL,NULL),(3,'3- çç©ºçæ¥å·¥èºè§ç¨.docx','/uploads/processes/1781166456931-3-_çç©ºçæ¥å·¥èºè§ç¨.docx','process_sop',NULL,1,'生产工序上传文件',NULL,'2026-06-11 16:27:36',NULL,'2026-06-11 16:27:36',0,NULL,NULL);
+INSERT INTO `technical_files` VALUES (1,'装配作业指导书.pdf','/files/processes/GX-001.pdf','sop','V1.0',1,'工序 SOP 样例',NULL,'2026-06-11 15:38:06',NULL,'2026-06-11 15:38:06',0,NULL,NULL),(2,'调试规范.pdf','/files/processes/GX-002.pdf','sop','V1.0',1,'工序 SOP 样例',NULL,'2026-06-11 15:38:06',NULL,'2026-06-11 15:38:06',0,NULL,NULL),(3,'3- 真空焊接工艺规程.docx','/uploads/processes/1781166456931-3-_çç©ºçæ¥å·¥èºè§ç¨.docx','process_sop',NULL,1,'生产工序上传文件',NULL,'2026-06-11 16:27:36',NULL,'2026-06-11 17:19:36',0,NULL,NULL),(4,'1- 微电路制作检验规程.docx','/uploads/processes/1781169761042-1-_微电路制作检验规程.docx','process_sop',NULL,1,'生产工序上传文件',NULL,'2026-06-11 17:22:41',NULL,'2026-06-11 17:22:41',0,NULL,NULL);
 /*!40000 ALTER TABLE `technical_files` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -560,8 +859,68 @@ CREATE TABLE `users` (
 
 LOCK TABLES `users` WRITE;
 /*!40000 ALTER TABLE `users` DISABLE KEYS */;
-INSERT INTO `users` VALUES (1,1,'admin','$2a$10$lBhLsLyMmRFaviyRy6aiO.DZInv6MAHrm7qSp5OO.yyzD.zvsZgsO','系统管理员','admin@company.local',NULL,1,'2026-06-11 16:47:14','2026-06-11 11:47:00','2026-06-11 16:47:14',NULL),(2,2,'production_manager','$2a$10$lBhLsLyMmRFaviyRy6aiO.DZInv6MAHrm7qSp5OO.yyzD.zvsZgsO','生产主管','production.manager@company.local',NULL,1,NULL,'2026-06-11 11:47:00','2026-06-11 11:47:00',NULL),(3,2,'production_operator','$2a$10$lBhLsLyMmRFaviyRy6aiO.DZInv6MAHrm7qSp5OO.yyzD.zvsZgsO','生产操作员','production.operator@company.local',NULL,1,NULL,'2026-06-11 11:47:00','2026-06-11 11:47:00',NULL),(4,3,'quality_inspector','$2a$10$lBhLsLyMmRFaviyRy6aiO.DZInv6MAHrm7qSp5OO.yyzD.zvsZgsO','质量检验员','quality.inspector@company.local',NULL,1,NULL,'2026-06-11 11:47:00','2026-06-11 11:47:00',NULL);
+INSERT INTO `users` VALUES (1,1,'admin','$2a$10$lBhLsLyMmRFaviyRy6aiO.DZInv6MAHrm7qSp5OO.yyzD.zvsZgsO','系统管理员','admin@company.local',NULL,1,'2026-06-12 15:39:12','2026-06-11 11:47:00','2026-06-12 15:39:12',NULL),(2,2,'production_manager','$2a$10$lBhLsLyMmRFaviyRy6aiO.DZInv6MAHrm7qSp5OO.yyzD.zvsZgsO','生产主管','production.manager@company.local',NULL,1,NULL,'2026-06-11 11:47:00','2026-06-11 11:47:00',NULL),(3,2,'production_operator','$2a$10$lBhLsLyMmRFaviyRy6aiO.DZInv6MAHrm7qSp5OO.yyzD.zvsZgsO','生产操作员','production.operator@company.local',NULL,1,NULL,'2026-06-11 11:47:00','2026-06-11 11:47:00',NULL),(4,3,'quality_inspector','$2a$10$lBhLsLyMmRFaviyRy6aiO.DZInv6MAHrm7qSp5OO.yyzD.zvsZgsO','质量检验员','quality.inspector@company.local',NULL,1,NULL,'2026-06-11 11:47:00','2026-06-11 11:47:00',NULL);
 /*!40000 ALTER TABLE `users` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `work_orders`
+--
+
+DROP TABLE IF EXISTS `work_orders`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `work_orders` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '涓婚敭',
+  `order_no` varchar(100) NOT NULL COMMENT '宸ュ崟鍙',
+  `product_id` bigint unsigned NOT NULL COMMENT '浜у搧ID',
+  `route_id` bigint unsigned DEFAULT NULL COMMENT '鏈?伐鍗曟墽琛屽伐鑹鸿矾绾縄D',
+  `planned_quantity` decimal(12,4) NOT NULL COMMENT '璁″垝鐢熶骇鏁伴噺',
+  `unit` varchar(50) NOT NULL DEFAULT 'pcs' COMMENT '鍗曚綅',
+  `owner_id` bigint unsigned DEFAULT NULL COMMENT '宸ュ崟璐熻矗浜',
+  `status` varchar(50) NOT NULL DEFAULT 'draft' COMMENT 'draft/released/doing/completed/closed/cancelled',
+  `plan_start_date` date DEFAULT NULL COMMENT '璁″垝寮??鏃ユ湡',
+  `plan_end_date` date DEFAULT NULL COMMENT '璁″垝瀹屾垚鏃ユ湡',
+  `actual_start_at` datetime DEFAULT NULL COMMENT '瀹為檯寮??鏃堕棿',
+  `actual_end_at` datetime DEFAULT NULL COMMENT '瀹為檯瀹屾垚鏃堕棿',
+  `remark` text COMMENT '澶囨敞',
+  `created_by` bigint unsigned DEFAULT NULL COMMENT '鍒涘缓浜',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '鍒涘缓鏃堕棿',
+  `updated_by` bigint unsigned DEFAULT NULL COMMENT '鏇存柊浜',
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '鏇存柊鏃堕棿',
+  `is_deleted` tinyint NOT NULL DEFAULT '0' COMMENT '杞?垹闄ゆ爣璁',
+  `deleted_by` bigint unsigned DEFAULT NULL COMMENT '鍒犻櫎浜',
+  `deleted_at` datetime DEFAULT NULL COMMENT '鍒犻櫎鏃堕棿',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_work_orders_no_deleted` (`order_no`,`is_deleted`),
+  KEY `idx_work_orders_product_id` (`product_id`),
+  KEY `idx_work_orders_route_id` (`route_id`),
+  KEY `idx_work_orders_owner_id` (`owner_id`),
+  KEY `idx_work_orders_status` (`status`),
+  KEY `idx_work_orders_plan_dates` (`plan_start_date`,`plan_end_date`),
+  KEY `idx_work_orders_is_deleted` (`is_deleted`),
+  KEY `idx_work_orders_created_by` (`created_by`),
+  KEY `idx_work_orders_updated_by` (`updated_by`),
+  KEY `idx_work_orders_deleted_by` (`deleted_by`),
+  CONSTRAINT `fk_work_orders_created_by` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_work_orders_deleted_by` FOREIGN KEY (`deleted_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_work_orders_owner_id` FOREIGN KEY (`owner_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_work_orders_product_id` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`),
+  CONSTRAINT `fk_work_orders_route_id` FOREIGN KEY (`route_id`) REFERENCES `process_routes` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_work_orders_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `chk_work_orders_quantity` CHECK ((`planned_quantity` > 0)),
+  CONSTRAINT `chk_work_orders_status` CHECK ((`status` in (_gbk'draft',_gbk'released',_gbk'doing',_gbk'completed',_gbk'closed',_gbk'cancelled')))
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='宸ュ崟琛';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `work_orders`
+--
+
+LOCK TABLES `work_orders` WRITE;
+/*!40000 ALTER TABLE `work_orders` DISABLE KEYS */;
+INSERT INTO `work_orders` VALUES (1,'GD-001',1,1,100.0000,'个',2,'released','2026-06-15','2026-06-18',NULL,NULL,'需要提供检测报告',NULL,'2026-06-12 14:53:35',NULL,'2026-06-12 14:54:04',0,NULL,NULL);
+/*!40000 ALTER TABLE `work_orders` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
@@ -573,4 +932,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-06-11 16:56:46
+-- Dump completed on 2026-06-12 16:51:44

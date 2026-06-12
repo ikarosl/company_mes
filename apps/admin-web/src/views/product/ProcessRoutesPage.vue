@@ -34,13 +34,11 @@
           </template>
         </el-table-column>
         <el-table-column prop="routeCode" label="路线编号" min-width="150" />
+        <el-table-column label="使用产品类型" min-width="160">
+          <template #default="{ row }">{{ formatRouteCategory(row) }}</template>
+        </el-table-column>
         <el-table-column label="工序顺序" min-width="260">
           <template #default="{ row }">{{ row.processSummary || '未配置' }}</template>
-        </el-table-column>
-        <el-table-column label="适用产品" min-width="160">
-          <template #default="{ row }">
-            {{ row.productNames.length ? row.productNames.join('、') : '-' }}
-          </template>
         </el-table-column>
         <el-table-column label="版本" width="100">
           <template #default="{ row }">{{ row.version || '-' }}</template>
@@ -52,11 +50,10 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="370" fixed="right">
+        <el-table-column label="操作" width="310" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">查看</el-button>
             <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-button link type="primary" @click="openProducts(row)">适用产品</el-button>
             <el-button link type="primary" @click="openSteps(row)">配置工序</el-button>
             <el-button
               link
@@ -92,12 +89,22 @@
       :title="editingRouteId ? '编辑工艺路线' : '新增工艺路线'"
       width="640px"
     >
-      <el-form class="dialog-form" label-width="104px" :model="routeForm">
+      <el-form class="dialog-form" label-width="112px" :model="routeForm">
         <el-form-item label="路线编号" required>
           <el-input v-model="routeForm.routeCode" placeholder="例如：ROUTE-CIR-STD" />
         </el-form-item>
         <el-form-item label="路线名称" required>
           <el-input v-model="routeForm.routeName" placeholder="例如：环形器标准工艺路线" />
+        </el-form-item>
+        <el-form-item label="使用产品类型" required>
+          <el-select v-model="routeForm.productCategoryId" filterable placeholder="请选择产品分类">
+            <el-option
+              v-for="category in categoryOptions"
+              :key="category.id"
+              :label="formatCategory(category)"
+              :value="category.id"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="版本">
           <el-input v-model="routeForm.version" placeholder="例如：V1.0" />
@@ -175,39 +182,16 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="productsDialogVisible" title="选择适用产品" width="760px">
-      <el-select
-        v-model="productForm.productIds"
-        class="product-picker"
-        multiple
-        filterable
-        placeholder="请选择适用该工艺路线的产品"
-      >
-        <el-option
-          v-for="product in productOptions"
-          :key="product.id"
-          :label="formatProductOption(product)"
-          :value="product.id"
-        />
-      </el-select>
-      <template #footer>
-        <el-button @click="productsDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="submitProducts">保存适用产品</el-button>
-      </template>
-    </el-dialog>
-
     <el-dialog v-model="detailDialogVisible" title="工艺路线详情" width="860px">
       <el-descriptions v-if="detailRow" :column="2" border>
         <el-descriptions-item label="路线编号">{{ detailRow.routeCode }}</el-descriptions-item>
         <el-descriptions-item label="路线名称">{{ detailRow.routeName }}</el-descriptions-item>
+        <el-descriptions-item label="使用产品类型">{{ formatRouteCategory(detailRow) }}</el-descriptions-item>
         <el-descriptions-item label="版本">{{ detailRow.version || '-' }}</el-descriptions-item>
         <el-descriptions-item label="状态">
           {{ detailRow.status === 1 ? '启用' : '停用' }}
         </el-descriptions-item>
-        <el-descriptions-item label="适用产品" :span="2">
-          {{ detailRow.productNames.length ? detailRow.productNames.join('、') : '-' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="备注" :span="2">{{ detailRow.remark || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="备注">{{ detailRow.remark || '-' }}</el-descriptions-item>
       </el-descriptions>
       <el-table v-if="detailRow" :data="detailRow.steps" class="detail-step-table">
         <el-table-column prop="stepOrder" label="顺序" width="80" align="center" />
@@ -235,9 +219,9 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type {
   ProcessOption,
-  ProductListItem,
   ProcessRouteDetail,
   ProcessRouteListItem,
+  ProductCategoryListItem,
   SystemUserListItem,
 } from '@company/api-contract';
 import { productApi } from '../../api/product';
@@ -253,7 +237,7 @@ type StepFormRow = {
 
 const routes = ref<ProcessRouteListItem[]>([]);
 const processOptions = ref<ProcessOption[]>([]);
-const productOptions = ref<ProductListItem[]>([]);
+const categoryOptions = ref<ProductCategoryListItem[]>([]);
 const userOptions = ref<SystemUserListItem[]>([]);
 const loading = ref(false);
 const submitting = ref(false);
@@ -262,7 +246,6 @@ const currentPage = ref(1);
 const pageSize = ref(10);
 const routeDialogVisible = ref(false);
 const stepsDialogVisible = ref(false);
-const productsDialogVisible = ref(false);
 const detailDialogVisible = ref(false);
 const editingRouteId = ref<string | null>(null);
 const detailRow = ref<ProcessRouteDetail | null>(null);
@@ -273,15 +256,13 @@ const query = reactive({
 const routeForm = reactive({
   routeCode: '',
   routeName: '',
+  productCategoryId: '',
   version: '',
   enabled: true,
   remark: '',
 });
 const stepForm = reactive<{ steps: StepFormRow[] }>({
   steps: [],
-});
-const productForm = reactive<{ productIds: string[] }>({
-  productIds: [],
 });
 
 const loadRoutes = async () => {
@@ -304,9 +285,9 @@ const loadProcessOptions = async () => {
   processOptions.value = await productApi.listProcessOptions();
 };
 
-const loadProductOptions = async () => {
-  const page = await productApi.listProducts({ page: 1, pageSize: 500, status: 'enabled' });
-  productOptions.value = page.items;
+const loadCategoryOptions = async () => {
+  const page = await productApi.listCategories({ page: 1, pageSize: 200, status: 'enabled' });
+  categoryOptions.value = page.items;
 };
 
 const loadPageData = async () => {
@@ -315,6 +296,7 @@ const loadPageData = async () => {
     const [processes, users] = await Promise.all([
       productApi.listProcessOptions(),
       systemApi.listUsers({ page: 1, pageSize: 100 }),
+      loadCategoryOptions(),
     ]);
     processOptions.value = processes;
     userOptions.value = users;
@@ -345,23 +327,27 @@ const resetRouteForm = () => {
   Object.assign(routeForm, {
     routeCode: '',
     routeName: '',
+    productCategoryId: '',
     version: 'V1.0',
     enabled: true,
     remark: '',
   });
 };
 
-const openCreate = () => {
+const openCreate = async () => {
   editingRouteId.value = null;
+  await loadCategoryOptions();
   resetRouteForm();
   routeDialogVisible.value = true;
 };
 
-const openEdit = (row: ProcessRouteListItem) => {
+const openEdit = async (row: ProcessRouteListItem) => {
   editingRouteId.value = row.id;
+  await loadCategoryOptions();
   Object.assign(routeForm, {
     routeCode: row.routeCode,
     routeName: row.routeName,
+    productCategoryId: row.productCategoryId ?? '',
     version: row.version ?? '',
     enabled: row.status === 1,
     remark: row.remark ?? '',
@@ -383,14 +369,6 @@ const openSteps = async (row: ProcessRouteListItem) => {
   stepsDialogVisible.value = true;
 };
 
-const openProducts = async (row: ProcessRouteListItem) => {
-  editingRouteId.value = row.id;
-  await loadProductOptions();
-  const detail = await productApi.getRoute(row.id);
-  productForm.productIds = [...detail.productIds];
-  productsDialogVisible.value = true;
-};
-
 const openDetail = async (row: ProcessRouteListItem) => {
   detailRow.value = await productApi.getRoute(row.id);
   detailDialogVisible.value = true;
@@ -402,11 +380,17 @@ const submitRoute = async () => {
     return;
   }
 
+  if (!routeForm.productCategoryId) {
+    ElMessage.warning('请选择使用产品类型');
+    return;
+  }
+
   submitting.value = true;
   try {
     const payload = {
       routeCode: routeForm.routeCode,
       routeName: routeForm.routeName,
+      productCategoryId: routeForm.productCategoryId,
       version: routeForm.version,
       status: routeForm.enabled ? 1 : 0,
       remark: routeForm.remark,
@@ -496,24 +480,6 @@ const submitSteps = async () => {
   }
 };
 
-const submitProducts = async () => {
-  if (!editingRouteId.value) {
-    return;
-  }
-
-  submitting.value = true;
-  try {
-    await productApi.configureRouteProducts(editingRouteId.value, {
-      productIds: productForm.productIds,
-    });
-    ElMessage.success('适用产品已保存');
-    productsDialogVisible.value = false;
-    await loadRoutes();
-  } finally {
-    submitting.value = false;
-  }
-};
-
 const toggleStatus = async (row: ProcessRouteListItem) => {
   const nextStatus = row.status === 1 ? 0 : 1;
   const actionText = nextStatus === 1 ? '启用' : '停用';
@@ -551,11 +517,14 @@ const deleteRoute = async (row: ProcessRouteListItem) => {
 const getProcessOption = (processId: string) =>
   processOptions.value.find((process) => process.id === processId);
 
+const formatCategory = (category: ProductCategoryListItem) =>
+  `${category.productAttribute} / ${category.productType}`;
+
+const formatRouteCategory = (route: ProcessRouteListItem | ProcessRouteDetail) =>
+  route.productAttribute && route.productType ? `${route.productAttribute} / ${route.productType}` : '-';
+
 const formatProcessOption = (process: ProcessOption) =>
   `${process.processCode} / ${process.processName}`;
-
-const formatProductOption = (product: ProductListItem) =>
-  `${product.productModel} / ${product.productName}`;
 
 const openProcessCreateWindow = () => {
   window.open('/product/processes', '_blank');
@@ -661,10 +630,6 @@ onMounted(loadPageData);
 .step-table :deep(.el-input),
 .step-table :deep(.el-select),
 .step-table :deep(.el-input-number) {
-  width: 100%;
-}
-
-.product-picker {
   width: 100%;
 }
 

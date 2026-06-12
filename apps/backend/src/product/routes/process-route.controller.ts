@@ -1,7 +1,6 @@
 import { PERMISSIONS } from '@company/constants';
 import { Body, Controller, Delete, Get, Inject, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import type {
-  ConfigureProcessRouteProductsPayload,
   ConfigureProcessRouteStepsPayload,
   CreateProcessRoutePayload,
   UpdateProcessRoutePayload,
@@ -67,11 +66,5 @@ export class ProcessRouteController {
   @Put('routes/:id/processes')
   configureRouteSteps(@Param('id') id: string, @Body() body: ConfigureProcessRouteStepsPayload) {
     return this.routes.configureRouteSteps(readId(id), body);
-  }
-
-  @RequirePermission(PERMISSIONS.product.routes.update)
-  @Put('routes/:id/products')
-  configureRouteProducts(@Param('id') id: string, @Body() body: ConfigureProcessRouteProductsPayload) {
-    return this.routes.configureRouteProducts(readId(id), body);
   }
 }

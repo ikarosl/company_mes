@@ -1,6 +1,5 @@
 import {
   BUSINESS_API,
-  type ConfigureProcessRouteProductsPayload,
   type ConfigureProcessRouteStepsPayload,
   type CreateProductCategoryPayload,
   type CreateProductPayload,
@@ -96,12 +95,6 @@ export const productApi = {
   configureRouteSteps: (id: string, data: ConfigureProcessRouteStepsPayload) =>
     requestData<ProcessRouteDetail>({
       url: `${BUSINESS_API.routes}/${id}/processes`,
-      method: 'PUT',
-      data,
-    }),
-  configureRouteProducts: (id: string, data: ConfigureProcessRouteProductsPayload) =>
-    requestData<ProcessRouteDetail>({
-      url: `${BUSINESS_API.routes}/${id}/products`,
       method: 'PUT',
       data,
     }),

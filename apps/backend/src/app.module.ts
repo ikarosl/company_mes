@@ -6,10 +6,20 @@ import { DatabaseModule } from './database/database.module.js';
 import { AuditInterceptor } from './operation-log/audit.interceptor.js';
 import { OperationLogModule } from './operation-log/operation-log.module.js';
 import { ProductModule } from './product/product.module.js';
+import { ProductionModule } from './production/production.module.js';
 import { SystemModule } from './system/system.module.js';
+import { WarehouseModule } from './warehouse/warehouse.module.js';
 
 @Module({
-  imports: [DatabaseModule, OperationLogModule, AuthModule, SystemModule, ProductModule],
+  imports: [
+    DatabaseModule,
+    OperationLogModule,
+    AuthModule,
+    SystemModule,
+    ProductModule,
+    WarehouseModule,
+    ProductionModule,
+  ],
   controllers: [AppController],
   providers: [
     {

@@ -116,14 +116,14 @@ export interface ProcessRouteListRow extends RowDataPacket {
   id: number;
   route_code: string;
   route_name: string;
+  product_category_id: number | null;
+  product_attribute: string | null;
+  product_type: string | null;
   version: string | null;
   status: number;
   remark: string | null;
   step_count: number;
   process_summary: string | null;
-  product_count: number;
-  product_ids: string | null;
-  product_names: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -132,6 +132,7 @@ export interface ProcessRouteRow extends RowDataPacket {
   id: number;
   route_code: string;
   route_name: string;
+  product_category_id: number | null;
   version: string | null;
   status: number;
   remark: string | null;

@@ -16,6 +16,8 @@ export type QueryParams = PageQuery & {
   logType?: string;
   module?: string;
   userId?: string;
+  ownerId?: string;
+  productId?: string;
   productAttribute?: string;
   productType?: string;
   categoryId?: string;
