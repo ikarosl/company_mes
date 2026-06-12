@@ -23,8 +23,6 @@ const JWT_SECRET = new TextEncoder().encode(
 
 @Injectable()
 export class AuthService {
-  private readonly refreshTokenIds = new Map<string, string>();
-
   constructor(@Inject(AuthRepository) private readonly authRepository: AuthRepository) {}
 
   async login(payload: LoginRequest): Promise<AuthResultWithRefreshToken> {
@@ -44,9 +42,14 @@ export class AuthService {
 
   async refresh(refreshToken: string): Promise<AuthResultWithRefreshToken> {
     const claims = await this.verifyToken(refreshToken, 'refresh');
-    const storedJti = this.refreshTokenIds.get(claims.sub);
 
-    if (!claims.jti || storedJti !== claims.jti) {
+    if (!claims.jti) {
+      throw new UnauthorizedException('Refresh token is invalid');
+    }
+
+    // 查数据库确认 jti 存在且未过期（而非内存 Map）
+    const stored = await this.authRepository.findRefreshToken(claims.jti);
+    if (!stored) {
       throw new UnauthorizedException('Refresh token is no longer valid');
     }
 
@@ -65,8 +68,9 @@ export class AuthService {
   async revokeRefreshToken(refreshToken: string) {
     try {
       const claims = await this.verifyToken(refreshToken, 'refresh');
-      if (claims.jti && this.refreshTokenIds.get(claims.sub) === claims.jti) {
-        this.refreshTokenIds.delete(claims.sub);
+      if (claims.jti) {
+        // 从数据库删除（而非内存 Map）
+        await this.authRepository.deleteRefreshToken(claims.jti);
       }
     } catch {
       // Logout must clear the browser cookie even when the token is already invalid.
@@ -97,7 +101,10 @@ export class AuthService {
       REFRESH_TOKEN_TTL_SECONDS,
       refreshJti,
     );
-    this.refreshTokenIds.set(profile.id, refreshJti);
+
+    // 持久化到数据库（而非内存 Map），后端重启不丢失
+    const refreshExpiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000);
+    await this.authRepository.saveRefreshToken(profile.id, refreshJti, refreshExpiresAt);
 
     return {
       accessToken,
@@ -114,10 +121,9 @@ export class AuthService {
     jti?: string,
   ) {
     const iat = nowSeconds();
+    // JWT 只放身份标识，不放 roles/permissions —— 避免 Cookie 超过 4KB 被浏览器拒收
     const jwt = new SignJWT({
       username: profile.username,
-      roles: profile.roles,
-      permissions: profile.permissions,
       kind,
     })
       .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })

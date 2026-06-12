@@ -35,7 +35,9 @@ export interface ValidateTokenResponse {
 export interface JwtClaims {
   sub: string;
   username: string;
-  roles: string[];
+  /** @deprecated 已从 JWT 中移除，权限通过 DB 查询获取 */
+  roles?: string[];
+  /** @deprecated 已从 JWT 中移除，权限通过 DB 查询获取 */
   permissions?: string[];
   kind: AuthTokenKind;
   exp: number;

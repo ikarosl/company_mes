@@ -221,15 +221,15 @@ export const routes: RouteRecordRaw[] = [
         '派工管理',
         '生产管理',
         ['查看', '派工', '改派', '一键按默认派工', '清除全部派工'],
-        PERMISSIONS.production.tasks.dispatch,
+        PERMISSIONS.production.dispatch.page,
       ),
       plannedPage(
         'production/execution-records',
         'production-execution-records',
-        '生产执行记录',
+        '生产报工',
         '生产管理',
-        ['查看', '开始生产', '填写完成数量', '填写不合格数量', '上传文件', '完成生产', '记录异常'],
-        PERMISSIONS.production.tasks.start,
+        ['查看', '开工', '完工', '开工并报工', '批量报工', '查看详情'],
+        PERMISSIONS.production.reports.page,
       ),
 
       plannedPage(

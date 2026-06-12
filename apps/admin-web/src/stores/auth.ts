@@ -10,7 +10,7 @@ export const useAuthStore = defineStore('auth', () => {
   const session = ref<AuthSession | null>(readStoredSession());
   const authClient = createAuthClient({
     getSession: () => session.value,
-    setSession: (nextSession) => {
+    setSession: (nextSession: AuthSession | null) => {
       session.value = nextSession;
       if (nextSession) {
         window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextSession));

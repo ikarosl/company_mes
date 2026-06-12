@@ -25,6 +25,8 @@ export const BUSINESS_API = {
   orders: '/orders',
   tasks: '/tasks',
   materialAllocation: '/material-allocation',
+  dispatch: '/dispatch',
+  executionRecords: '/execution-records',
   qualityInspections: '/quality/inspections',
   qualityReworks: '/quality/reworks',
   workerTasks: '/worker/tasks',

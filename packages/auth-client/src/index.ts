@@ -41,7 +41,10 @@ const REFRESH_LEEWAY_MS = 30_000;
 export class AuthClient {
   private readonly http: AxiosInstance;
   private readonly api: AuthApi;
+  //getSessionState由apps\admin-web\src\stores\auth.ts中的useAuthStore提供，返回当前的AuthSession状态
   private readonly getSessionState: () => AuthSession | null;
+  //setSessionState由apps\admin-web\src\stores\auth.ts中的useAuthStore提供，用于更新AuthSession状态
+  //请注意该方法本质是用于持久化token信息到localStorage，其持久化为AuthSession类型的对象
   private readonly setSessionState: (session: AuthSession | null) => void;
   private refreshPromise: Promise<AuthSession> | null = null;
 
