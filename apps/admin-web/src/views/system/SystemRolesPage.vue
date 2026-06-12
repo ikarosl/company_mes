@@ -114,9 +114,10 @@
     <el-dialog
       v-model="permissionDialogVisible"
       title="分配权限"
-      width="80%"
+      width="1080px"
       class="permission-dialog"
       :close-on-click-modal="false"
+      @closed="resetPermissionDialog"
     >
       <!-- 角色信息头 -->
       <div class="perm-role-header">
@@ -134,28 +135,64 @@
             <span class="perm-info-value">{{ editingRole?.description ?? '-' }}</span>
           </span>
         </div>
+        <div class="perm-role-actions">
+          <el-button
+            type="primary"
+            :loading="permissionSaving"
+            :disabled="permissionLoading"
+            @click="submitRolePermissions"
+          >
+            保存
+          </el-button>
+          <el-button
+            :disabled="permissionLoading || permissionSaving"
+            @click="resetAssignedPermissions"
+          >
+            重置
+          </el-button>
+        </div>
       </div>
 
+      <div class="perm-section-title">权限配置</div>
+
       <!-- 主体：左侧树 + 右侧权限详情 -->
-      <div class="perm-body">
+      <div v-loading="permissionLoading" class="perm-body">
         <!-- 左侧：模块树 -->
         <div class="perm-tree-panel">
-          <div class="perm-panel-header">权限配置</div>
+          <div class="perm-panel-header">模块目录</div>
+          <div class="perm-tree-search">
+            <el-input
+              v-model="permissionKeyword"
+              clearable
+              :prefix-icon="Search"
+              placeholder="请输入模块名称"
+            />
+          </div>
           <el-tree
+            ref="permissionTreeRef"
             :data="permissionTree"
             :props="treeProps"
+            :filter-node-method="filterPermissionNode"
+            :expand-on-click-node="false"
             node-key="id"
-            show-checkbox
             highlight-current
+            @node-click="handlePermissionNodeClick"
           >
             <template #default="{ node, data }">
               <span
-                :style="{
-                  cursor: node.level >= 3 ? 'not-allowed' : 'pointer',
-                  color: node.level >= 3 ? '#b0b8c4' : undefined,
+                class="perm-tree-node"
+                :class="{
+                  'is-active': activePermissionNode?.id === data.id,
+                  'is-leaf-permission': node.level >= 3,
                 }"
               >
-                {{ data.name }}
+                <el-checkbox
+                  :model-value="isPermissionChecked(data)"
+                  :indeterminate="isPermissionIndeterminate(data)"
+                  @click.stop
+                  @change="handlePermissionCheck(data, $event)"
+                />
+                <span class="perm-tree-label">{{ data.name }}</span>
               </span>
             </template>
           </el-tree>
@@ -163,8 +200,51 @@
 
         <!-- 右侧：权限详情表格 -->
         <div class="perm-detail-panel">
-          <div class="perm-panel-header">权限详情</div>
-          <div class="perm-empty">请从左侧选择一个功能模块查看权限详情</div>
+          <div class="perm-detail-header">
+            <div>
+              <span class="perm-detail-title">{{ activePermissionNode?.name ?? '权限详情' }}</span>
+              <span v-if="activePermissionNode" class="perm-detail-count">
+                权限列表（已选择 {{ activeScopeCheckedCount }} 项）
+              </span>
+            </div>
+            <div v-if="permissionDetailRows.length" class="perm-detail-actions">
+              <el-button link type="primary" @click="setPermissionDetailExpanded(true)">
+                展开全部
+              </el-button>
+              <span class="perm-action-divider">|</span>
+              <el-button link type="primary" @click="setPermissionDetailExpanded(false)">
+                收起全部
+              </el-button>
+            </div>
+          </div>
+          <el-table
+            v-if="permissionDetailRows.length"
+            ref="permissionDetailTableRef"
+            :data="permissionDetailRows"
+            class="perm-table"
+            row-key="id"
+            default-expand-all
+            :tree-props="{ children: 'children' }"
+          >
+            <el-table-column label="权限名称" min-width="220">
+              <template #default="{ row }">
+                <div class="perm-name-cell">
+                  <el-checkbox
+                    :model-value="isPermissionChecked(row)"
+                    :indeterminate="isPermissionIndeterminate(row)"
+                    @click.stop
+                    @change="handlePermissionCheck(row, $event)"
+                  />
+                  <span>{{ row.name }}</span>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column prop="code" label="权限编码" min-width="260" />
+            <el-table-column label="权限描述" min-width="220">
+              <template #default="{ row }">{{ getPermissionDescription(row) }}</template>
+            </el-table-column>
+          </el-table>
+          <div v-else class="perm-empty">请从左侧选择一个功能模块查看权限详情</div>
         </div>
       </div>
     </el-dialog>
@@ -172,9 +252,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
-import { Plus, Refresh, Setting } from '@element-plus/icons-vue';
+import { Plus, Refresh, Search, Setting } from '@element-plus/icons-vue';
 import type {
   SystemPermissionTreeNode,
   SystemRoleListItem,
@@ -198,13 +278,72 @@ const editingRoleId = ref<string | null>(null);
 // 权限弹窗状态
 const permissionTree = ref<SystemPermissionTreeNode[]>([]);
 const editingRole = ref<SystemRoleListItem | null>(null);
+const permissionTreeRef = ref();
+const permissionDetailTableRef = ref();
+const permissionKeyword = ref('');
+const permissionLoading = ref(false);
+const permissionSaving = ref(false);
+const checkedPermissionIds = ref<Set<string>>(new Set());
+const initialPermissionIds = ref<string[]>([]);
+const activePermissionNode = ref<SystemPermissionTreeNode | null>(null);
 
 /** el-tree 属性配置：第三级（node.level >= 3）勾选框禁用仅展示 */
 const treeProps = {
   label: 'name',
   children: 'children',
-  disabled: (_data: unknown, node: { level: number }) => node.level >= 3,
 };
+
+const permissionRelations = computed(() => {
+  const parentById = new Map<string, string | null>();
+  const levelById = new Map<string, number>();
+
+  const walk = (nodes: SystemPermissionTreeNode[], parentId: string | null, level: number) => {
+    for (const node of nodes) {
+      parentById.set(node.id, parentId);
+      levelById.set(node.id, level);
+      walk(node.children ?? [], node.id, level + 1);
+    }
+  };
+
+  walk(permissionTree.value, null, 1);
+
+  return { parentById, levelById };
+});
+
+const permissionDetailRows = computed<SystemPermissionTreeNode[]>(() => {
+  if (!activePermissionNode.value) {
+    return [];
+  }
+
+  const activeLevel = getPermissionLevel(activePermissionNode.value);
+
+  if (activeLevel >= 3) {
+    return [];
+  }
+
+  return activeLevel === 1
+    ? activePermissionNode.value.children ?? []
+    : [activePermissionNode.value];
+});
+
+const activeScopeCheckedCount = computed(() => {
+  const ids = new Set<string>();
+
+  for (const row of permissionDetailRows.value) {
+    for (const id of collectPermissionIds(row)) {
+      ids.add(id);
+    }
+  }
+
+  let count = 0;
+  for (const id of ids) {
+    if (checkedPermissionIds.value.has(id)) {
+      count += 1;
+    }
+  }
+
+  return count;
+});
 
 const currentPage = ref(1);
 const pageSize = ref(10);
@@ -325,15 +464,170 @@ const submitRole = () => {
   ElMessage.warning('角色新增/编辑接口尚未接入');
 };
 
+const collectPermissionIds = (node: SystemPermissionTreeNode): string[] => [
+  node.id,
+  ...(node.children ?? []).flatMap((child) => collectPermissionIds(child)),
+];
+
+const getPermissionLevel = (node: SystemPermissionTreeNode) =>
+  permissionRelations.value.levelById.get(node.id) ?? 1;
+
+const isPermissionChecked = (node: SystemPermissionTreeNode) => {
+  const ids = collectPermissionIds(node);
+  return ids.length > 0 && ids.every((id) => checkedPermissionIds.value.has(id));
+};
+
+const isPermissionIndeterminate = (node: SystemPermissionTreeNode) => {
+  const ids = collectPermissionIds(node);
+
+  if (ids.length <= 1) {
+    return false;
+  }
+
+  const checkedCount = ids.filter((id) => checkedPermissionIds.value.has(id)).length;
+  return checkedCount > 0 && checkedCount < ids.length;
+};
+
+const handlePermissionCheck = (
+  node: SystemPermissionTreeNode,
+  checked: boolean | string | number,
+) => {
+  const nextCheckedPermissionIds = new Set(checkedPermissionIds.value);
+
+  for (const id of collectPermissionIds(node)) {
+    if (checked) {
+      nextCheckedPermissionIds.add(id);
+    } else {
+      nextCheckedPermissionIds.delete(id);
+    }
+  }
+
+  checkedPermissionIds.value = nextCheckedPermissionIds;
+};
+
+const handlePermissionNodeClick = (
+  node: SystemPermissionTreeNode,
+  treeNode?: { expanded: boolean },
+) => {
+  if (getPermissionLevel(node) >= 3) {
+    void nextTick(() => {
+      permissionTreeRef.value?.setCurrentKey?.(activePermissionNode.value?.id ?? null);
+    });
+    return;
+  }
+
+  activePermissionNode.value = node;
+  if (treeNode) {
+    treeNode.expanded = true;
+  }
+};
+
+const filterPermissionNode = (keyword: string, node: SystemPermissionTreeNode) => {
+  const normalizedKeyword = keyword.trim().toLowerCase();
+
+  if (!normalizedKeyword) {
+    return true;
+  }
+
+  return (
+    node.name.toLowerCase().includes(normalizedKeyword) ||
+    node.code.toLowerCase().includes(normalizedKeyword)
+  );
+};
+
+const getPermissionDescription = (node: SystemPermissionTreeNode) => {
+  if (node.apiMethod && node.apiPath) {
+    return `${node.apiMethod} ${node.apiPath}`;
+  }
+
+  if (node.routePath) {
+    return `页面路由 ${node.routePath}`;
+  }
+
+  return '权限分组';
+};
+
+const selectDefaultPermissionNode = async () => {
+  activePermissionNode.value =
+    permissionTree.value.find((node) => (node.children?.length ?? 0) > 0) ??
+    permissionTree.value[0] ??
+    null;
+
+  await nextTick();
+
+  if (activePermissionNode.value) {
+    permissionTreeRef.value?.setCurrentKey?.(activePermissionNode.value.id);
+  }
+};
+
+const setPermissionDetailExpanded = async (expanded: boolean) => {
+  await nextTick();
+
+  const toggleRows = (rows: SystemPermissionTreeNode[]) => {
+    for (const row of rows) {
+      permissionDetailTableRef.value?.toggleRowExpansion?.(row, expanded);
+      toggleRows(row.children ?? []);
+    }
+  };
+
+  toggleRows(permissionDetailRows.value);
+};
+
+const resetAssignedPermissions = () => {
+  checkedPermissionIds.value = new Set(initialPermissionIds.value);
+};
+
+const resetPermissionDialog = () => {
+  editingRole.value = null;
+  activePermissionNode.value = null;
+  permissionTree.value = [];
+  checkedPermissionIds.value = new Set();
+  initialPermissionIds.value = [];
+  permissionKeyword.value = '';
+  permissionLoading.value = false;
+  permissionSaving.value = false;
+};
+
 const openAssignPermissions = async (row: SystemRoleListItem) => {
   editingRole.value = row;
   editingRoleId.value = row.id;
   permissionDialogVisible.value = true;
+  permissionLoading.value = true;
 
   try {
-    permissionTree.value = await systemApi.listPermissionTree();
+    const [tree, rolePermissions] = await Promise.all([
+      systemApi.listPermissionTree(),
+      systemApi.getRolePermissions(row.id),
+    ]);
+    permissionTree.value = tree;
+    initialPermissionIds.value = rolePermissions.permissionIds;
+    checkedPermissionIds.value = new Set(rolePermissions.permissionIds);
+    await selectDefaultPermissionNode();
   } catch {
     ElMessage.error('加载权限数据失败');
+  } finally {
+    permissionLoading.value = false;
+  }
+};
+
+const submitRolePermissions = async () => {
+  if (!editingRoleId.value) {
+    return;
+  }
+
+  permissionSaving.value = true;
+
+  try {
+    await systemApi.assignRolePermissions(editingRoleId.value, {
+      permissionIds: [...checkedPermissionIds.value],
+    });
+    ElMessage.success('角色权限已保存');
+    permissionDialogVisible.value = false;
+    await loadPageData();
+  } catch {
+    ElMessage.error('保存角色权限失败');
+  } finally {
+    permissionSaving.value = false;
   }
 };
 
@@ -345,6 +639,10 @@ const deleteRole = (row: SystemRoleListItem) => {
 const showColumnSettingPending = () => {
   ElMessage.info('列设置暂未接入');
 };
+
+watch(permissionKeyword, (keyword) => {
+  permissionTreeRef.value?.filter?.(keyword);
+});
 
 onMounted(loadPageData);
 </script>
@@ -573,8 +871,12 @@ onMounted(loadPageData);
 }
 
 .perm-role-header {
-  padding: 16px 20px;
-  margin:12px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 20px;
+  margin: 12px 0;
   border-bottom: 1px solid #ebeef5;
   background: #fafafa;
 }
@@ -609,24 +911,44 @@ onMounted(loadPageData);
   font-weight: 600;
 }
 
+.perm-role-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.perm-role-actions :deep(.el-button) {
+  min-width: 72px;
+  height: 32px;
+  border-radius: 4px;
+}
+
+.perm-section-title {
+  height: 36px;
+  color: #303846;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 36px;
+}
+
 .perm-body {
   display: flex;
-  gap: 16px;
+  gap: 0;
   min-height: 460px;
+  border: 1px solid #e4e7ed;
+  border-radius: 4px;
 }
 
 .perm-tree-panel {
-  flex: 0 0 260px;
+  flex: 0 0 280px;
   overflow-y: auto;
-  border: 1px solid #e4e7ed;
-  border-radius: 4px;
+  border-right: 1px solid #e4e7ed;
 }
 
 .perm-detail-panel {
   flex: 1;
   overflow: hidden;
-  border: 1px solid #e4e7ed;
-  border-radius: 4px;
 }
 
 .perm-panel-header {
@@ -640,12 +962,88 @@ onMounted(loadPageData);
   line-height: 40px;
 }
 
+.perm-tree-search {
+  padding: 12px 12px 8px;
+}
+
+.perm-tree-search :deep(.el-input__wrapper) {
+  min-height: 32px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px #d8dee8 inset;
+}
+
 .perm-tree-panel :deep(.el-tree) {
-  padding: 8px 0;
+  padding: 0 8px 12px;
 }
 
 .perm-tree-panel :deep(.el-tree-node__content) {
   height: 36px;
+  border-radius: 4px;
+}
+
+.perm-tree-panel :deep(.el-tree-node__content:hover) {
+  background: #f5f8fc;
+}
+
+.perm-tree-panel :deep(.el-tree-node.is-current > .el-tree-node__content) {
+  background: #edf5ff;
+}
+
+.perm-tree-node {
+  display: inline-flex;
+  align-items: center;
+  width: calc(100% - 24px);
+  gap: 8px;
+  color: #303846;
+  cursor: pointer;
+}
+
+.perm-tree-node.is-leaf-permission {
+  color: #6b7280;
+}
+
+.perm-tree-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.perm-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 40px;
+  padding: 0 16px;
+  border-bottom: 1px solid #ebeef5;
+  background: #fafafa;
+}
+
+.perm-detail-title {
+  color: #303846;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.perm-detail-count {
+  margin-left: 8px;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.perm-detail-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.perm-detail-actions :deep(.el-button.is-link) {
+  padding: 0;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.perm-action-divider {
+  color: #d4d9e2;
 }
 
 .perm-table {
@@ -663,11 +1061,21 @@ onMounted(loadPageData);
   height: 44px;
 }
 
+.perm-table :deep(.el-table__cell) {
+  border-bottom-color: #edf0f5;
+}
+
 .perm-table :deep(.el-checkbox__inner) {
   width: 16px;
   height: 16px;
   border-color: #7b8aa0;
   border-radius: 4px;
+}
+
+.perm-name-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .perm-empty {

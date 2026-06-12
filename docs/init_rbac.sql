@@ -309,7 +309,19 @@ VALUES
   (223, 221, '查看规格书', 'inspector:tasks:view-spec', 'api', NULL, 'GET', '/inspector/tasks/{id}/spec', 712, 1),
   (224, 221, '填写检测结果', 'inspector:tasks:submit-result', 'api', NULL, 'PUT', '/inspector/tasks/{id}/result', 713, 1),
   (225, 221, '上传检测文件', 'inspector:tasks:upload-file', 'api', NULL, 'POST', '/inspector/tasks/{id}/files', 714, 1),
-  (226, 221, '创建检测返工', 'inspector:tasks:create-rework', 'api', NULL, 'POST', '/inspector/tasks/{id}/rework', 715, 1)
+  (226, 221, '创建检测返工', 'inspector:tasks:create-rework', 'api', NULL, 'POST', '/inspector/tasks/{id}/rework', 715, 1),
+  (230, 130, '派工管理', 'production:dispatch:view', 'page', '/production/dispatch', 'GET', '/dispatch', 480, 1),
+  (231, 230, '派工详情', 'production:dispatch:detail', 'api', NULL, 'GET', '/dispatch/{batchId}', 481, 1),
+  (232, 230, '工序派工', 'production:dispatch:assign', 'api', NULL, 'POST', '/dispatch/{batchId}/steps/{stepId}/assign', 482, 1),
+  (233, 230, '改派', 'production:dispatch:reassign', 'api', NULL, 'PUT', '/dispatch/{batchId}/steps/{stepId}/reassign', 483, 1),
+  (234, 230, '一键按默认派工', 'production:dispatch:batch-default', 'api', NULL, 'POST', '/dispatch/{batchId}/batch-default', 484, 1),
+  (235, 230, '清除全部派工', 'production:dispatch:clear', 'api', NULL, 'DELETE', '/dispatch/{batchId}/clear', 485, 1),
+  (240, 130, '生产报工', 'production:reports:view', 'page', '/production/execution-records', 'GET', '/execution-records', 490, 1),
+  (241, 240, '报工详情', 'production:reports:detail', 'api', NULL, 'GET', '/execution-records/{batchId}', 491, 1),
+  (242, 240, '开工', 'production:reports:start', 'api', NULL, 'POST', '/execution-records/{batchId}/steps/{stepId}/start', 492, 1),
+  (243, 240, '完工报工', 'production:reports:finish', 'api', NULL, 'POST', '/execution-records/{batchId}/steps/{stepId}/finish', 493, 1),
+  (244, 240, '开工并报工', 'production:reports:start-and-finish', 'api', NULL, 'POST', '/execution-records/{batchId}/steps/{stepId}/start-and-finish', 494, 1),
+  (245, 240, '批量报工', 'production:reports:batch-finish', 'api', NULL, 'POST', '/execution-records/batch-finish', 495, 1)
 ON DUPLICATE KEY UPDATE
   parent_id = VALUES(parent_id),
   name = VALUES(name),
