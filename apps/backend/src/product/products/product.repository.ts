@@ -7,16 +7,25 @@ import {
 } from '@nestjs/common';
 import type { ResultSetHeader } from 'mysql2';
 import type { RowDataPacket } from 'mysql2/promise';
-import type { CreateProductPayload, UpdateProductPayload } from '@company/api-contract';
+import type {
+  ConfigureProductMaterialsPayload,
+  CreateProductPayload,
+  ProductMaterialPayload,
+  UpdateProductPayload,
+} from '@company/api-contract';
 import { DatabaseService, type QueryParam } from '../../database/database.service.js';
+import { execute } from '../../shared/repository.helpers.js';
 import { type PaginationOptions, toPageResult } from '../../shared/request-utils.js';
-import type { CountRow, ProductListRow, ProductRow } from '../product.types.js';
+import type { CountRow, ProductListRow, ProductMaterialListRow, ProductRow } from '../product.types.js';
 import {
+  mapProductMaterial,
   mapProduct,
   normalizeOptionalString,
   normalizeSpecValues,
   nullableId,
   readAcquireMethod,
+  readPositiveDecimal,
+  readPositiveId,
   readRequiredString,
   readTinyStatus,
 } from '../product.utils.js';
@@ -55,12 +64,19 @@ export class ProductRepository {
         p.unit,
         p.acquire_method,
         p.spec_values,
+        COALESCE(pm.material_count, 0) AS material_count,
         p.status,
         p.remark,
         p.created_at,
         p.updated_at
       FROM products p
       LEFT JOIN product_categories c ON c.id = p.category_id AND c.is_deleted = 0
+      LEFT JOIN (
+        SELECT product_id, COUNT(*) AS material_count
+        FROM product_materials
+        WHERE is_deleted = 0
+        GROUP BY product_id
+      ) pm ON pm.product_id = p.id
       WHERE ${where}
       ORDER BY p.id DESC
       LIMIT ? OFFSET ?
@@ -200,6 +216,131 @@ export class ProductRepository {
     };
   }
 
+  async listProductMaterials(productId: number) {
+    await this.getProductRow(productId);
+    const rows = await this.database.query<ProductMaterialListRow[]>(
+      `
+      SELECT
+        pm.id,
+        pm.product_id,
+        pm.material_product_id,
+        mp.product_model AS material_model,
+        mp.product_name AS material_name,
+        mp.unit AS material_unit,
+        pm.quantity_per_unit,
+        pm.unit,
+        pm.is_key_material,
+        pm.need_batch_record,
+        pm.remark,
+        pm.created_at,
+        pm.updated_at
+      FROM product_materials pm
+      INNER JOIN products mp ON mp.id = pm.material_product_id AND mp.is_deleted = 0
+      WHERE pm.product_id = ? AND pm.is_deleted = 0
+      ORDER BY pm.id ASC
+    `,
+      [productId],
+    );
+
+    return rows.map(mapProductMaterial);
+  }
+
+  async configureProductMaterials(productId: number, payload: ConfigureProductMaterialsPayload) {
+    await this.getProductRow(productId);
+    const materials = await this.normalizeMaterialPayloads(productId, payload.materials ?? []);
+    const activeRows = await this.getProductMaterialRows(productId, false);
+    const allRows = await this.getProductMaterialRows(productId, true);
+    const activeByMaterialId = new Map(activeRows.map((row) => [row.material_product_id, row]));
+    const anyByMaterialId = new Map(allRows.map((row) => [row.material_product_id, row]));
+    const nextMaterialIds = new Set(materials.map((item) => item.materialProductId));
+
+    await this.database.transaction(async (connection) => {
+      // 产品用料清单是产品自关联，不新增物料主数据；保存时按物料产品逐行同步。
+      for (const row of activeRows) {
+        if (!nextMaterialIds.has(row.material_product_id)) {
+          await execute(
+            connection,
+            'UPDATE product_materials SET is_deleted = 1, deleted_at = NOW(), updated_at = NOW() WHERE id = ?',
+            [row.id],
+          );
+        }
+      }
+
+      for (const item of materials) {
+        const activeRow = activeByMaterialId.get(item.materialProductId);
+        const historicalRow = anyByMaterialId.get(item.materialProductId);
+        const params = [
+          item.quantityPerUnit,
+          item.unit,
+          item.isKeyMaterial,
+          item.needBatchRecord,
+          item.remark,
+        ];
+
+        if (activeRow) {
+          await execute(
+            connection,
+            `
+            UPDATE product_materials
+            SET quantity_per_unit = ?,
+              unit = ?,
+              is_key_material = ?,
+              need_batch_record = ?,
+              remark = ?,
+              updated_at = NOW()
+            WHERE id = ?
+          `,
+            [...params, activeRow.id],
+          );
+          continue;
+        }
+
+        if (historicalRow) {
+          await execute(
+            connection,
+            `
+            UPDATE product_materials
+            SET quantity_per_unit = ?,
+              unit = ?,
+              is_key_material = ?,
+              need_batch_record = ?,
+              remark = ?,
+              is_deleted = 0,
+              deleted_by = NULL,
+              deleted_at = NULL,
+              updated_at = NOW()
+            WHERE id = ?
+          `,
+            [...params, historicalRow.id],
+          );
+          continue;
+        }
+
+        await execute(
+          connection,
+          `
+          INSERT INTO product_materials (
+            product_id, material_product_id, quantity_per_unit, unit,
+            is_key_material, need_batch_record, remark, created_at, updated_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+        `,
+          [
+            productId,
+            item.materialProductId,
+            item.quantityPerUnit,
+            item.unit,
+            item.isKeyMaterial,
+            item.needBatchRecord,
+            item.remark,
+          ],
+        );
+      }
+    });
+
+    return this.listProductMaterials(productId);
+  }
+
   private buildListFilters(filters: ProductFilters) {
     const clauses = ['p.is_deleted = 0'];
     const params: QueryParam[] = [];
@@ -268,12 +409,19 @@ export class ProductRepository {
         p.unit,
         p.acquire_method,
         p.spec_values,
+        COALESCE(pm.material_count, 0) AS material_count,
         p.status,
         p.remark,
         p.created_at,
         p.updated_at
       FROM products p
       LEFT JOIN product_categories c ON c.id = p.category_id AND c.is_deleted = 0
+      LEFT JOIN (
+        SELECT product_id, COUNT(*) AS material_count
+        FROM product_materials
+        WHERE is_deleted = 0
+        GROUP BY product_id
+      ) pm ON pm.product_id = p.id
       WHERE p.id = ? AND p.is_deleted = 0
       LIMIT 1
     `,
@@ -328,5 +476,58 @@ export class ProductRepository {
     if (!row) {
       throw new BadRequestException('Product category not found or disabled');
     }
+  }
+
+  private async normalizeMaterialPayloads(productId: number, payloads: ProductMaterialPayload[]) {
+    if (!Array.isArray(payloads)) {
+      throw new BadRequestException('Invalid product materials');
+    }
+
+    const seenMaterialIds = new Set<number>();
+
+    return Promise.all(
+      payloads.map(async (item, index) => {
+        const materialProductId = readPositiveId(item.materialProductId, `Missing material product at row ${index + 1}`);
+        if (materialProductId === productId) {
+          throw new BadRequestException('Product cannot use itself as material');
+        }
+
+        if (seenMaterialIds.has(materialProductId)) {
+          throw new BadRequestException('Duplicate material product');
+        }
+
+        seenMaterialIds.add(materialProductId);
+        const material = await this.getProductRow(materialProductId);
+        if (material.status !== 1) {
+          throw new BadRequestException('Material product is disabled');
+        }
+
+        return {
+          materialProductId,
+          quantityPerUnit: readPositiveDecimal(item.quantityPerUnit, `Invalid quantity at row ${index + 1}`),
+          unit: normalizeOptionalString(item.unit) ?? material.unit,
+          isKeyMaterial: item.isKeyMaterial === undefined ? true : Boolean(item.isKeyMaterial),
+          needBatchRecord: item.needBatchRecord === undefined ? true : Boolean(item.needBatchRecord),
+          remark: normalizeOptionalString(item.remark),
+        };
+      }),
+    );
+  }
+
+  private async getProductMaterialRows(productId: number, includeDeleted: boolean) {
+    return this.database.query<
+      (RowDataPacket & {
+        id: number;
+        material_product_id: number;
+      })[]
+    >(
+      `
+      SELECT id, material_product_id
+      FROM product_materials
+      WHERE product_id = ?${includeDeleted ? '' : ' AND is_deleted = 0'}
+      ORDER BY id ASC
+    `,
+      [productId],
+    );
   }
 }

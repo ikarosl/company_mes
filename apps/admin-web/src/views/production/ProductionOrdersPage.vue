@@ -246,6 +246,11 @@
         <el-form-item label="计划数量" required>
           <el-input-number v-model="batchForm.plannedQuantity" :min="0.0001" :precision="4" :step="1" />
         </el-form-item>
+        <el-form-item label="工艺路线">
+          <el-select v-model="batchForm.routeId" clearable filterable placeholder="默认沿用工单路线">
+            <el-option v-for="route in routeOptions" :key="route.id" :label="route.routeName" :value="route.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="负责人">
           <el-select v-model="batchForm.ownerId" clearable filterable placeholder="请选择负责人">
             <el-option v-for="user in userOptions" :key="user.id" :label="user.displayName" :value="user.id" />
@@ -353,6 +358,7 @@ const orderForm = reactive({
 });
 const batchForm = reactive({
   batchNo: '',
+  routeId: '',
   plannedQuantity: 1,
   ownerId: '',
   status: 'pending' as ProductionBatchStatus,
@@ -507,6 +513,7 @@ const openTasks = async (row: WorkOrderListItem) => {
 const resetBatchForm = () => {
   Object.assign(batchForm, {
     batchNo: '',
+    routeId: taskOrder.value?.routeId ?? '',
     plannedQuantity: 1,
     ownerId: taskOrder.value?.ownerId ?? '',
     status: 'pending' as ProductionBatchStatus,
@@ -526,6 +533,7 @@ const openEditBatch = (row: ProductionBatchItem) => {
   editingBatchId.value = row.id;
   Object.assign(batchForm, {
     batchNo: row.batchNo,
+    routeId: row.routeId ?? '',
     plannedQuantity: Number(row.plannedQuantity),
     ownerId: row.ownerId ?? '',
     status: row.status,
@@ -546,6 +554,7 @@ const submitBatch = async () => {
   try {
     const payload = {
       batchNo: batchForm.batchNo || null,
+      routeId: batchForm.routeId || null,
       plannedQuantity: batchForm.plannedQuantity,
       ownerId: batchForm.ownerId || null,
       planStartDate: batchForm.planStartDate || null,

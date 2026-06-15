@@ -32,6 +32,7 @@ export interface ProductListRow extends RowDataPacket {
   unit: string;
   acquire_method: string;
   spec_values: string | null;
+  material_count: number;
   status: number;
   remark: string | null;
   created_at: Date;
@@ -48,6 +49,22 @@ export interface ProductRow extends RowDataPacket {
   spec_values: string | null;
   status: number;
   remark: string | null;
+}
+
+export interface ProductMaterialListRow extends RowDataPacket {
+  id: number;
+  product_id: number;
+  material_product_id: number;
+  material_model: string;
+  material_name: string;
+  material_unit: string;
+  quantity_per_unit: string | number;
+  unit: string | null;
+  is_key_material: number;
+  need_batch_record: number;
+  remark: string | null;
+  created_at: Date;
+  updated_at: Date;
 }
 
 export interface ProcessListRow extends RowDataPacket {

@@ -1,6 +1,7 @@
 import {
   BUSINESS_API,
   type ConfigureProcessRouteStepsPayload,
+  type ConfigureProductMaterialsPayload,
   type CreateProductCategoryPayload,
   type CreateProductPayload,
   type CreateProcessPayload,
@@ -12,6 +13,7 @@ import {
   type ProcessRouteListItem,
   type ProductCategoryListItem,
   type ProductListItem,
+  type ProductMaterialItem,
   type UpdateProductCategoryPayload,
   type UpdateProductPayload,
   type UpdateProcessPayload,
@@ -58,6 +60,17 @@ export const productApi = {
     requestData<{ productId: string; routes: unknown[] }>({
       url: `${BUSINESS_API.products}/${id}/routes`,
       method: 'GET',
+    }),
+  listProductMaterials: (id: string) =>
+    requestData<ProductMaterialItem[]>({
+      url: `${BUSINESS_API.products}/${id}/materials`,
+      method: 'GET',
+    }),
+  configureProductMaterials: (id: string, data: ConfigureProductMaterialsPayload) =>
+    requestData<ProductMaterialItem[]>({
+      url: `${BUSINESS_API.products}/${id}/materials`,
+      method: 'PUT',
+      data,
     }),
   listRoutes: (params?: QueryParams) =>
     requestData<PageResult<ProcessRouteListItem>>({

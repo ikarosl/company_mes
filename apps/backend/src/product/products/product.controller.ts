@@ -1,6 +1,10 @@
 import { PERMISSIONS } from '@company/constants';
 import { Body, Controller, Get, Inject, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
-import type { CreateProductPayload, UpdateProductPayload } from '@company/api-contract';
+import type {
+  ConfigureProductMaterialsPayload,
+  CreateProductPayload,
+  UpdateProductPayload,
+} from '@company/api-contract';
 import { PermissionGuard } from '../../auth/permission.guard.js';
 import { RequirePermission } from '../../auth/require-permission.decorator.js';
 import { readId, readPagination } from '../../shared/request-utils.js';
@@ -67,5 +71,17 @@ export class ProductController {
   @Get('products/:id/routes')
   getProductRoutes(@Param('id') id: string) {
     return this.products.getProductRoutes(readId(id));
+  }
+
+  @RequirePermission(PERMISSIONS.product.products.configBom)
+  @Get('products/:id/materials')
+  listProductMaterials(@Param('id') id: string) {
+    return this.products.listProductMaterials(readId(id));
+  }
+
+  @RequirePermission(PERMISSIONS.product.products.configBom)
+  @Put('products/:id/materials')
+  configureProductMaterials(@Param('id') id: string, @Body() body: ConfigureProductMaterialsPayload) {
+    return this.products.configureProductMaterials(readId(id), body);
   }
 }

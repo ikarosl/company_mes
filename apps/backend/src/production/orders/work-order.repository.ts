@@ -277,8 +277,10 @@ export class WorkOrderRepository {
     const plannedQuantity = readDecimal(payload.plannedQuantity, 'Invalid batch quantity');
     const ownerId = payload.ownerId === undefined ? order.owner_id : nullableId(payload.ownerId);
     const batchNo = normalizeOptionalString(payload.batchNo) ?? (await this.generateBatchNo());
+    const routeId = payload.routeId === undefined ? order.route_id : nullableId(payload.routeId);
 
     await this.assertUserAvailable(ownerId);
+    await this.assertRouteAvailable(routeId, (await this.assertProductAvailable(order.product_id)).category_id);
     await this.assertBatchNoAvailable(batchNo);
     await this.assertBatchQuantityWithinOrder(orderId, decimalNumber(plannedQuantity));
 
@@ -294,7 +296,7 @@ export class WorkOrderRepository {
         orderId,
         batchNo,
         order.product_id,
-        order.route_id,
+        routeId,
         plannedQuantity,
         ownerId,
         normalizeDate(payload.planStartDate) ?? formatDate(order.plan_start_date),
@@ -318,9 +320,11 @@ export class WorkOrderRepository {
         ? decimalString(current.planned_quantity)
         : readDecimal(payload.plannedQuantity, 'Invalid batch quantity');
     const ownerId = payload.ownerId === undefined ? current.owner_id : nullableId(payload.ownerId);
+    const routeId = payload.routeId === undefined ? current.route_id : nullableId(payload.routeId);
     const status = payload.status === undefined ? current.status : readBatchStatus(payload.status);
 
     await this.assertUserAvailable(ownerId);
+    await this.assertRouteAvailable(routeId, (await this.assertProductAvailable(order.product_id)).category_id);
     await this.assertBatchNoAvailable(batchNo, batchId);
     await this.assertBatchQuantityWithinOrder(orderId, decimalNumber(plannedQuantity), batchId);
 
@@ -328,6 +332,7 @@ export class WorkOrderRepository {
       `
       UPDATE production_batches
       SET batch_no = ?,
+        route_id = ?,
         planned_quantity = ?,
         owner_id = ?,
         status = ?,
@@ -339,6 +344,7 @@ export class WorkOrderRepository {
     `,
       [
         batchNo,
+        routeId,
         plannedQuantity,
         ownerId,
         status,
@@ -492,6 +498,7 @@ export class WorkOrderRepository {
       (RowDataPacket & {
         id: number;
         batch_no: string;
+        route_id: number | null;
         planned_quantity: string | number;
         owner_id: number | null;
         status: string;
@@ -501,7 +508,7 @@ export class WorkOrderRepository {
       })[]
     >(
       `
-      SELECT id, batch_no, planned_quantity, owner_id, status, plan_start_date, plan_end_date, remark
+      SELECT id, batch_no, route_id, planned_quantity, owner_id, status, plan_start_date, plan_end_date, remark
       FROM production_batches
       WHERE id = ? AND work_order_id = ? AND is_deleted = 0
       LIMIT 1

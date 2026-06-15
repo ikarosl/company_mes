@@ -48,6 +48,7 @@ export interface ProductListItem {
   unit: string;
   acquireMethod: ProductAcquireMethod;
   specValues: ProductSpecValue[];
+  materialCount: number;
   status: number;
   remark: string | null;
   createdAt: string;
@@ -83,6 +84,36 @@ export interface UpdateProductPayload {
   specValues?: ProductSpecValue[];
   status?: number | boolean;
   remark?: string | null;
+}
+
+export interface ProductMaterialItem {
+  id: string;
+  productId: string;
+  materialProductId: string;
+  materialModel: string;
+  materialName: string;
+  materialUnit: string;
+  quantityPerUnit: string;
+  unit: string | null;
+  isKeyMaterial: boolean;
+  needBatchRecord: boolean;
+  remark: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProductMaterialPayload {
+  id?: string;
+  materialProductId: string;
+  quantityPerUnit: string | number;
+  unit?: string | null;
+  isKeyMaterial?: boolean;
+  needBatchRecord?: boolean;
+  remark?: string | null;
+}
+
+export interface ConfigureProductMaterialsPayload {
+  materials: ProductMaterialPayload[];
 }
 
 export interface ProcessListItem {

@@ -60,6 +60,14 @@
         <el-table-column label="规格参数" min-width="220" show-overflow-tooltip>
           <template #default="{ row }">{{ formatSpecSummary(row.specValues) }}</template>
         </el-table-column>
+        <el-table-column label="物料清单" width="120">
+          <template #default="{ row }">
+            <el-tag v-if="row.materialCount > 0" type="success" effect="light">
+              {{ row.materialCount }} 项
+            </el-tag>
+            <el-tag v-else type="warning" effect="light">未配置</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="获取方式" width="110">
           <template #default="{ row }">{{ getAcquireMethodLabel(row.acquireMethod) }}</template>
         </el-table-column>
@@ -75,6 +83,9 @@
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">查看</el-button>
             <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+            <el-button link :type="row.materialCount > 0 ? 'primary' : 'warning'" @click="openMaterials(row)">
+              物料清单
+            </el-button>
             <el-button link type="primary" @click="showInventory(row)">库存</el-button>
             <el-button link type="primary" @click="showRoutes(row)">工艺路线</el-button>
             <el-button
@@ -197,6 +208,9 @@
           {{ getAcquireMethodLabel(detailRow.acquireMethod) }}
         </el-descriptions-item>
         <el-descriptions-item label="单位">{{ detailRow.unit }}</el-descriptions-item>
+        <el-descriptions-item label="物料清单">
+          {{ detailRow.materialCount > 0 ? `${detailRow.materialCount} 项` : '未配置' }}
+        </el-descriptions-item>
         <el-descriptions-item label="状态">
           {{ detailRow.status === 1 ? '启用' : '停用' }}
         </el-descriptions-item>
@@ -212,6 +226,78 @@
         <el-descriptions-item label="备注" :span="2">{{ detailRow.remark || '-' }}</el-descriptions-item>
       </el-descriptions>
     </el-dialog>
+
+    <el-dialog v-model="materialDialogVisible" title="配置产品物料清单" width="1000px">
+      <template v-if="materialProduct">
+        <el-alert
+          v-if="!materialRows.length"
+          title="当前产品尚未配置物料清单。生产任务生成物料需求前，需要先维护这里的用料。"
+          type="warning"
+          :closable="false"
+          show-icon
+          class="bom-alert"
+        />
+        <div class="bom-header">
+          <div>
+            <span class="product-model">{{ materialProduct.productModel }}</span>
+            <span class="sub-text">{{ materialProduct.productName }}</span>
+          </div>
+          <div class="bom-actions">
+            <el-button :icon="Refresh" @click="refreshMaterialOptions">刷新物料</el-button>
+            <el-button :icon="Plus" @click="openCreateMaterialProduct">新建物料信息</el-button>
+            <el-button type="primary" :icon="Plus" @click="addMaterialRow">添加已有物料</el-button>
+          </div>
+        </div>
+        <el-table :data="materialRows" class="material-table">
+          <el-table-column label="物料" min-width="260">
+            <template #default="{ row }">
+              <el-select v-model="row.materialProductId" filterable placeholder="请选择物料" @change="fillMaterialUnit(row)">
+                <el-option
+                  v-for="item in materialOptions"
+                  :key="item.id"
+                  :label="formatProductOption(item)"
+                  :value="item.id"
+                />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column label="单位用量" width="150">
+            <template #default="{ row }">
+              <el-input-number v-model="row.quantityPerUnit" :min="0.0001" :precision="4" :step="1" />
+            </template>
+          </el-table-column>
+          <el-table-column label="单位" width="120">
+            <template #default="{ row }">
+              <el-input v-model="row.unit" placeholder="pcs" />
+            </template>
+          </el-table-column>
+          <el-table-column label="关键物料" width="110" align="center">
+            <template #default="{ row }">
+              <el-switch v-model="row.isKeyMaterial" />
+            </template>
+          </el-table-column>
+          <el-table-column label="记录批次" width="110" align="center">
+            <template #default="{ row }">
+              <el-switch v-model="row.needBatchRecord" />
+            </template>
+          </el-table-column>
+          <el-table-column label="备注" min-width="160">
+            <template #default="{ row }">
+              <el-input v-model="row.remark" placeholder="可选" />
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="90" align="center">
+            <template #default="{ $index }">
+              <el-button link type="danger" @click="removeMaterialRow($index)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </template>
+      <template #footer>
+        <el-button @click="materialDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="submitMaterials">保存物料清单</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -223,6 +309,7 @@ import type {
   ProductAcquireMethod,
   ProductCategoryListItem,
   ProductListItem,
+  ProductMaterialItem,
   ProductSpecValue,
 } from '@company/api-contract';
 import { productApi } from '../../api/product';
@@ -233,6 +320,16 @@ type SpecFormRow = {
   unit: string;
 };
 
+type MaterialFormRow = {
+  id?: string;
+  materialProductId: string;
+  quantityPerUnit: number;
+  unit: string;
+  isKeyMaterial: boolean;
+  needBatchRecord: boolean;
+  remark: string;
+};
+
 const acquireMethodLabels: Record<ProductAcquireMethod, string> = {
   self_made: '自制',
   outsourced: '委外',
@@ -241,6 +338,7 @@ const acquireMethodLabels: Record<ProductAcquireMethod, string> = {
 
 const products = ref<ProductListItem[]>([]);
 const categoryOptions = ref<ProductCategoryListItem[]>([]);
+const materialOptions = ref<ProductListItem[]>([]);
 const loading = ref(false);
 const submitting = ref(false);
 const total = ref(0);
@@ -248,8 +346,12 @@ const currentPage = ref(1);
 const pageSize = ref(10);
 const productDialogVisible = ref(false);
 const detailDialogVisible = ref(false);
+const materialDialogVisible = ref(false);
 const editingProductId = ref<string | null>(null);
 const detailRow = ref<ProductListItem | null>(null);
+const materialProduct = ref<ProductListItem | null>(null);
+const materialRows = ref<MaterialFormRow[]>([]);
+const creatingMaterialFromBom = ref(false);
 const query = reactive({
   keyword: '',
   categoryId: '',
@@ -334,6 +436,7 @@ const resetProductForm = () => {
 
 const openCreate = () => {
   editingProductId.value = null;
+  creatingMaterialFromBom.value = false;
   resetProductForm();
   addSpecRow();
   productDialogVisible.value = true;
@@ -341,6 +444,7 @@ const openCreate = () => {
 
 const openEdit = (row: ProductListItem) => {
   editingProductId.value = row.id;
+  creatingMaterialFromBom.value = false;
   Object.assign(productForm, {
     productModel: row.productModel,
     productName: row.productName,
@@ -368,12 +472,55 @@ const openDetail = (row: ProductListItem) => {
   detailDialogVisible.value = true;
 };
 
+const openMaterials = async (row: ProductListItem) => {
+  materialProduct.value = row;
+  const materials = await productApi.listProductMaterials(row.id);
+  await refreshMaterialOptions();
+  materialRows.value = materials.map(toMaterialFormRow);
+  materialDialogVisible.value = true;
+};
+
+const refreshMaterialOptions = async () => {
+  const options = await productApi.listProducts({ page: 1, pageSize: 200, status: 'enabled' });
+  materialOptions.value = options.items.filter((item) => item.id !== materialProduct.value?.id);
+};
+
 const addSpecRow = () => {
   productForm.specValues.push({ key: '', value: '', unit: '' });
 };
 
 const removeSpecRow = (index: number) => {
   productForm.specValues.splice(index, 1);
+};
+
+const addMaterialRow = () => {
+  materialRows.value.push({
+    materialProductId: '',
+    quantityPerUnit: 1,
+    unit: materialProduct.value?.unit ?? 'pcs',
+    isKeyMaterial: true,
+    needBatchRecord: true,
+    remark: '',
+  });
+};
+
+const openCreateMaterialProduct = () => {
+  editingProductId.value = null;
+  creatingMaterialFromBom.value = true;
+  resetProductForm();
+  addSpecRow();
+  productDialogVisible.value = true;
+};
+
+const removeMaterialRow = (index: number) => {
+  materialRows.value.splice(index, 1);
+};
+
+const fillMaterialUnit = (row: MaterialFormRow) => {
+  const product = materialOptions.value.find((item) => item.id === row.materialProductId);
+  if (product && !row.unit.trim()) {
+    row.unit = product.unit;
+  }
 };
 
 const submitProduct = async () => {
@@ -408,16 +555,29 @@ const submitProduct = async () => {
       specValues: buildSpecValues(),
     };
 
+    let savedProduct: ProductListItem;
     if (editingProductId.value) {
-      await productApi.updateProduct(editingProductId.value, payload);
+      savedProduct = await productApi.updateProduct(editingProductId.value, payload);
       ElMessage.success('产品已更新');
     } else {
-      await productApi.createProduct(payload);
-      ElMessage.success('产品已新增');
+      savedProduct = await productApi.createProduct(payload);
+      ElMessage.success(creatingMaterialFromBom.value ? '物料信息已新增' : '产品已新增');
     }
 
     productDialogVisible.value = false;
     await loadProducts();
+    if (creatingMaterialFromBom.value && materialProduct.value) {
+      await refreshMaterialOptions();
+      materialRows.value.push({
+        materialProductId: savedProduct.id,
+        quantityPerUnit: 1,
+        unit: savedProduct.unit,
+        isKeyMaterial: true,
+        needBatchRecord: true,
+        remark: '',
+      });
+      creatingMaterialFromBom.value = false;
+    }
   } finally {
     submitting.value = false;
   }
@@ -431,6 +591,44 @@ const buildSpecValues = (): ProductSpecValue[] =>
       unit: item.unit.trim() || null,
     }))
     .filter((item) => item.key || item.value);
+
+const submitMaterials = async () => {
+  if (!materialProduct.value) {
+    return;
+  }
+
+  const invalidRow = materialRows.value.some((item) => !item.materialProductId || item.quantityPerUnit <= 0);
+  if (invalidRow) {
+    ElMessage.warning('请选择物料并填写大于 0 的单位用量');
+    return;
+  }
+
+  const materialIds = materialRows.value.map((item) => item.materialProductId);
+  if (new Set(materialIds).size !== materialIds.length) {
+    ElMessage.warning('同一个物料不能重复配置');
+    return;
+  }
+
+  submitting.value = true;
+  try {
+    await productApi.configureProductMaterials(materialProduct.value.id, {
+      materials: materialRows.value.map((item) => ({
+        id: item.id,
+        materialProductId: item.materialProductId,
+        quantityPerUnit: item.quantityPerUnit,
+        unit: item.unit || null,
+        isKeyMaterial: item.isKeyMaterial,
+        needBatchRecord: item.needBatchRecord,
+        remark: item.remark || null,
+      })),
+    });
+    ElMessage.success('物料清单已保存');
+    materialDialogVisible.value = false;
+    await loadProducts();
+  } finally {
+    submitting.value = false;
+  }
+};
 
 const toggleStatus = async (row: ProductListItem) => {
   const nextStatus = row.status === 1 ? 0 : 1;
@@ -460,8 +658,21 @@ const showRoutes = async (row: ProductListItem) => {
   ElMessage.info('工艺路线接口已接入，工艺路线模块完成后将显示明细');
 };
 
+const toMaterialFormRow = (item: ProductMaterialItem): MaterialFormRow => ({
+  id: item.id,
+  materialProductId: item.materialProductId,
+  quantityPerUnit: Number(item.quantityPerUnit),
+  unit: item.unit ?? item.materialUnit,
+  isKeyMaterial: item.isKeyMaterial,
+  needBatchRecord: item.needBatchRecord,
+  remark: item.remark ?? '',
+});
+
 const formatCategory = (category: ProductCategoryListItem) =>
   `${category.productAttribute} / ${category.productType}`;
+
+const formatProductOption = (product: ProductListItem) =>
+  `${product.productModel} / ${product.productName}`;
 
 const getAcquireMethodLabel = (method: ProductAcquireMethod) => acquireMethodLabels[method] ?? method;
 
@@ -546,7 +757,8 @@ onMounted(loadPageData);
 }
 
 .product-table :deep(.el-table__header th),
-.spec-table :deep(.el-table__header th) {
+.spec-table :deep(.el-table__header th),
+.material-table :deep(.el-table__header th) {
   height: 48px;
   background: #f9fafb;
   color: #1f2937;
@@ -611,6 +823,33 @@ onMounted(loadPageData);
   display: flex;
   justify-content: flex-end;
   margin-bottom: 12px;
+}
+
+.bom-alert {
+  margin-bottom: 14px;
+}
+
+.bom-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.bom-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sub-text {
+  margin-left: 8px;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.material-table {
+  width: 100%;
 }
 
 .spec-tags {

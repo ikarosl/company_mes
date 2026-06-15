@@ -1,9 +1,13 @@
 import {
   BUSINESS_API,
   type CreateProductionBatchPayload,
+  type CreateProductionTaskPayload,
   type CreateWorkOrderPayload,
+  type DispatchTaskPayload,
   type PageResult,
+  type ProductionTaskDetail,
   type ProductionBatchItem,
+  type UpdateBatchStepRecordPayload,
   type UpdateProductionBatchPayload,
   type UpdateWorkOrderPayload,
   type WorkOrderDetail,
@@ -55,6 +59,61 @@ export const productionApi = {
   updateOrderBatch: (id: string, taskId: string, data: UpdateProductionBatchPayload) =>
     requestData<ProductionBatchItem>({
       url: `${BUSINESS_API.orders}/${id}/tasks/${taskId}`,
+      method: 'PUT',
+      data,
+    }),
+  listTasks: (params?: QueryParams) =>
+    requestData<PageResult<ProductionBatchItem>>({
+      url: BUSINESS_API.tasks,
+      method: 'GET',
+      params,
+    }),
+  getTask: (id: string) =>
+    requestData<ProductionTaskDetail>({
+      url: `${BUSINESS_API.tasks}/${id}`,
+      method: 'GET',
+    }),
+  createTask: (data: CreateProductionTaskPayload) =>
+    requestData<ProductionTaskDetail>({
+      url: BUSINESS_API.tasks,
+      method: 'POST',
+      data,
+    }),
+  previewTaskDispatch: (id: string) =>
+    requestData<ProductionTaskDetail['steps']>({
+      url: `${BUSINESS_API.tasks}/${id}/dispatch-preview`,
+      method: 'GET',
+    }),
+  updateTask: (id: string, data: UpdateProductionBatchPayload) =>
+    requestData<ProductionTaskDetail>({
+      url: `${BUSINESS_API.tasks}/${id}`,
+      method: 'PUT',
+      data,
+    }),
+  generateTaskMaterialDemand: (id: string) =>
+    requestData<{ task: ProductionTaskDetail; materials: ProductionTaskDetail['materialRequirements'] }>({
+      url: `${BUSINESS_API.tasks}/${id}/material-demand`,
+      method: 'POST',
+    }),
+  dispatchTask: (id: string, data: DispatchTaskPayload) =>
+    requestData<ProductionTaskDetail>({
+      url: `${BUSINESS_API.tasks}/${id}/dispatch`,
+      method: 'POST',
+      data,
+    }),
+  startTask: (id: string) =>
+    requestData<ProductionTaskDetail>({
+      url: `${BUSINESS_API.tasks}/${id}/start`,
+      method: 'PUT',
+    }),
+  finishTask: (id: string) =>
+    requestData<ProductionTaskDetail>({
+      url: `${BUSINESS_API.tasks}/${id}/finish`,
+      method: 'PUT',
+    }),
+  updateTaskStep: (id: string, recordId: string, data: UpdateBatchStepRecordPayload) =>
+    requestData<ProductionTaskDetail>({
+      url: `${BUSINESS_API.tasks}/${id}/steps/${recordId}`,
       method: 'PUT',
       data,
     }),

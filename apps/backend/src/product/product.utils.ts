@@ -3,6 +3,7 @@ import type {
   ProductAcquireMethod,
   ProductCategoryListItem,
   ProductListItem,
+  ProductMaterialItem,
   ProductSpecValue,
   ProcessOption,
   ProcessListItem,
@@ -16,6 +17,7 @@ import type {
   ProcessRouteStepListRow,
   ProductCategoryListRow,
   ProductListRow,
+  ProductMaterialListRow,
 } from './product.types.js';
 
 export const PRODUCT_ACQUIRE_METHODS = new Set(['self_made', 'outsourced', 'purchased']);
@@ -40,7 +42,24 @@ export const mapProduct = (row: ProductListRow): ProductListItem => ({
   unit: row.unit,
   acquireMethod: row.acquire_method as ProductAcquireMethod,
   specValues: parseSpecValues(row.spec_values),
+  materialCount: Number(row.material_count ?? 0),
   status: row.status,
+  remark: row.remark,
+  createdAt: row.created_at.toISOString(),
+  updatedAt: row.updated_at.toISOString(),
+});
+
+export const mapProductMaterial = (row: ProductMaterialListRow): ProductMaterialItem => ({
+  id: String(row.id),
+  productId: String(row.product_id),
+  materialProductId: String(row.material_product_id),
+  materialModel: row.material_model,
+  materialName: row.material_name,
+  materialUnit: row.material_unit,
+  quantityPerUnit: String(row.quantity_per_unit),
+  unit: row.unit,
+  isKeyMaterial: Boolean(row.is_key_material),
+  needBatchRecord: Boolean(row.need_batch_record),
   remark: row.remark,
   createdAt: row.created_at.toISOString(),
   updatedAt: row.updated_at.toISOString(),
@@ -151,6 +170,24 @@ export const nullableId = (value: string | number | null | undefined) => {
   }
 
   return id;
+};
+
+export const readPositiveId = (value: string | number | null | undefined, message: string) => {
+  const id = nullableId(value);
+  if (id === null) {
+    throw new BadRequestException(message);
+  }
+
+  return id;
+};
+
+export const readPositiveDecimal = (value: string | number | null | undefined, message: string) => {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new BadRequestException(message);
+  }
+
+  return amount.toFixed(4);
 };
 
 export const parseSpecValues = (value: string | null): ProductSpecValue[] => {

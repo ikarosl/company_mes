@@ -14,6 +14,7 @@ import ProductsPage from '../views/product/ProductsPage.vue';
 import ProcessesPage from '../views/product/ProcessesPage.vue';
 import ProcessRoutesPage from '../views/product/ProcessRoutesPage.vue';
 import ProductionOrdersPage from '../views/production/ProductionOrdersPage.vue';
+import ProductionTasksPage from '../views/production/ProductionTasksPage.vue';
 import WarehouseInventoryPage from '../views/warehouse/WarehouseInventoryPage.vue';
 // import ProcessTemplatesPage from '../views/ProcessTemplatesPage.vue';
 // import ProductionBatchDetailPage from '../views/ProductionBatchDetailPage.vue';
@@ -172,26 +173,16 @@ export const routes: RouteRecordRaw[] = [
           permission: PERMISSIONS.production.orders.page,
         },
       },
-      plannedPage(
-        'production/tasks',
-        'production-tasks',
-        '任务管理',
-        '生产管理',
-        [
-          '查看',
-          '新增任务',
-          '编辑任务',
-          '生成物料需求',
-          '分配物料',
-          '派工',
-          '开始生产',
-          '完成生产',
-          '创建返工',
-          '查看追溯',
-          '跳转入库',
-        ],
-        PERMISSIONS.production.tasks.page,
-      ),
+      {
+        path: 'production/tasks',
+        name: 'production-tasks',
+        component: ProductionTasksPage,
+        meta: {
+          title: '任务管理',
+          section: '生产管理',
+          permission: PERMISSIONS.production.tasks.page,
+        },
+      },
       plannedPage(
         'production/orders/:id/tasks',
         'production-order-tasks',

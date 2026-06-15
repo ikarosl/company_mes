@@ -4,12 +4,20 @@ import type {
   BatchInspectionStatus,
   BatchMaterialStatus,
   BatchProductionStatus,
+  BatchStepRecordItem,
+  BatchStepStatus,
   ProductionBatchItem,
   ProductionBatchStatus,
+  TaskMaterialRequirementItem,
   WorkOrderListItem,
   WorkOrderStatus,
 } from '@company/api-contract';
-import type { ProductionBatchListRow, WorkOrderListRow } from './production.types.js';
+import type {
+  BatchStepRecordListRow,
+  ProductionBatchListRow,
+  TaskMaterialRequirementRow,
+  WorkOrderListRow,
+} from './production.types.js';
 
 const WORK_ORDER_STATUS_META: Record<WorkOrderStatus, { currentFlow: string; nextAction: string }> = {
   draft: { currentFlow: '草稿', nextAction: '下达工单' },
@@ -51,6 +59,7 @@ export const mapWorkOrder = (row: WorkOrderListRow): WorkOrderListItem => {
 export const mapProductionBatch = (row: ProductionBatchListRow): ProductionBatchItem => ({
   id: String(row.id),
   workOrderId: String(row.work_order_id),
+  workOrderNo: 'order_no' in row ? String(row.order_no) : undefined,
   batchNo: row.batch_no,
   productId: String(row.product_id),
   productModel: row.product_model,
@@ -70,6 +79,44 @@ export const mapProductionBatch = (row: ProductionBatchListRow): ProductionBatch
   remark: row.remark,
   createdAt: row.created_at.toISOString(),
   updatedAt: row.updated_at.toISOString(),
+});
+
+export const mapBatchStepRecord = (row: BatchStepRecordListRow): BatchStepRecordItem => ({
+  id: String(row.id),
+  batchId: String(row.batch_id),
+  routeStepId: String(row.route_step_id),
+  stepOrder: row.step_order,
+  processId: row.process_id === null ? null : String(row.process_id),
+  processCode: row.process_code,
+  processName: row.process_name,
+  defaultOwnerId: row.default_owner_id === null ? null : String(row.default_owner_id),
+  defaultOwnerName: row.default_owner_name,
+  actualOwnerId: row.actual_owner_id === null ? null : String(row.actual_owner_id),
+  actualOwnerName: row.actual_owner_name,
+  status: row.status as BatchStepStatus,
+  startedAt: row.started_at ? row.started_at.toISOString() : null,
+  finishedAt: row.finished_at ? row.finished_at.toISOString() : null,
+  totalQuantity: row.total_quantity === null ? null : decimalString(row.total_quantity),
+  qualifiedQuantity: row.qualified_quantity === null ? null : decimalString(row.qualified_quantity),
+  defectiveQuantity: row.defective_quantity === null ? null : decimalString(row.defective_quantity),
+  remark: row.remark,
+  createdAt: row.created_at.toISOString(),
+  updatedAt: row.updated_at.toISOString(),
+});
+
+export const mapTaskMaterialRequirement = (row: TaskMaterialRequirementRow): TaskMaterialRequirementItem => ({
+  id: String(row.id),
+  routeStepId: String(row.route_step_id),
+  routeStepName: row.route_step_name,
+  productMaterialId: String(row.product_material_id),
+  materialProductId: String(row.material_product_id),
+  materialModel: row.material_model,
+  materialName: row.material_name,
+  quantityPerUnit: decimalString(row.quantity_per_unit),
+  requiredQuantity: (decimalNumber(row.quantity_per_unit) * decimalNumber(row.planned_quantity)).toFixed(4),
+  unit: row.unit,
+  isKeyMaterial: row.is_key_material === 1,
+  needBatchRecord: row.need_batch_record === 1,
 });
 
 export const readRequiredString = (value: string | undefined, message: string) => {
@@ -115,6 +162,32 @@ export const readDecimal = (value: string | number | null | undefined, message: 
   }
 
   return amount.toFixed(4);
+};
+
+export const readNullableDecimal = (value: string | number | null | undefined, message: string) => {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw new BadRequestException(message);
+  }
+
+  return amount.toFixed(4);
+};
+
+export const normalizeDateTime = (value: string | null | undefined) => {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new BadRequestException('Invalid datetime');
+  }
+
+  return parsed;
 };
 
 export const decimalNumber = (value: string | number | null | undefined) => {
