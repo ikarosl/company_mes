@@ -15,6 +15,7 @@ import type {
   CountRow,
   ProductionTaskListRow,
   TaskMaterialRequirementRow,
+  WorkerTaskListRow,
 } from '../production.types.js';
 import {
   decimalNumber,
@@ -23,6 +24,7 @@ import {
   mapBatchStepRecord,
   mapProductionBatch,
   mapTaskMaterialRequirement,
+  mapWorkerTask,
   normalizeDate,
   normalizeDateTime,
   normalizeOptionalString,
@@ -41,7 +43,6 @@ export interface ProductionTaskFilters {
 
 const STEP_STATUSES = new Set<BatchStepStatus>([
   'pending',
-  'assigned',
   'doing',
   'completed',
   'abnormal',
@@ -118,6 +119,127 @@ export class ProductionTaskRepository {
       steps: await this.listStepRecords(id),
       materialRequirements: await this.listMaterialRequirements(id),
     };
+  }
+
+  async listTasksForWorker(userId: string, filters: ProductionTaskFilters, pagination: PaginationOptions) {
+    const { where, params } = this.buildListFilters({ ...filters, status: undefined });
+    const userIdNumber = Number(userId);
+    const stepStatus = filters.status?.trim();
+
+    const [totalRow] = await this.database.query<CountRow[]>(
+      `
+      SELECT COUNT(*) AS total
+      FROM production_batches b
+      INNER JOIN work_orders wo ON wo.id = b.work_order_id AND wo.is_deleted = 0
+      INNER JOIN products p ON p.id = b.product_id AND p.is_deleted = 0
+      INNER JOIN batch_step_records sr ON sr.batch_id = b.id AND sr.is_deleted = 0
+      WHERE ${where}
+        AND sr.responsible_user_id = ?
+        ${stepStatus ? 'AND sr.status = ?' : ''}
+    `,
+      stepStatus ? [...params, userIdNumber, stepStatus] : [...params, userIdNumber],
+    );
+
+    const rows = await this.database.query<WorkerTaskListRow[]>(
+      `
+      SELECT
+        b.id,
+        b.work_order_id,
+        wo.order_no,
+        b.batch_no,
+        b.product_id,
+        p.product_model,
+        p.product_name,
+        b.route_id,
+        r.route_name,
+        b.planned_quantity,
+        b.status,
+        b.material_status,
+        b.dispatch_status,
+        b.production_status,
+        b.inspection_status,
+        b.owner_id,
+        u.display_name AS owner_name,
+        b.plan_start_date,
+        b.plan_end_date,
+        b.remark,
+        b.created_at,
+        b.updated_at,
+        COUNT(DISTINCT all_sr.id) AS step_count,
+        SUM(CASE WHEN all_sr.status = 'completed' THEN 1 ELSE 0 END) AS finished_step_count,
+        sr.id AS step_record_id,
+        sr.route_step_id,
+        sr.step_order,
+        sr.step_name,
+        sr.status AS step_status,
+        sr.started_at AS step_started_at,
+        sr.completed_at AS step_completed_at,
+        sr.output_quantity,
+        sr.return_quantity,
+        sr.abnormal_quantity,
+        sr.responsible_user_id,
+        ru.display_name AS responsible_user_name
+      FROM production_batches b
+      INNER JOIN work_orders wo ON wo.id = b.work_order_id AND wo.is_deleted = 0
+      INNER JOIN products p ON p.id = b.product_id AND p.is_deleted = 0
+      INNER JOIN batch_step_records sr ON sr.batch_id = b.id AND sr.is_deleted = 0
+      LEFT JOIN process_routes r ON r.id = b.route_id AND r.is_deleted = 0
+      LEFT JOIN users u ON u.id = b.owner_id
+      LEFT JOIN users ru ON ru.id = sr.responsible_user_id
+      LEFT JOIN batch_step_records all_sr ON all_sr.batch_id = b.id AND all_sr.is_deleted = 0
+      WHERE ${where}
+        AND sr.responsible_user_id = ?
+        ${stepStatus ? 'AND sr.status = ?' : ''}
+      GROUP BY b.id, b.work_order_id, wo.order_no, b.batch_no, b.product_id, p.product_model, p.product_name,
+        b.route_id, r.route_name, b.planned_quantity, b.status, b.material_status, b.dispatch_status,
+        b.production_status, b.inspection_status, b.owner_id, u.display_name, b.plan_start_date,
+        b.plan_end_date, b.remark, b.created_at, b.updated_at, sr.id, sr.route_step_id, sr.step_order,
+        sr.step_name, sr.status, sr.started_at, sr.completed_at, sr.output_quantity, sr.return_quantity,
+        sr.abnormal_quantity, sr.responsible_user_id, ru.display_name
+      ORDER BY b.id DESC, sr.step_order ASC
+      LIMIT ? OFFSET ?
+    `,
+      stepStatus
+        ? [...params, userIdNumber, stepStatus, pagination.pageSize, pagination.offset]
+        : [...params, userIdNumber, pagination.pageSize, pagination.offset],
+    );
+
+    return toPageResult(rows.map(mapWorkerTask), Number(totalRow?.total ?? 0), pagination);
+  }
+
+  async getTaskForWorker(id: number, userId: string) {
+    await this.assertWorkerTaskAccessible(id, userId);
+    return this.getTask(id);
+  }
+
+  async startTaskForWorker(id: number, userId: string) {
+    await this.assertWorkerTaskAccessible(id, userId);
+    return this.startTask(id);
+  }
+
+  async finishTaskForWorker(id: number, userId: string) {
+    await this.assertWorkerTaskAccessible(id, userId);
+    return this.finishTask(id);
+  }
+
+  async updateStepRecordForWorker(
+    taskId: number,
+    recordId: number,
+    payload: UpdateBatchStepRecordPayload,
+    userId: string,
+  ) {
+    const task = await this.getTaskRowForWorker(taskId, userId);
+    const current = await this.getStepRecordRow(taskId, recordId);
+
+    if (
+      current.responsible_user_id !== null &&
+      current.responsible_user_id !== Number(userId) &&
+      task.owner_id !== Number(userId)
+    ) {
+      throw new BadRequestException('You are not allowed to update this step record');
+    }
+
+    return this.updateStepRecord(taskId, recordId, payload);
   }
 
   async createTask(payload: CreateProductionTaskPayload) {
@@ -236,19 +358,16 @@ export class ProductionTaskRepository {
         batch_id: id,
         route_step_id: step.id,
         step_order: step.step_order,
-        process_id: step.process_id,
-        process_code: step.process_code,
-        process_name: step.process_name,
-        default_owner_id: step.default_owner_id,
-        default_owner_name: step.default_owner_name,
-        actual_owner_id: step.default_owner_id,
-        actual_owner_name: step.default_owner_name,
-        status: step.default_owner_id === null ? 'pending' : 'assigned',
+        step_name: step.process_name,
+        sop_file_id: step.sop_file_id,
+        responsible_user_id: step.default_owner_id,
+        responsible_user_name: step.default_owner_name,
+        status: 'pending',
         started_at: null,
-        finished_at: null,
-        total_quantity: null,
-        qualified_quantity: null,
-        defective_quantity: null,
+        completed_at: null,
+        output_quantity: null,
+        return_quantity: null,
+        abnormal_quantity: null,
         remark: null,
         created_at: new Date(),
         updated_at: new Date(),
@@ -262,7 +381,7 @@ export class ProductionTaskRepository {
     const task = await this.assertTaskHasRoute(id);
     const routeSteps = await this.listRouteSteps(task.route_id);
     const assignmentMap = new Map(
-      (payload.steps ?? []).map((step) => [Number(step.routeStepId), nullableId(step.actualOwnerId)]),
+      (payload.steps ?? []).map((step) => [Number(step.routeStepId), nullableId(step.responsibleUserId)]),
     );
 
     await this.database.transaction(async (connection) => {
@@ -274,29 +393,26 @@ export class ProductionTaskRepository {
       );
 
       for (const step of routeSteps) {
-        const actualOwnerId = assignmentMap.has(step.id)
+        const responsibleUserId = assignmentMap.has(step.id)
           ? assignmentMap.get(step.id) ?? null
           : step.default_owner_id;
-        await this.assertUserAvailable(actualOwnerId);
+        await this.assertUserAvailable(responsibleUserId);
         await execute(
           connection,
           `
           INSERT INTO batch_step_records (
-            batch_id, route_step_id, step_order, process_id, process_code, process_name,
-            default_owner_id, actual_owner_id, status, created_at, updated_at
+            batch_id, route_step_id, step_order, step_name, sop_file_id,
+            responsible_user_id, status, created_at, updated_at
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+          VALUES (?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW())
         `,
           [
             id,
             step.id,
             step.step_order,
-            step.process_id,
-            step.process_code,
             step.process_name,
-            step.default_owner_id,
-            actualOwnerId,
-            actualOwnerId === null ? 'pending' : 'assigned',
+            step.sop_file_id,
+            responsibleUserId,
           ],
         );
       }
@@ -354,34 +470,35 @@ export class ProductionTaskRepository {
   async updateStepRecord(taskId: number, recordId: number, payload: UpdateBatchStepRecordPayload) {
     await this.getTaskRow(taskId);
     const current = await this.getStepRecordRow(taskId, recordId);
-    const actualOwnerId =
-      payload.actualOwnerId === undefined ? current.actual_owner_id : nullableId(payload.actualOwnerId);
-    const status = payload.status === undefined ? current.status : readStepStatus(payload.status);
+    const responsibleUserId =
+      payload.responsibleUserId === undefined ? current.responsible_user_id : nullableId(payload.responsibleUserId);
+    const status = payload.status === undefined ? readStepStatus(current.status) : readStepStatus(payload.status);
 
-    await this.assertUserAvailable(actualOwnerId);
+    assertStepStatusTransition(current.status, status);
+    await this.assertUserAvailable(responsibleUserId);
 
     await this.database.execute(
       `
       UPDATE batch_step_records
-      SET actual_owner_id = ?,
+      SET responsible_user_id = ?,
         status = ?,
         started_at = ?,
-        finished_at = ?,
-        total_quantity = ?,
-        qualified_quantity = ?,
-        defective_quantity = ?,
+        completed_at = ?,
+        output_quantity = ?,
+        return_quantity = ?,
+        abnormal_quantity = ?,
         remark = ?,
         updated_at = NOW()
       WHERE id = ? AND batch_id = ? AND is_deleted = 0
     `,
       [
-        actualOwnerId,
+        responsibleUserId,
         status,
         payload.startedAt === undefined ? current.started_at : normalizeDateTime(payload.startedAt),
-        payload.finishedAt === undefined ? current.finished_at : normalizeDateTime(payload.finishedAt),
-        payload.totalQuantity === undefined ? current.total_quantity : readNullableDecimal(payload.totalQuantity, 'Invalid total quantity'),
-        payload.qualifiedQuantity === undefined ? current.qualified_quantity : readNullableDecimal(payload.qualifiedQuantity, 'Invalid qualified quantity'),
-        payload.defectiveQuantity === undefined ? current.defective_quantity : readNullableDecimal(payload.defectiveQuantity, 'Invalid defective quantity'),
+        payload.completedAt === undefined ? current.completed_at : normalizeDateTime(payload.completedAt),
+        payload.outputQuantity === undefined ? current.output_quantity : readNullableDecimal(payload.outputQuantity, 'Invalid output quantity'),
+        payload.returnQuantity === undefined ? current.return_quantity : readNullableDecimal(payload.returnQuantity, 'Invalid return quantity'),
+        payload.abnormalQuantity === undefined ? current.abnormal_quantity : readNullableDecimal(payload.abnormalQuantity, 'Invalid abnormal quantity'),
         payload.remark === undefined ? current.remark : normalizeOptionalString(payload.remark),
         recordId,
         taskId,
@@ -447,6 +564,35 @@ export class ProductionTaskRepository {
     }
 
     return row;
+  }
+
+  private async getTaskRowForWorker(id: number, userId: string) {
+    const [row] = await this.database.query<RowDataPacket[]>(
+      `
+      SELECT b.owner_id
+      FROM production_batches b
+      WHERE b.id = ?
+        AND b.is_deleted = 0
+        AND (
+          b.owner_id = ?
+          OR EXISTS (
+            SELECT 1 FROM batch_step_records sr WHERE sr.batch_id = b.id AND sr.responsible_user_id = ? AND sr.is_deleted = 0
+          )
+        )
+      LIMIT 1
+    `,
+      [id, Number(userId), Number(userId)],
+    );
+
+    if (!row) {
+      throw new NotFoundException('Production task not found');
+    }
+
+    return row;
+  }
+
+  private async assertWorkerTaskAccessible(id: number, userId: string) {
+    await this.getTaskRowForWorker(id, userId);
   }
 
   private async getWorkOrderRow(id: number) {
@@ -537,25 +683,21 @@ export class ProductionTaskRepository {
         sr.batch_id,
         sr.route_step_id,
         sr.step_order,
-        sr.process_id,
-        sr.process_code,
-        sr.process_name,
-        sr.default_owner_id,
-        du.display_name AS default_owner_name,
-        sr.actual_owner_id,
-        au.display_name AS actual_owner_name,
+        sr.step_name,
+        sr.sop_file_id,
+        sr.responsible_user_id,
+        ru.display_name AS responsible_user_name,
         sr.status,
         sr.started_at,
-        sr.finished_at,
-        sr.total_quantity,
-        sr.qualified_quantity,
-        sr.defective_quantity,
+        sr.completed_at,
+        sr.output_quantity,
+        sr.return_quantity,
+        sr.abnormal_quantity,
         sr.remark,
         sr.created_at,
         sr.updated_at
       FROM batch_step_records sr
-      LEFT JOIN users du ON du.id = sr.default_owner_id
-      LEFT JOIN users au ON au.id = sr.actual_owner_id
+      LEFT JOIN users ru ON ru.id = sr.responsible_user_id
       WHERE sr.batch_id = ? AND sr.is_deleted = 0
       ORDER BY sr.step_order ASC, sr.id ASC
     `,
@@ -620,6 +762,7 @@ export class ProductionTaskRepository {
         process_id: number | null;
         process_code: string;
         process_name: string;
+        sop_file_id: number | null;
         default_owner_id: number | null;
         default_owner_name: string | null;
       })[]
@@ -631,6 +774,7 @@ export class ProductionTaskRepository {
         prs.process_id,
         prs.process_code,
         prs.process_name,
+        prs.sop_file_id,
         prs.default_owner_id,
         u.display_name AS default_owner_name
       FROM process_route_steps prs
@@ -652,18 +796,18 @@ export class ProductionTaskRepository {
     const [row] = await this.database.query<
       (RowDataPacket & {
         id: number;
-        actual_owner_id: number | null;
+        responsible_user_id: number | null;
         status: string;
         started_at: Date | null;
-        finished_at: Date | null;
-        total_quantity: string | number | null;
-        qualified_quantity: string | number | null;
-        defective_quantity: string | number | null;
+        completed_at: Date | null;
+        output_quantity: string | number | null;
+        return_quantity: string | number | null;
+        abnormal_quantity: string | number | null;
         remark: string | null;
       })[]
     >(
       `
-      SELECT id, actual_owner_id, status, started_at, finished_at, total_quantity, qualified_quantity, defective_quantity, remark
+      SELECT id, responsible_user_id, status, started_at, completed_at, output_quantity, return_quantity, abnormal_quantity, remark
       FROM batch_step_records
       WHERE id = ? AND batch_id = ? AND is_deleted = 0
       LIMIT 1
@@ -818,4 +962,19 @@ const readStepStatus = (value: string) => {
   }
 
   return value as BatchStepStatus;
+};
+
+const STEP_STATUS_TRANSITIONS: Record<BatchStepStatus, BatchStepStatus[]> = {
+  pending: ['pending', 'doing', 'skipped'],
+  doing: ['doing', 'completed', 'abnormal'],
+  completed: ['completed'],
+  abnormal: ['abnormal', 'doing'],
+  skipped: ['skipped'],
+};
+
+const assertStepStatusTransition = (current: string, next: BatchStepStatus) => {
+  const currentStatus = readStepStatus(current);
+  if (!STEP_STATUS_TRANSITIONS[currentStatus].includes(next)) {
+    throw new BadRequestException('Invalid step status transition');
+  }
 };

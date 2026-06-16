@@ -9,6 +9,7 @@ import {
   type ProductionBatchItem,
   type UpdateBatchStepRecordPayload,
   type UpdateProductionBatchPayload,
+  type WorkerTaskItem,
   type UpdateWorkOrderPayload,
   type WorkOrderDetail,
   type WorkOrderListItem,
@@ -72,6 +73,33 @@ export const productionApi = {
     requestData<ProductionTaskDetail>({
       url: `${BUSINESS_API.tasks}/${id}`,
       method: 'GET',
+    }),
+  listWorkerTasks: (params?: QueryParams) =>
+    requestData<PageResult<WorkerTaskItem>>({
+      url: BUSINESS_API.workerTasks,
+      method: 'GET',
+      params,
+    }),
+  getWorkerTask: (id: string) =>
+    requestData<ProductionTaskDetail>({
+      url: `${BUSINESS_API.workerTasks}/${id}`,
+      method: 'GET',
+    }),
+  startWorkerTask: (id: string) =>
+    requestData<ProductionTaskDetail>({
+      url: `${BUSINESS_API.workerTasks}/${id}/start`,
+      method: 'PUT',
+    }),
+  completeWorkerTask: (id: string) =>
+    requestData<ProductionTaskDetail>({
+      url: `${BUSINESS_API.workerTasks}/${id}/complete`,
+      method: 'PUT',
+    }),
+  updateWorkerTaskStep: (id: string, recordId: string, data: UpdateBatchStepRecordPayload) =>
+    requestData<ProductionTaskDetail>({
+      url: `${BUSINESS_API.workerTasks}/${id}/steps/${recordId}`,
+      method: 'PUT',
+      data,
     }),
   createTask: (data: CreateProductionTaskPayload) =>
     requestData<ProductionTaskDetail>({

@@ -74,22 +74,34 @@ export interface BatchStepRecordListRow extends RowDataPacket {
   batch_id: number;
   route_step_id: number;
   step_order: number;
-  process_id: number | null;
-  process_code: string;
-  process_name: string;
-  default_owner_id: number | null;
-  default_owner_name: string | null;
-  actual_owner_id: number | null;
-  actual_owner_name: string | null;
+  step_name: string;
+  sop_file_id: number | null;
+  responsible_user_id: number | null;
+  responsible_user_name: string | null;
   status: string;
   started_at: Date | null;
-  finished_at: Date | null;
-  total_quantity: string | number | null;
-  qualified_quantity: string | number | null;
-  defective_quantity: string | number | null;
+  completed_at: Date | null;
+  output_quantity: string | number | null;
+  return_quantity: string | number | null;
+  abnormal_quantity: string | number | null;
   remark: string | null;
   created_at: Date;
   updated_at: Date;
+}
+
+export interface WorkerTaskListRow extends ProductionTaskListRow {
+  step_record_id: number;
+  route_step_id: number;
+  step_order: number;
+  step_name: string;
+  step_status: string;
+  step_started_at: Date | null;
+  step_completed_at: Date | null;
+  output_quantity: string | number | null;
+  return_quantity: string | number | null;
+  abnormal_quantity: string | number | null;
+  responsible_user_id: number | null;
+  responsible_user_name: string | null;
 }
 
 export interface TaskMaterialRequirementRow extends RowDataPacket {

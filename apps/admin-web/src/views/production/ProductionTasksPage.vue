@@ -1,9 +1,9 @@
-<template>
+﻿<template>
   <div class="tasks-page">
     <section class="query-panel">
       <el-form class="query-form" :inline="true" :model="query">
         <el-form-item label="关键字">
-          <el-input v-model="query.keyword" clearable placeholder="批次号/工单/产品" />
+          <el-input v-model="query.keyword" clearable placeholder="搜索关键字：工单/产品" />
         </el-form-item>
         <el-form-item label="产品">
           <el-select v-model="query.productId" clearable filterable placeholder="全部">
@@ -22,8 +22,8 @@
           </el-select>
         </el-form-item>
         <el-form-item class="query-actions">
-          <el-button type="primary" :loading="loading" @click="searchTasks">查询</el-button>
-          <el-button @click="resetQuery">重置</el-button>
+          <el-button type="primary" :loading="loading" @click="searchTasks">鏌ヨ</el-button>
+          <el-button @click="resetQuery">閲嶇疆</el-button>
         </el-form-item>
       </el-form>
     </section>
@@ -40,7 +40,7 @@
       </div>
 
       <el-table v-loading="loading" :data="tasks" class="tasks-table">
-        <el-table-column label="生产批次号" min-width="170">
+        <el-table-column label="批次号" min-width="170">
           <template #default="{ row }"><span class="batch-no">{{ row.batchNo }}</span></template>
         </el-table-column>
         <el-table-column label="工单号" min-width="150">
@@ -56,7 +56,7 @@
           <template #default="{ row }">{{ formatQuantity(row.plannedQuantity) }}</template>
         </el-table-column>
         <el-table-column label="工艺路线" min-width="160">
-          <template #default="{ row }">{{ row.routeName || '未选择' }}</template>
+          <template #default="{ row }">{{ row.routeName || '鏈€夋嫨' }}</template>
         </el-table-column>
         <el-table-column label="物料状态" width="130">
           <template #default="{ row }">{{ materialStatusLabels[row.materialStatus] ?? row.materialStatus }}</template>
@@ -84,7 +84,7 @@
             <el-button link type="primary" @click="generateMaterials(row)">生成物料</el-button>
             <el-button link type="primary" @click="openDispatch(row)">派工</el-button>
             <el-button link type="primary" :disabled="row.status === 'completed'" @click="startTask(row)">开始</el-button>
-            <el-button link type="primary" :disabled="row.status === 'completed'" @click="finishTask(row)">完成</el-button>
+            <el-button link type="primary" :disabled="row.status === 'completed'" @click="finishTask(row)">瀹屾垚</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -102,8 +102,8 @@
 
     <el-dialog v-model="taskDialogVisible" :title="editingTaskId ? '编辑任务' : '新增任务'" width="720px">
       <el-form class="dialog-form" label-width="108px" :model="taskForm">
-        <el-form-item v-if="!editingTaskId" label="所属工单" required>
-          <el-select v-model="taskForm.workOrderId" filterable placeholder="请选择已下达工单" @change="handleTaskOrderChange">
+        <el-form-item v-if="!editingTaskId" label="选择工单" required>
+          <el-select v-model="taskForm.workOrderId" filterable placeholder="请选择下达的工单" @change="handleTaskOrderChange">
             <el-option
               v-for="order in workOrderOptions"
               :key="order.id"
@@ -113,9 +113,9 @@
           </el-select>
         </el-form-item>
         <el-form-item v-if="!editingTaskId" label="批次号">
-          <el-input v-model="taskForm.batchNo" placeholder="不填则系统自动生成" />
+          <el-input v-model="taskForm.batchNo" placeholder="若为空则自动生成批次号" />
         </el-form-item>
-        <el-form-item label="工艺路线" required>
+        <el-form-item label="宸ヨ壓璺嚎" required>
           <el-select v-model="taskForm.routeId" filterable clearable placeholder="请选择工艺路线">
             <el-option v-for="route in routeOptions" :key="route.id" :label="formatRoute(route)" :value="route.id" />
           </el-select>
@@ -128,10 +128,10 @@
         <el-form-item label="计划数量" required>
           <el-input-number v-model="taskForm.plannedQuantity" :min="0.0001" :precision="4" :step="1" />
         </el-form-item>
-        <el-form-item label="计划开始">
+        <el-form-item label="计划开始日期">
           <el-date-picker v-model="taskForm.planStartDate" type="date" value-format="YYYY-MM-DD" />
         </el-form-item>
-        <el-form-item label="计划完成">
+        <el-form-item label="计划结束日期">
           <el-date-picker v-model="taskForm.planEndDate" type="date" value-format="YYYY-MM-DD" />
         </el-form-item>
         <el-form-item label="备注">
@@ -147,7 +147,7 @@
     <el-dialog v-model="detailDialogVisible" title="任务详情" width="1040px">
       <template v-if="activeTask">
         <el-descriptions :column="3" border>
-          <el-descriptions-item label="生产批次号">{{ activeTask.batchNo }}</el-descriptions-item>
+          <el-descriptions-item label="批次号">{{ activeTask.batchNo }}</el-descriptions-item>
           <el-descriptions-item label="工单号">{{ activeTask.workOrderNo || '-' }}</el-descriptions-item>
           <el-descriptions-item label="产品">{{ activeTask.productName }}</el-descriptions-item>
           <el-descriptions-item label="工艺路线">{{ activeTask.routeName || '-' }}</el-descriptions-item>
@@ -157,23 +157,23 @@
         <el-tabs class="detail-tabs">
           <el-tab-pane label="工序执行">
             <el-table :data="activeTask.steps" class="detail-table">
-              <el-table-column prop="stepOrder" label="顺序" width="70" />
-              <el-table-column prop="processName" label="工序" min-width="160" />
+              <el-table-column prop="stepOrder" label="序号" width="70" />
+              <el-table-column prop="stepName" label="工序" min-width="160" />
               <el-table-column label="默认负责人" width="130">
-                <template #default="{ row }">{{ row.defaultOwnerName || '-' }}</template>
+                <template #default="{ row }">{{ row.responsibleUserName || '-' }}</template>
               </el-table-column>
-              <el-table-column label="实际负责人" width="130">
-                <template #default="{ row }">{{ row.actualOwnerName || '-' }}</template>
+              <el-table-column label="现场负责人" width="130">
+                <template #default="{ row }">{{ row.responsibleUserName || '-' }}</template>
               </el-table-column>
               <el-table-column label="状态" width="110">
                 <template #default="{ row }">{{ stepStatusLabels[row.status] ?? row.status }}</template>
               </el-table-column>
-              <el-table-column label="合格/总数" width="130">
-                <template #default="{ row }">{{ formatQuantity(row.qualifiedQuantity) }} / {{ formatQuantity(row.totalQuantity) }}</template>
+              <el-table-column label="完成/返工/异常" width="150">
+                <template #default="{ row }">{{ formatQuantity(row.outputQuantity) }} / {{ formatQuantity(row.returnQuantity) }} / {{ formatQuantity(row.abnormalQuantity) }}</template>
               </el-table-column>
-              <el-table-column label="操作" width="90" fixed="right">
+              <el-table-column label="鎿嶄綔" width="90" fixed="right">
                 <template #default="{ row }">
-                  <el-button link type="primary" @click="openStepEdit(row)">编辑</el-button>
+                  <el-button link type="primary" @click="openStepEdit(row)">缂栬緫</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -181,7 +181,7 @@
           <el-tab-pane label="物料需求">
             <el-table :data="activeTask.materialRequirements" class="detail-table">
               <el-table-column prop="routeStepName" label="工序" min-width="150" />
-              <el-table-column prop="materialModel" label="物料型号" min-width="160" />
+              <el-table-column prop="materialModel" label="物料编码" min-width="160" />
               <el-table-column prop="materialName" label="物料名称" min-width="160" />
               <el-table-column label="单位用量" width="110" align="right">
                 <template #default="{ row }">{{ formatQuantity(row.quantityPerUnit) }}</template>
@@ -189,8 +189,8 @@
               <el-table-column label="需求数量" width="120" align="right">
                 <template #default="{ row }">{{ formatQuantity(row.requiredQuantity) }}</template>
               </el-table-column>
-              <el-table-column label="批次记录" width="100">
-                <template #default="{ row }">{{ row.needBatchRecord ? '需要' : '不需要' }}</template>
+              <el-table-column label="是否批次记录" width="100">
+                <template #default="{ row }">{{ row.needBatchRecord ? '是' : '否' }}</template>
               </el-table-column>
             </el-table>
           </el-tab-pane>
@@ -200,11 +200,11 @@
 
     <el-dialog v-model="dispatchDialogVisible" title="任务派工" width="860px">
       <el-table :data="dispatchRows" class="detail-table">
-        <el-table-column prop="stepOrder" label="顺序" width="70" />
-        <el-table-column prop="processName" label="工序" min-width="180" />
+        <el-table-column prop="stepOrder" label="序号" width="70" />
+        <el-table-column prop="stepName" label="工序" min-width="180" />
         <el-table-column label="负责人" min-width="180">
           <template #default="{ row }">
-            <el-select v-model="row.actualOwnerId" clearable filterable placeholder="按默认负责人">
+            <el-select v-model="row.responsibleUserId" clearable filterable placeholder="指定现场负责人">
               <el-option v-for="user in userOptions" :key="user.id" :label="user.displayName" :value="user.id" />
             </el-select>
           </template>
@@ -218,8 +218,8 @@
 
     <el-dialog v-model="stepDialogVisible" title="编辑工序记录" width="640px">
       <el-form class="dialog-form" label-width="108px" :model="stepForm">
-        <el-form-item label="实际负责人">
-          <el-select v-model="stepForm.actualOwnerId" clearable filterable placeholder="请选择负责人">
+        <el-form-item label="负责人">
+          <el-select v-model="stepForm.responsibleUserId" clearable filterable placeholder="请选择负责人">
             <el-option v-for="user in userOptions" :key="user.id" :label="user.displayName" :value="user.id" />
           </el-select>
         </el-form-item>
@@ -228,14 +228,14 @@
             <el-option v-for="item in stepStatusOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="总数">
-          <el-input-number v-model="stepForm.totalQuantity" :min="0" :precision="4" :step="1" />
+        <el-form-item label="返工数量">
+          <el-input-number v-model="stepForm.returnQuantity" :min="0" :precision="4" :step="1" />
         </el-form-item>
-        <el-form-item label="合格数量">
-          <el-input-number v-model="stepForm.qualifiedQuantity" :min="0" :precision="4" :step="1" />
+        <el-form-item label="产出数量">
+          <el-input-number v-model="stepForm.outputQuantity" :min="0" :precision="4" :step="1" />
         </el-form-item>
-        <el-form-item label="不合格数量">
-          <el-input-number v-model="stepForm.defectiveQuantity" :min="0" :precision="4" :step="1" />
+        <el-form-item label="异常数量">
+          <el-input-number v-model="stepForm.abnormalQuantity" :min="0" :precision="4" :step="1" />
         </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="stepForm.remark" type="textarea" :rows="3" />
@@ -276,8 +276,7 @@ const taskStatusOptions: Array<{ value: ProductionBatchStatus; label: string; ty
   { value: 'cancelled', label: '已取消', type: 'danger' },
 ];
 const stepStatusOptions: Array<{ value: BatchStepStatus; label: string }> = [
-  { value: 'pending', label: '待处理' },
-  { value: 'assigned', label: '已派工' },
+  { value: 'pending', label: '待开始' },
   { value: 'doing', label: '进行中' },
   { value: 'completed', label: '已完成' },
   { value: 'abnormal', label: '异常' },
@@ -315,7 +314,7 @@ const taskDialogVisible = ref(false);
 const detailDialogVisible = ref(false);
 const dispatchDialogVisible = ref(false);
 const stepDialogVisible = ref(false);
-const dispatchRows = ref<Array<BatchStepRecordItem & { actualOwnerId: string | null }>>([]);
+const dispatchRows = ref<Array<BatchStepRecordItem & { responsibleUserId: string | null }>>([]);
 
 const query = reactive({ keyword: '', productId: '', ownerId: '', status: '' });
 const taskForm = reactive({
@@ -329,11 +328,11 @@ const taskForm = reactive({
   remark: '',
 });
 const stepForm = reactive({
-  actualOwnerId: '',
-  status: 'assigned' as BatchStepStatus,
-  totalQuantity: 0,
-  qualifiedQuantity: 0,
-  defectiveQuantity: 0,
+  responsibleUserId: '',
+  status: 'pending' as BatchStepStatus,
+  returnQuantity: 0,
+  outputQuantity: 0,
+  abnormalQuantity: 0,
   remark: '',
 });
 
@@ -443,7 +442,7 @@ const handleTaskOrderChange = (workOrderId: string) => {
 
 const submitTask = async () => {
   if (taskForm.plannedQuantity <= 0 || (!editingTaskId.value && !taskForm.workOrderId)) {
-    ElMessage.warning('请选择所属工单并填写计划数量');
+    ElMessage.warning('璇烽€夋嫨鎵€灞炲伐鍗曞苟濉啓璁″垝鏁伴噺');
     return;
   }
 
@@ -486,14 +485,14 @@ const openDetail = async (row: ProductionBatchItem) => {
 const generateMaterials = async (row: ProductionBatchItem) => {
   const result = await productionApi.generateTaskMaterialDemand(row.id);
   activeTask.value = result.task;
-  ElMessage.success(`已生成 ${result.materials.length} 条物料需求`);
+  ElMessage.success('已生成 ' + result.materials.length + ' 条物料需求');
   await loadTasks();
 };
 
 const openDispatch = async (row: ProductionBatchItem) => {
   const steps = await productionApi.previewTaskDispatch(row.id);
   dispatchTaskId.value = row.id;
-  dispatchRows.value = steps.map((step) => ({ ...step, actualOwnerId: step.actualOwnerId }));
+  dispatchRows.value = steps.map((step) => ({ ...step, responsibleUserId: step.responsibleUserId }));
   dispatchDialogVisible.value = true;
 };
 
@@ -505,7 +504,7 @@ const submitDispatch = async () => {
   submitting.value = true;
   try {
     await productionApi.dispatchTask(dispatchTaskId.value, {
-      steps: dispatchRows.value.map((row) => ({ routeStepId: row.routeStepId, actualOwnerId: row.actualOwnerId })),
+      steps: dispatchRows.value.map((row) => ({ routeStepId: row.routeStepId, responsibleUserId: row.responsibleUserId })),
     });
     ElMessage.success('派工已保存');
     dispatchDialogVisible.value = false;
@@ -523,9 +522,9 @@ const startTask = async (row: ProductionBatchItem) => {
 
 const finishTask = async (row: ProductionBatchItem) => {
   try {
-    await ElMessageBox.confirm('确认完成该生产任务？', '完成任务', {
-      confirmButtonText: '确认完成',
-      cancelButtonText: '取消',
+    await ElMessageBox.confirm('纭瀹屾垚璇ョ敓浜т换鍔★紵', '瀹屾垚浠诲姟', {
+      confirmButtonText: '纭瀹屾垚',
+      cancelButtonText: '鍙栨秷',
       type: 'info',
     });
   } catch {
@@ -545,11 +544,11 @@ const openStepEdit = (row: BatchStepRecordItem) => {
   editingTaskId.value = activeTask.value.id;
   editingStepId.value = row.id;
   Object.assign(stepForm, {
-    actualOwnerId: row.actualOwnerId ?? '',
+    responsibleUserId: row.responsibleUserId ?? '',
     status: row.status,
-    totalQuantity: Number(row.totalQuantity ?? 0),
-    qualifiedQuantity: Number(row.qualifiedQuantity ?? 0),
-    defectiveQuantity: Number(row.defectiveQuantity ?? 0),
+    returnQuantity: Number(row.returnQuantity ?? 0),
+    outputQuantity: Number(row.outputQuantity ?? 0),
+    abnormalQuantity: Number(row.abnormalQuantity ?? 0),
     remark: row.remark ?? '',
   });
   stepDialogVisible.value = true;
@@ -563,11 +562,11 @@ const submitStep = async () => {
   submitting.value = true;
   try {
     activeTask.value = await productionApi.updateTaskStep(editingTaskId.value, editingStepId.value, {
-      actualOwnerId: stepForm.actualOwnerId || null,
+      responsibleUserId: stepForm.responsibleUserId || null,
       status: stepForm.status,
-      totalQuantity: stepForm.totalQuantity,
-      qualifiedQuantity: stepForm.qualifiedQuantity,
-      defectiveQuantity: stepForm.defectiveQuantity,
+      returnQuantity: stepForm.returnQuantity,
+      outputQuantity: stepForm.outputQuantity,
+      abnormalQuantity: stepForm.abnormalQuantity,
       remark: stepForm.remark,
     });
     ElMessage.success('工序记录已更新');
@@ -578,10 +577,10 @@ const submitStep = async () => {
 };
 
 const getTaskStatusMeta = (status: ProductionBatchStatus) => taskStatusOptions.find((item) => item.value === status) ?? taskStatusOptions[0];
-const formatProduct = (product: ProductListItem) => `${product.productModel} / ${product.productName}`;
-const formatRoute = (route: ProcessRouteListItem) => `${route.routeName}${route.productType ? ` / ${route.productType}` : ''}`;
+const formatProduct = (product: ProductListItem) => [product.productModel, product.productName].join(' / ');
+const formatRoute = (route: ProcessRouteListItem) => route.routeName + (route.productType ? ' / ' + route.productType : '');
 const formatWorkOrder = (order: WorkOrderListItem) =>
-  `${order.orderNo} / ${order.productModel} / 剩余 ${formatQuantity(Number(order.plannedQuantity) - Number(order.assignedQuantity))}`;
+  [order.orderNo, order.productModel, '剩余 ' + formatQuantity(Number(order.plannedQuantity) - Number(order.assignedQuantity))].join(' / ');
 const formatQuantity = (value: string | number | null) => {
   const amount = Number(value ?? 0);
   return Number.isFinite(amount)

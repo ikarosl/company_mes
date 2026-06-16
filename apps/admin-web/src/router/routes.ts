@@ -15,6 +15,7 @@ import ProcessesPage from '../views/product/ProcessesPage.vue';
 import ProcessRoutesPage from '../views/product/ProcessRoutesPage.vue';
 import ProductionOrdersPage from '../views/production/ProductionOrdersPage.vue';
 import ProductionTasksPage from '../views/production/ProductionTasksPage.vue';
+import WorkerTasksPage from '../views/WorkerTasksPage.vue';
 import WarehouseInventoryPage from '../views/warehouse/WarehouseInventoryPage.vue';
 // import ProcessTemplatesPage from '../views/ProcessTemplatesPage.vue';
 // import ProductionBatchDetailPage from '../views/ProductionBatchDetailPage.vue';
@@ -262,14 +263,16 @@ export const routes: RouteRecordRaw[] = [
       //   '查看完整链路',
       // ]),
 
-      plannedPage(
-        'worker/tasks',
-        'worker-tasks',
-        '我的任务',
-        '员工端',
-        ['查看我的任务', '查看当前工序', '查看SOP', '开始生产', '提交完成'],
-        PERMISSIONS.worker.tasks.page,
-      ),
+      {
+        path: 'worker/tasks',
+        name: 'worker-tasks',
+        component: WorkerTasksPage,
+        meta: {
+          title: '我的任务',
+          section: '员工端',
+          permission: PERMISSIONS.worker.tasks.page,
+        },
+      },
       plannedPage(
         'inspector/tasks',
         'inspector-tasks',

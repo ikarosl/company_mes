@@ -4,7 +4,7 @@ export type BatchMaterialStatus = 'ungenerated' | 'unassigned' | 'partial_assign
 export type BatchDispatchStatus = 'pending' | 'assigned';
 export type BatchProductionStatus = 'pending' | 'doing' | 'completed';
 export type BatchInspectionStatus = 'pending' | 'inspecting' | 'passed' | 'failed' | 'partial_pass';
-export type BatchStepStatus = 'pending' | 'assigned' | 'doing' | 'completed' | 'abnormal' | 'skipped';
+export type BatchStepStatus = 'pending' | 'doing' | 'completed' | 'abnormal' | 'skipped';
 
 export interface ProductionBatchItem {
   id: string;
@@ -36,22 +36,34 @@ export interface BatchStepRecordItem {
   batchId: string;
   routeStepId: string;
   stepOrder: number;
-  processId: string | null;
-  processCode: string;
-  processName: string;
-  defaultOwnerId: string | null;
-  defaultOwnerName: string | null;
-  actualOwnerId: string | null;
-  actualOwnerName: string | null;
+  stepName: string;
+  sopFileId: string | null;
+  responsibleUserId: string | null;
+  responsibleUserName: string | null;
   status: BatchStepStatus;
   startedAt: string | null;
-  finishedAt: string | null;
-  totalQuantity: string | null;
-  qualifiedQuantity: string | null;
-  defectiveQuantity: string | null;
+  completedAt: string | null;
+  outputQuantity: string | null;
+  returnQuantity: string | null;
+  abnormalQuantity: string | null;
   remark: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface WorkerTaskItem extends ProductionBatchItem {
+  stepRecordId: string;
+  routeStepId: string;
+  stepOrder: number;
+  stepName: string;
+  stepStatus: BatchStepStatus;
+  startedAt: string | null;
+  completedAt: string | null;
+  outputQuantity: string | null;
+  returnQuantity: string | null;
+  abnormalQuantity: string | null;
+  responsibleUserId: string | null;
+  responsibleUserName: string | null;
 }
 
 export interface TaskMaterialRequirementItem {
@@ -152,7 +164,7 @@ export interface UpdateProductionBatchPayload {
 
 export interface DispatchTaskStepPayload {
   routeStepId: string;
-  actualOwnerId?: string | null;
+  responsibleUserId?: string | null;
 }
 
 export interface DispatchTaskPayload {
@@ -160,12 +172,12 @@ export interface DispatchTaskPayload {
 }
 
 export interface UpdateBatchStepRecordPayload {
-  actualOwnerId?: string | null;
+  responsibleUserId?: string | null;
   status?: BatchStepStatus;
   startedAt?: string | null;
-  finishedAt?: string | null;
-  totalQuantity?: string | number | null;
-  qualifiedQuantity?: string | number | null;
-  defectiveQuantity?: string | number | null;
+  completedAt?: string | null;
+  outputQuantity?: string | number | null;
+  returnQuantity?: string | number | null;
+  abnormalQuantity?: string | number | null;
   remark?: string | null;
 }
