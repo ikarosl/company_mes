@@ -74,7 +74,7 @@
           <el-option label="50条/页" :value="50" />
         </el-select>
         <el-pagination
-          v-model:current-page="currentPage"
+          :current-page="currentPage"
           :page-size="pageSize"
           :total="total"
           layout="prev, pager, next, jumper"

@@ -115,8 +115,11 @@
         <el-form-item v-if="!editingTaskId" label="批次号">
           <el-input v-model="taskForm.batchNo" placeholder="不填则系统自动生成" />
         </el-form-item>
+        <el-form-item v-if="!editingTaskId && selectedWorkOrder" label="产品">
+          <el-input :model-value="formatTaskProduct(selectedWorkOrder)" disabled />
+        </el-form-item>
         <el-form-item label="工艺路线" required>
-          <el-select v-model="taskForm.routeId" filterable clearable placeholder="请选择工艺路线">
+          <el-select v-model="taskForm.routeId" filterable clearable placeholder="请选择工艺路线" @change="refreshCreatePreview">
             <el-option v-for="route in routeOptions" :key="route.id" :label="formatRoute(route)" :value="route.id" />
           </el-select>
         </el-form-item>
@@ -126,7 +129,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="计划数量" required>
-          <el-input-number v-model="taskForm.plannedQuantity" :min="0.0001" :precision="4" :step="1" />
+          <el-input-number v-model="taskForm.plannedQuantity" :min="0.0001" :precision="4" :step="1" @change="refreshCreatePreview" />
         </el-form-item>
         <el-form-item label="计划开始">
           <el-date-picker v-model="taskForm.planStartDate" type="date" value-format="YYYY-MM-DD" />
@@ -138,6 +141,37 @@
           <el-input v-model="taskForm.remark" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
+      <el-tabs v-if="!editingTaskId" class="detail-tabs">
+        <el-tab-pane label="工序执行">
+          <el-table :data="createPreviewSteps" class="detail-table">
+            <el-table-column prop="stepOrder" label="顺序" width="70" />
+            <el-table-column prop="processName" label="工序" min-width="160" />
+            <el-table-column label="负责人" min-width="180">
+              <template #default="{ row }">
+                <el-select v-model="row.actualOwnerId" clearable filterable placeholder="请选择负责人">
+                  <el-option v-for="user in userOptions" :key="user.id" :label="user.displayName" :value="user.id" />
+                </el-select>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+        <el-tab-pane label="物料需求">
+          <el-table :data="createPreviewMaterials" class="detail-table">
+            <el-table-column prop="routeStepName" label="工序" min-width="150" />
+            <el-table-column prop="materialModel" label="物料型号" min-width="160" />
+            <el-table-column prop="materialName" label="物料名称" min-width="160" />
+            <el-table-column label="单位用量" width="110" align="right">
+              <template #default="{ row }">{{ formatQuantity(row.quantityPerUnit) }}</template>
+            </el-table-column>
+            <el-table-column label="需求数量" width="120" align="right">
+              <template #default="{ row }">{{ formatQuantity(row.requiredQuantity) }}</template>
+            </el-table-column>
+            <el-table-column label="批次记录" width="100">
+              <template #default="{ row }">{{ row.needBatchRecord ? '需要' : '不需要' }}</template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+      </el-tabs>
       <template #footer>
         <el-button @click="taskDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="submitting" @click="submitTask">保存任务</el-button>
@@ -250,7 +284,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type {
@@ -303,6 +337,8 @@ const routeOptions = ref<ProcessRouteListItem[]>([]);
 const userOptions = ref<SystemUserListItem[]>([]);
 const workOrderOptions = ref<WorkOrderListItem[]>([]);
 const activeTask = ref<ProductionTaskDetail | null>(null);
+const createPreviewSteps = ref<Array<BatchStepRecordItem & { actualOwnerId: string | null }>>([]);
+const createPreviewMaterials = ref<ProductionTaskDetail['materialRequirements']>([]);
 const editingTaskId = ref<string | null>(null);
 const dispatchTaskId = ref<string | null>(null);
 const editingStepId = ref<string | null>(null);
@@ -378,6 +414,8 @@ const loadPageData = async () => {
   }
 };
 
+const selectedWorkOrder = computed(() => workOrderOptions.value.find((item) => item.id === taskForm.workOrderId) ?? null);
+
 const searchTasks = async () => {
   currentPage.value = 1;
   await loadTasks();
@@ -405,6 +443,8 @@ const resetTaskForm = () => {
     planEndDate: '',
     remark: '',
   });
+  createPreviewSteps.value = [];
+  createPreviewMaterials.value = [];
 };
 
 const openCreate = () => {
@@ -439,6 +479,23 @@ const handleTaskOrderChange = (workOrderId: string) => {
   taskForm.planStartDate = order.planStartDate ?? '';
   taskForm.planEndDate = order.planEndDate ?? '';
   taskForm.plannedQuantity = Math.max(Number(order.plannedQuantity) - Number(order.assignedQuantity), 0.0001);
+  void refreshCreatePreview();
+};
+
+const refreshCreatePreview = async () => {
+  if (editingTaskId.value || !taskForm.workOrderId || !taskForm.routeId || taskForm.plannedQuantity <= 0) {
+    createPreviewSteps.value = [];
+    createPreviewMaterials.value = [];
+    return;
+  }
+
+  const preview = await productionApi.previewCreateTask({
+    workOrderId: taskForm.workOrderId,
+    routeId: taskForm.routeId,
+    plannedQuantity: taskForm.plannedQuantity,
+  });
+  createPreviewSteps.value = preview.steps.map((step) => ({ ...step, actualOwnerId: step.actualOwnerId }));
+  createPreviewMaterials.value = preview.materialRequirements;
 };
 
 const submitTask = async () => {
@@ -466,6 +523,7 @@ const submitTask = async () => {
         ...payload,
         workOrderId: taskForm.workOrderId,
         batchNo: taskForm.batchNo || null,
+        steps: createPreviewSteps.value.map((row) => ({ routeStepId: row.routeStepId, actualOwnerId: row.actualOwnerId })),
       });
       ElMessage.success('任务已新增');
     }
@@ -579,6 +637,7 @@ const submitStep = async () => {
 
 const getTaskStatusMeta = (status: ProductionBatchStatus) => taskStatusOptions.find((item) => item.value === status) ?? taskStatusOptions[0];
 const formatProduct = (product: ProductListItem) => `${product.productModel} / ${product.productName}`;
+const formatTaskProduct = (order: WorkOrderListItem) => `${order.productModel} / ${order.productName}`;
 const formatRoute = (route: ProcessRouteListItem) => `${route.routeName}${route.productType ? ` / ${route.productType}` : ''}`;
 const formatWorkOrder = (order: WorkOrderListItem) =>
   `${order.orderNo} / ${order.productModel} / 剩余 ${formatQuantity(Number(order.plannedQuantity) - Number(order.assignedQuantity))}`;

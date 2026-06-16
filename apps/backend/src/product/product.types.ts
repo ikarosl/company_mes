@@ -58,7 +58,6 @@ export interface ProductMaterialListRow extends RowDataPacket {
   material_model: string;
   material_name: string;
   material_unit: string;
-  quantity_per_unit: string | number;
   unit: string | null;
   is_key_material: number;
   need_batch_record: number;
@@ -113,7 +112,8 @@ export interface ProcessOptionRow extends RowDataPacket {
 export interface ProcessRouteStepListRow extends RowDataPacket {
   id: number;
   route_id: number;
-  process_id: number;
+  process_id: number | null;
+  process_step_id: number | null;
   step_order: number;
   process_code: string;
   process_name: string;

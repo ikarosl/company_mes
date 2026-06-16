@@ -74,6 +74,11 @@ export interface ProductionTaskDetail extends ProductionBatchItem {
   materialRequirements: TaskMaterialRequirementItem[];
 }
 
+export interface ProductionTaskCreatePreview {
+  steps: BatchStepRecordItem[];
+  materialRequirements: TaskMaterialRequirementItem[];
+}
+
 export interface WorkOrderListItem {
   id: string;
   orderNo: string;
@@ -137,6 +142,7 @@ export interface CreateProductionBatchPayload {
 
 export interface CreateProductionTaskPayload extends CreateProductionBatchPayload {
   workOrderId: string;
+  steps?: DispatchTaskStepPayload[];
 }
 
 export interface UpdateProductionBatchPayload {

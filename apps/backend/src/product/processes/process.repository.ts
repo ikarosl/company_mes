@@ -39,7 +39,8 @@ export class ProcessRepository {
     const [totalRow] = await this.database.query<CountRow[]>(
       `
       SELECT COUNT(*) AS total
-      FROM processes p
+      FROM process_steps ps
+      LEFT JOIN processes p ON p.id = ps.id AND p.is_deleted = 0
       WHERE ${where}
     `,
       params,
@@ -47,21 +48,22 @@ export class ProcessRepository {
     const rows = await this.database.query<ProcessListRow[]>(
       `
       SELECT
-        p.id,
-        p.process_code,
-        p.process_name,
+        ps.id,
+        COALESCE(ps.step_code, p.process_code) AS process_code,
+        COALESCE(ps.step_name, p.process_name) AS process_name,
         p.description,
-        p.sop_file_id,
+        COALESCE(ps.sop_file_id, p.sop_file_id) AS sop_file_id,
         COALESCE(f.file_name, p.sop_file_name) AS sop_file_name,
         COALESCE(f.file_url, p.sop_file_url) AS sop_file_url,
-        p.status,
-        p.remark,
-        p.created_at,
-        p.updated_at
-      FROM processes p
-      LEFT JOIN technical_files f ON f.id = p.sop_file_id AND f.is_deleted = 0
+        COALESCE(p.status, 1) AS status,
+        ps.remark,
+        ps.created_at,
+        ps.updated_at
+      FROM process_steps ps
+      LEFT JOIN processes p ON p.id = ps.id AND p.is_deleted = 0
+      LEFT JOIN technical_files f ON f.id = COALESCE(ps.sop_file_id, p.sop_file_id) AND f.is_deleted = 0
       WHERE ${where}
-      ORDER BY p.id DESC
+      ORDER BY ps.id DESC
       LIMIT ? OFFSET ?
     `,
       [...params, pagination.pageSize, pagination.offset],
@@ -73,16 +75,17 @@ export class ProcessRepository {
   async listProcessOptions(): Promise<ProcessOption[]> {
     const rows = await this.database.query<ProcessOptionRow[]>(`
       SELECT
-        p.id,
-        p.process_code,
-        p.process_name,
+        ps.id,
+        COALESCE(ps.step_code, p.process_code) AS process_code,
+        COALESCE(ps.step_name, p.process_name) AS process_name,
         p.description,
-        p.sop_file_id,
+        COALESCE(ps.sop_file_id, p.sop_file_id) AS sop_file_id,
         COALESCE(f.file_name, p.sop_file_name) AS sop_file_name,
         COALESCE(f.file_url, p.sop_file_url) AS sop_file_url
-      FROM processes p
-      LEFT JOIN technical_files f ON f.id = p.sop_file_id AND f.is_deleted = 0
-      WHERE p.is_deleted = 0 AND p.status = 1
+      FROM process_steps ps
+      LEFT JOIN processes p ON p.id = ps.id AND p.is_deleted = 0
+      LEFT JOIN technical_files f ON f.id = COALESCE(ps.sop_file_id, p.sop_file_id) AND f.is_deleted = 0
+      WHERE ps.is_deleted = 0 AND COALESCE(p.status, 1) = 1
       ORDER BY p.process_code ASC, p.id ASC
       LIMIT 500
     `);
@@ -105,13 +108,39 @@ export class ProcessRepository {
 
     const result = (await this.database.execute(
       `
-      INSERT INTO processes (
-        process_code, process_name, description, sop_file_id, sop_file_name,
-        sop_file_url, status, remark, created_at, updated_at
+      INSERT INTO process_steps (
+        step_code, step_name, sop_file_id, remark, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+      VALUES (?, ?, ?, ?, NOW(), NOW())
     `,
       [
+        processCode,
+        processName,
+        sopFileId,
+        normalizeOptionalString(payload.remark),
+      ],
+    )) as ResultSetHeader;
+
+    await this.database.execute(
+      `
+      INSERT INTO processes (
+        id, process_code, process_name, description, sop_file_id, sop_file_name,
+        sop_file_url, status, remark, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+      ON DUPLICATE KEY UPDATE
+        process_code = VALUES(process_code),
+        process_name = VALUES(process_name),
+        description = VALUES(description),
+        sop_file_id = VALUES(sop_file_id),
+        sop_file_name = VALUES(sop_file_name),
+        sop_file_url = VALUES(sop_file_url),
+        status = VALUES(status),
+        remark = VALUES(remark),
+        updated_at = NOW()
+    `,
+      [
+        result.insertId,
         processCode,
         processName,
         normalizeOptionalString(payload.description),
@@ -121,7 +150,7 @@ export class ProcessRepository {
         status,
         normalizeOptionalString(payload.remark),
       ],
-    )) as ResultSetHeader;
+    );
 
     return this.getProcessListItem(result.insertId);
   }
@@ -142,6 +171,25 @@ export class ProcessRepository {
 
     await this.assertProcessCodeAvailable(processCode, id);
     await this.assertTechnicalFileAvailable(sopFileId);
+
+    await this.database.execute(
+      `
+      UPDATE process_steps
+      SET step_code = ?,
+        step_name = ?,
+        sop_file_id = ?,
+        remark = ?,
+        updated_at = NOW()
+      WHERE id = ? AND is_deleted = 0
+    `,
+      [
+        processCode,
+        processName,
+        sopFileId,
+        payload.remark === undefined ? current.remark : normalizeOptionalString(payload.remark),
+        id,
+      ],
+    );
 
     await this.database.execute(
       `
@@ -222,25 +270,34 @@ export class ProcessRepository {
       [fileResult.insertId, sopFileName, sopFileUrl, id],
     );
 
+    await this.database.execute(
+      `
+      UPDATE process_steps
+      SET sop_file_id = ?, updated_at = NOW()
+      WHERE id = ? AND is_deleted = 0
+    `,
+      [fileResult.insertId, id],
+    );
+
     return this.getProcessListItem(id);
   }
 
   private buildListFilters(filters: ProcessFilters) {
-    const clauses = ['p.is_deleted = 0'];
+    const clauses = ['ps.is_deleted = 0'];
     const params: QueryParam[] = [];
 
     if (filters.keyword?.trim()) {
-      clauses.push('(p.process_code LIKE ? OR p.process_name LIKE ?)');
+      clauses.push('(ps.step_code LIKE ? OR ps.step_name LIKE ? OR p.process_code LIKE ? OR p.process_name LIKE ?)');
       const keyword = `%${filters.keyword.trim()}%`;
-      params.push(keyword, keyword);
+      params.push(keyword, keyword, keyword, keyword);
     }
 
     if (filters.status === 'enabled') {
-      clauses.push('p.status = 1');
+      clauses.push('COALESCE(p.status, 1) = 1');
     }
 
     if (filters.status === 'disabled') {
-      clauses.push('p.status = 0');
+      clauses.push('COALESCE(p.status, 1) = 0');
     }
 
     return {
@@ -253,17 +310,18 @@ export class ProcessRepository {
     const [row] = await this.database.query<ProcessRow[]>(
       `
       SELECT
-        id,
-        process_code,
-        process_name,
-        description,
-        sop_file_id,
-        sop_file_name,
-        sop_file_url,
-        status,
-        remark
-      FROM processes
-      WHERE id = ? AND is_deleted = 0
+        ps.id,
+        COALESCE(ps.step_code, p.process_code) AS process_code,
+        COALESCE(ps.step_name, p.process_name) AS process_name,
+        p.description,
+        COALESCE(ps.sop_file_id, p.sop_file_id) AS sop_file_id,
+        p.sop_file_name,
+        p.sop_file_url,
+        COALESCE(p.status, 1) AS status,
+        ps.remark
+      FROM process_steps ps
+      LEFT JOIN processes p ON p.id = ps.id AND p.is_deleted = 0
+      WHERE ps.id = ? AND ps.is_deleted = 0
       LIMIT 1
     `,
       [id],
@@ -281,19 +339,20 @@ export class ProcessRepository {
       `
       SELECT
         p.id,
-        p.process_code,
-        p.process_name,
+        COALESCE(ps.step_code, p.process_code) AS process_code,
+        COALESCE(ps.step_name, p.process_name) AS process_name,
         p.description,
-        p.sop_file_id,
+        COALESCE(ps.sop_file_id, p.sop_file_id) AS sop_file_id,
         COALESCE(f.file_name, p.sop_file_name) AS sop_file_name,
         COALESCE(f.file_url, p.sop_file_url) AS sop_file_url,
-        p.status,
-        p.remark,
-        p.created_at,
-        p.updated_at
-      FROM processes p
-      LEFT JOIN technical_files f ON f.id = p.sop_file_id AND f.is_deleted = 0
-      WHERE p.id = ? AND p.is_deleted = 0
+        COALESCE(p.status, 1) AS status,
+        ps.remark,
+        ps.created_at,
+        ps.updated_at
+      FROM process_steps ps
+      LEFT JOIN processes p ON p.id = ps.id AND p.is_deleted = 0
+      LEFT JOIN technical_files f ON f.id = COALESCE(ps.sop_file_id, p.sop_file_id) AND f.is_deleted = 0
+      WHERE ps.id = ? AND ps.is_deleted = 0
       LIMIT 1
     `,
       [id],
@@ -337,8 +396,8 @@ export class ProcessRepository {
     const [row] = await this.database.query<RowDataPacket[]>(
       `
       SELECT id
-      FROM processes
-      WHERE process_code = ? AND is_deleted = 0${ignoredClause}
+      FROM process_steps
+      WHERE step_code = ? AND is_deleted = 0${ignoredClause}
       LIMIT 1
     `,
       params,
