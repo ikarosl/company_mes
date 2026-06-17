@@ -22,8 +22,8 @@
           </el-select>
         </el-form-item>
         <el-form-item class="query-actions">
-          <el-button type="primary" :loading="loading" @click="searchTasks">鏌ヨ</el-button>
-          <el-button @click="resetQuery">閲嶇疆</el-button>
+          <el-button type="primary" :loading="loading" @click="searchTasks">查询</el-button>
+          <el-button @click="resetQuery">重置</el-button>
         </el-form-item>
       </el-form>
     </section>
@@ -56,7 +56,7 @@
           <template #default="{ row }">{{ formatQuantity(row.plannedQuantity) }}</template>
         </el-table-column>
         <el-table-column label="工艺路线" min-width="160">
-          <template #default="{ row }">{{ row.routeName || '鏈€夋嫨' }}</template>
+          <template #default="{ row }">{{ row.routeName || '未选择' }}</template>
         </el-table-column>
         <el-table-column label="物料状态" width="130">
           <template #default="{ row }">{{ materialStatusLabels[row.materialStatus] ?? row.materialStatus }}</template>
@@ -84,7 +84,7 @@
             <el-button link type="primary" @click="generateMaterials(row)">生成物料</el-button>
             <el-button link type="primary" @click="openDispatch(row)">派工</el-button>
             <el-button link type="primary" :disabled="row.status === 'completed'" @click="startTask(row)">开始</el-button>
-            <el-button link type="primary" :disabled="row.status === 'completed'" @click="finishTask(row)">瀹屾垚</el-button>
+            <el-button link type="primary" :disabled="row.status === 'completed'" @click="finishTask(row)">完成</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -115,9 +115,12 @@
         <el-form-item v-if="!editingTaskId" label="批次号">
           <el-input v-model="taskForm.batchNo" placeholder="若为空则自动生成批次号" />
         </el-form-item>
-        <el-form-item label="宸ヨ壓璺嚎" required>
-          <el-select v-model="taskForm.routeId" filterable clearable placeholder="请选择工艺路线">
-            <el-option v-for="route in routeOptions" :key="route.id" :label="formatRoute(route)" :value="route.id" />
+        <el-form-item v-if="!editingTaskId && selectedWorkOrder" label="产品">
+          <el-input :model-value="formatTaskProduct(selectedWorkOrder)" disabled />
+        </el-form-item>
+        <el-form-item label="工艺路线" required>
+          <el-select v-model="taskForm.routeId" filterable clearable placeholder="请选择工艺路线" @change="refreshCreatePreview">
+            <el-option v-for="route in availableRouteOptions" :key="route.id" :label="formatRoute(route)" :value="route.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="负责人">
@@ -126,7 +129,14 @@
           </el-select>
         </el-form-item>
         <el-form-item label="计划数量" required>
-          <el-input-number v-model="taskForm.plannedQuantity" :min="0.0001" :precision="4" :step="1" />
+          <el-input-number
+            v-model="taskForm.plannedQuantity"
+            :min="0"
+            :max="selectedWorkOrderRemaining ?? undefined"
+            :precision="4"
+            :step="1"
+            @change="refreshCreatePreview"
+          />
         </el-form-item>
         <el-form-item label="计划开始日期">
           <el-date-picker v-model="taskForm.planStartDate" type="date" value-format="YYYY-MM-DD" />
@@ -138,6 +148,37 @@
           <el-input v-model="taskForm.remark" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
+      <el-tabs v-if="!editingTaskId" class="detail-tabs">
+        <el-tab-pane label="工序执行">
+          <el-table :data="createPreviewSteps" class="detail-table">
+            <el-table-column prop="stepOrder" label="顺序" width="70" />
+            <el-table-column prop="stepName" label="工序" min-width="160" />
+            <el-table-column label="负责人" min-width="180">
+              <template #default="{ row }">
+                <el-select v-model="row.responsibleUserId" clearable filterable placeholder="请选择负责人">
+                  <el-option v-for="user in userOptions" :key="user.id" :label="user.displayName" :value="user.id" />
+                </el-select>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+        <el-tab-pane label="物料需求">
+          <el-table :data="createPreviewMaterials" class="detail-table">
+            <el-table-column prop="routeStepName" label="工序" min-width="150" />
+            <el-table-column prop="materialModel" label="物料型号" min-width="160" />
+            <el-table-column prop="materialName" label="物料名称" min-width="160" />
+            <el-table-column label="单位用量" width="110" align="right">
+              <template #default="{ row }">{{ formatQuantity(row.quantityPerUnit) }}</template>
+            </el-table-column>
+            <el-table-column label="需求数量" width="120" align="right">
+              <template #default="{ row }">{{ formatQuantity(row.requiredQuantity) }}</template>
+            </el-table-column>
+            <el-table-column label="批次记录" width="100">
+              <template #default="{ row }">{{ row.needBatchRecord ? '需要' : '不需要' }}</template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+      </el-tabs>
       <template #footer>
         <el-button @click="taskDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="submitting" @click="submitTask">保存任务</el-button>
@@ -171,9 +212,9 @@
               <el-table-column label="完成/返工/异常" width="150">
                 <template #default="{ row }">{{ formatQuantity(row.outputQuantity) }} / {{ formatQuantity(row.returnQuantity) }} / {{ formatQuantity(row.abnormalQuantity) }}</template>
               </el-table-column>
-              <el-table-column label="鎿嶄綔" width="90" fixed="right">
+              <el-table-column label="操作" width="90" fixed="right">
                 <template #default="{ row }">
-                  <el-button link type="primary" @click="openStepEdit(row)">缂栬緫</el-button>
+                  <el-button link type="primary" @click="openStepEdit(row)">编辑</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -250,7 +291,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type {
@@ -302,6 +343,8 @@ const routeOptions = ref<ProcessRouteListItem[]>([]);
 const userOptions = ref<SystemUserListItem[]>([]);
 const workOrderOptions = ref<WorkOrderListItem[]>([]);
 const activeTask = ref<ProductionTaskDetail | null>(null);
+const createPreviewSteps = ref<Array<BatchStepRecordItem & { responsibleUserId: string | null }>>([]);
+const createPreviewMaterials = ref<ProductionTaskDetail['materialRequirements']>([]);
 const editingTaskId = ref<string | null>(null);
 const dispatchTaskId = ref<string | null>(null);
 const editingStepId = ref<string | null>(null);
@@ -377,6 +420,23 @@ const loadPageData = async () => {
   }
 };
 
+const selectedWorkOrder = computed(() => workOrderOptions.value.find((item) => item.id === taskForm.workOrderId) ?? null);
+const selectedProduct = computed(() => productOptions.value.find((item) => item.id === selectedWorkOrder.value?.productId) ?? null);
+const selectedWorkOrderRemaining = computed(() => {
+  if (!selectedWorkOrder.value) {
+    return null;
+  }
+
+  return getWorkOrderRemaining(selectedWorkOrder.value);
+});
+const availableRouteOptions = computed(() => {
+  if (!selectedWorkOrder.value || selectedProduct.value?.categoryId === null || selectedProduct.value?.categoryId === undefined) {
+    return routeOptions.value;
+  }
+
+  return routeOptions.value.filter((route) => route.productCategoryId === null || route.productCategoryId === selectedProduct.value?.categoryId);
+});
+
 const searchTasks = async () => {
   currentPage.value = 1;
   await loadTasks();
@@ -404,6 +464,8 @@ const resetTaskForm = () => {
     planEndDate: '',
     remark: '',
   });
+  createPreviewSteps.value = [];
+  createPreviewMaterials.value = [];
 };
 
 const openCreate = () => {
@@ -437,12 +499,50 @@ const handleTaskOrderChange = (workOrderId: string) => {
   taskForm.ownerId = order.ownerId ?? '';
   taskForm.planStartDate = order.planStartDate ?? '';
   taskForm.planEndDate = order.planEndDate ?? '';
-  taskForm.plannedQuantity = Math.max(Number(order.plannedQuantity) - Number(order.assignedQuantity), 0.0001);
+  taskForm.plannedQuantity = getWorkOrderRemaining(order);
+
+  if (taskForm.plannedQuantity <= 0) {
+    createPreviewSteps.value = [];
+    createPreviewMaterials.value = [];
+    ElMessage.warning('该工单已无可分配数量');
+    return;
+  }
+
+  void refreshCreatePreview();
+};
+
+const refreshCreatePreview = async () => {
+  if (editingTaskId.value || !taskForm.workOrderId || !taskForm.routeId || taskForm.plannedQuantity <= 0) {
+    createPreviewSteps.value = [];
+    createPreviewMaterials.value = [];
+    return true;
+  }
+
+  try {
+    const preview = await productionApi.previewCreateTask({
+      workOrderId: taskForm.workOrderId,
+      routeId: taskForm.routeId,
+      plannedQuantity: taskForm.plannedQuantity,
+    });
+    createPreviewSteps.value = preview.steps.map((step) => ({ ...step, responsibleUserId: step.responsibleUserId }));
+    createPreviewMaterials.value = preview.materialRequirements;
+    return true;
+  } catch (error) {
+    createPreviewSteps.value = [];
+    createPreviewMaterials.value = [];
+    ElMessage.error(error instanceof Error ? error.message : '任务预览失败');
+    return false;
+  }
 };
 
 const submitTask = async () => {
   if (taskForm.plannedQuantity <= 0 || (!editingTaskId.value && !taskForm.workOrderId)) {
-    ElMessage.warning('璇烽€夋嫨鎵€灞炲伐鍗曞苟濉啓璁″垝鏁伴噺');
+    ElMessage.warning('请选择所属工单并填写计划数量');
+    return;
+  }
+
+  if (!editingTaskId.value && selectedWorkOrderRemaining.value !== null && taskForm.plannedQuantity > selectedWorkOrderRemaining.value) {
+    ElMessage.warning('计划数量不能超过工单剩余数量');
     return;
   }
 
@@ -461,10 +561,16 @@ const submitTask = async () => {
       await productionApi.updateTask(editingTaskId.value, payload);
       ElMessage.success('任务已更新');
     } else {
+      const previewReady = await refreshCreatePreview();
+      if (!previewReady) {
+        return;
+      }
+
       await productionApi.createTask({
         ...payload,
         workOrderId: taskForm.workOrderId,
         batchNo: taskForm.batchNo || null,
+        steps: createPreviewSteps.value.map((row) => ({ routeStepId: row.routeStepId, responsibleUserId: row.responsibleUserId })),
       });
       ElMessage.success('任务已新增');
     }
@@ -522,9 +628,9 @@ const startTask = async (row: ProductionBatchItem) => {
 
 const finishTask = async (row: ProductionBatchItem) => {
   try {
-    await ElMessageBox.confirm('纭瀹屾垚璇ョ敓浜т换鍔★紵', '瀹屾垚浠诲姟', {
-      confirmButtonText: '纭瀹屾垚',
-      cancelButtonText: '鍙栨秷',
+    await ElMessageBox.confirm('确认完成该生产任务？', '完成任务', {
+      confirmButtonText: '确认完成',
+      cancelButtonText: '取消',
       type: 'info',
     });
   } catch {
@@ -577,10 +683,12 @@ const submitStep = async () => {
 };
 
 const getTaskStatusMeta = (status: ProductionBatchStatus) => taskStatusOptions.find((item) => item.value === status) ?? taskStatusOptions[0];
-const formatProduct = (product: ProductListItem) => [product.productModel, product.productName].join(' / ');
-const formatRoute = (route: ProcessRouteListItem) => route.routeName + (route.productType ? ' / ' + route.productType : '');
+const formatProduct = (product: ProductListItem) => `${product.productModel} / ${product.productName}`;
+const formatTaskProduct = (order: WorkOrderListItem) => `${order.productModel} / ${order.productName}`;
+const formatRoute = (route: ProcessRouteListItem) => `${route.routeName}${route.productType ? ` / ${route.productType}` : ''}`;
+const getWorkOrderRemaining = (order: WorkOrderListItem) => Math.max(Number(order.plannedQuantity) - Number(order.assignedQuantity), 0);
 const formatWorkOrder = (order: WorkOrderListItem) =>
-  [order.orderNo, order.productModel, '剩余 ' + formatQuantity(Number(order.plannedQuantity) - Number(order.assignedQuantity))].join(' / ');
+  [order.orderNo, order.productModel, '剩余 ' + formatQuantity(getWorkOrderRemaining(order))].join(' / ');
 const formatQuantity = (value: string | number | null) => {
   const amount = Number(value ?? 0);
   return Number.isFinite(amount)

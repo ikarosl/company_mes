@@ -261,11 +261,6 @@
               </el-select>
             </template>
           </el-table-column>
-          <el-table-column label="单位用量" width="150">
-            <template #default="{ row }">
-              <el-input-number v-model="row.quantityPerUnit" :min="0.0001" :precision="4" :step="1" />
-            </template>
-          </el-table-column>
           <el-table-column label="单位" width="120">
             <template #default="{ row }">
               <el-input v-model="row.unit" placeholder="pcs" />
@@ -323,7 +318,6 @@ type SpecFormRow = {
 type MaterialFormRow = {
   id?: string;
   materialProductId: string;
-  quantityPerUnit: number;
   unit: string;
   isKeyMaterial: boolean;
   needBatchRecord: boolean;
@@ -496,7 +490,6 @@ const removeSpecRow = (index: number) => {
 const addMaterialRow = () => {
   materialRows.value.push({
     materialProductId: '',
-    quantityPerUnit: 1,
     unit: materialProduct.value?.unit ?? 'pcs',
     isKeyMaterial: true,
     needBatchRecord: true,
@@ -570,7 +563,6 @@ const submitProduct = async () => {
       await refreshMaterialOptions();
       materialRows.value.push({
         materialProductId: savedProduct.id,
-        quantityPerUnit: 1,
         unit: savedProduct.unit,
         isKeyMaterial: true,
         needBatchRecord: true,
@@ -597,9 +589,9 @@ const submitMaterials = async () => {
     return;
   }
 
-  const invalidRow = materialRows.value.some((item) => !item.materialProductId || item.quantityPerUnit <= 0);
+  const invalidRow = materialRows.value.some((item) => !item.materialProductId);
   if (invalidRow) {
-    ElMessage.warning('请选择物料并填写大于 0 的单位用量');
+    ElMessage.warning('请选择物料');
     return;
   }
 
@@ -615,7 +607,6 @@ const submitMaterials = async () => {
       materials: materialRows.value.map((item) => ({
         id: item.id,
         materialProductId: item.materialProductId,
-        quantityPerUnit: item.quantityPerUnit,
         unit: item.unit || null,
         isKeyMaterial: item.isKeyMaterial,
         needBatchRecord: item.needBatchRecord,
@@ -661,7 +652,6 @@ const showRoutes = async (row: ProductListItem) => {
 const toMaterialFormRow = (item: ProductMaterialItem): MaterialFormRow => ({
   id: item.id,
   materialProductId: item.materialProductId,
-  quantityPerUnit: Number(item.quantityPerUnit),
   unit: item.unit ?? item.materialUnit,
   isKeyMaterial: item.isKeyMaterial,
   needBatchRecord: item.needBatchRecord,

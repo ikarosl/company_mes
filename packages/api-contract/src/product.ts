@@ -93,7 +93,6 @@ export interface ProductMaterialItem {
   materialModel: string;
   materialName: string;
   materialUnit: string;
-  quantityPerUnit: string;
   unit: string | null;
   isKeyMaterial: boolean;
   needBatchRecord: boolean;
@@ -105,7 +104,6 @@ export interface ProductMaterialItem {
 export interface ProductMaterialPayload {
   id?: string;
   materialProductId: string;
-  quantityPerUnit: string | number;
   unit?: string | null;
   isKeyMaterial?: boolean;
   needBatchRecord?: boolean;

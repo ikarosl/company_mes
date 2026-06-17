@@ -30,6 +30,16 @@ export class ProductionTaskController {
   }
 
   @RequirePermission(PERMISSIONS.production.tasks.create)
+  @Get('create-preview')
+  previewCreateTask(
+    @Query('workOrderId') workOrderId?: string,
+    @Query('routeId') routeId?: string,
+    @Query('plannedQuantity') plannedQuantity?: string,
+  ) {
+    return this.tasks.previewCreateTask(readId(workOrderId ?? ''), routeId ? readId(routeId) : null, plannedQuantity);
+  }
+
+  @RequirePermission(PERMISSIONS.production.tasks.create)
   @Post()
   createTask(@Body() body: CreateProductionTaskPayload) {
     return this.tasks.createTask(body);

@@ -5,6 +5,7 @@ import {
   type CreateWorkOrderPayload,
   type DispatchTaskPayload,
   type PageResult,
+  type ProductionTaskCreatePreview,
   type ProductionTaskDetail,
   type ProductionBatchItem,
   type UpdateBatchStepRecordPayload,
@@ -106,6 +107,12 @@ export const productionApi = {
       url: BUSINESS_API.tasks,
       method: 'POST',
       data,
+    }),
+  previewCreateTask: (params: QueryParams) =>
+    requestData<ProductionTaskCreatePreview>({
+      url: `${BUSINESS_API.tasks}/create-preview`,
+      method: 'GET',
+      params,
     }),
   previewTaskDispatch: (id: string) =>
     requestData<ProductionTaskDetail['steps']>({

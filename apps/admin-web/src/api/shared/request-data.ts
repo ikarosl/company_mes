@@ -18,6 +18,8 @@ export type QueryParams = PageQuery & {
   userId?: string;
   ownerId?: string;
   productId?: string;
+  workOrderId?: string;
+  plannedQuantity?: string | number;
   productAttribute?: string;
   productType?: string;
   categoryId?: string;
