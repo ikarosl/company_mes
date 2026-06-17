@@ -23,23 +23,23 @@ DROP TABLE IF EXISTS `batch_material_usages`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `batch_material_usages` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '涓婚敭',
-  `batch_id` bigint unsigned DEFAULT NULL COMMENT '鐢熶骇鎵规?ID锛宲roduction_batches 琛ㄥ缓绔嬪悗琛ュ?閿',
-  `material_batch_id` bigint unsigned NOT NULL COMMENT '鐗╂枡鎵规?ID',
-  `reserved_quantity` decimal(12,4) NOT NULL DEFAULT '0.0000' COMMENT '棰勭暀鏁伴噺',
-  `used_quantity` decimal(12,4) NOT NULL DEFAULT '0.0000' COMMENT '瀹為檯浣跨敤鏁伴噺',
-  `unit` varchar(50) DEFAULT NULL COMMENT '鍗曚綅',
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `batch_id` bigint unsigned DEFAULT NULL COMMENT '生产批次ID，production_batches 表建立后补充外键',
+  `material_batch_id` bigint unsigned NOT NULL COMMENT '物料批次ID',
+  `reserved_quantity` decimal(12,4) NOT NULL DEFAULT '0.0000' COMMENT '预留数量',
+  `used_quantity` decimal(12,4) NOT NULL DEFAULT '0.0000' COMMENT '实际使用数量',
+  `unit` varchar(50) DEFAULT NULL COMMENT '单位',
   `status` varchar(50) NOT NULL DEFAULT 'reserved' COMMENT 'reserved/part_used/used/cancelled',
-  `recorded_by` bigint unsigned DEFAULT NULL COMMENT '璁板綍浜',
-  `recorded_at` datetime DEFAULT NULL COMMENT '璁板綍鏃堕棿',
-  `remark` text COMMENT '澶囨敞',
-  `created_by` bigint unsigned DEFAULT NULL COMMENT '鍒涘缓浜',
-  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '鍒涘缓鏃堕棿',
-  `updated_by` bigint unsigned DEFAULT NULL COMMENT '鏇存柊浜',
-  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '鏇存柊鏃堕棿',
-  `is_deleted` tinyint NOT NULL DEFAULT '0' COMMENT '杞?垹闄ゆ爣璁',
-  `deleted_by` bigint unsigned DEFAULT NULL COMMENT '鍒犻櫎浜',
-  `deleted_at` datetime DEFAULT NULL COMMENT '鍒犻櫎鏃堕棿',
+  `recorded_by` bigint unsigned DEFAULT NULL COMMENT '记录人',
+  `recorded_at` datetime DEFAULT NULL COMMENT '记录时间',
+  `remark` text COMMENT '备注',
+  `created_by` bigint unsigned DEFAULT NULL COMMENT '创建人',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_by` bigint unsigned DEFAULT NULL COMMENT '更新人',
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `is_deleted` tinyint NOT NULL DEFAULT '0' COMMENT '软删除标记',
+  `deleted_by` bigint unsigned DEFAULT NULL COMMENT '删除人',
+  `deleted_at` datetime DEFAULT NULL COMMENT '删除时间',
   PRIMARY KEY (`id`),
   KEY `idx_batch_material_usages_batch_id` (`batch_id`),
   KEY `idx_batch_material_usages_material_batch_id` (`material_batch_id`),
@@ -58,7 +58,7 @@ CREATE TABLE `batch_material_usages` (
   CONSTRAINT `chk_batch_material_usages_reserved_quantity` CHECK ((`reserved_quantity` >= 0)),
   CONSTRAINT `chk_batch_material_usages_status` CHECK ((`status` in (_utf8mb4'reserved',_utf8mb4'part_used',_utf8mb4'used',_utf8mb4'cancelled'))),
   CONSTRAINT `chk_batch_material_usages_used_quantity` CHECK ((`used_quantity` >= 0))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='鐢熶骇鎵规?鐗╂枡棰勭暀涓庝娇鐢ㄨ〃';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='生产批次物料预留与使用表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -176,21 +176,21 @@ DROP TABLE IF EXISTS `material_batches`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `material_batches` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '涓婚敭',
-  `product_id` bigint unsigned NOT NULL COMMENT '鐗╂枡瀵瑰簲鐨勪骇鍝両D锛屽悓涓?墿鏂欏厑璁稿?涓?壒娆',
-  `material_batch_no` varchar(100) NOT NULL COMMENT '鐗╂枡鎵规?鍙',
-  `supplier_name` varchar(255) DEFAULT NULL COMMENT '渚涘簲鍟嗗悕绉',
-  `received_date` date DEFAULT NULL COMMENT '鍏ュ簱/鎺ユ敹鏃ユ湡',
-  `quantity` decimal(12,4) NOT NULL DEFAULT '0.0000' COMMENT '褰撳墠搴撳瓨鍙拌处鏁伴噺',
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `product_id` bigint unsigned NOT NULL COMMENT '物料对应的产品ID，同一种物料允许多个批次',
+  `material_batch_no` varchar(100) NOT NULL COMMENT '物料批次号',
+  `supplier_name` varchar(255) DEFAULT NULL COMMENT '供应商名称',
+  `received_date` date DEFAULT NULL COMMENT '入库/接收日期',
+  `quantity` decimal(12,4) NOT NULL DEFAULT '0.0000' COMMENT '当前库存台账数量',
   `status` varchar(50) NOT NULL DEFAULT 'available' COMMENT 'available/partial_used/used_up/disabled',
-  `remark` text COMMENT '澶囨敞',
-  `created_by` bigint unsigned DEFAULT NULL COMMENT '鍒涘缓浜',
-  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '鍒涘缓鏃堕棿',
-  `updated_by` bigint unsigned DEFAULT NULL COMMENT '鏇存柊浜',
-  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '鏇存柊鏃堕棿',
-  `is_deleted` tinyint NOT NULL DEFAULT '0' COMMENT '杞?垹闄ゆ爣璁',
-  `deleted_by` bigint unsigned DEFAULT NULL COMMENT '鍒犻櫎浜',
-  `deleted_at` datetime DEFAULT NULL COMMENT '鍒犻櫎鏃堕棿',
+  `remark` text COMMENT '备注',
+  `created_by` bigint unsigned DEFAULT NULL COMMENT '创建人',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_by` bigint unsigned DEFAULT NULL COMMENT '更新人',
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `is_deleted` tinyint NOT NULL DEFAULT '0' COMMENT '软删除标记',
+  `deleted_by` bigint unsigned DEFAULT NULL COMMENT '删除人',
+  `deleted_at` datetime DEFAULT NULL COMMENT '删除时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_material_batches_no_deleted` (`material_batch_no`,`is_deleted`),
   KEY `idx_material_batches_product_id` (`product_id`),
@@ -206,7 +206,7 @@ CREATE TABLE `material_batches` (
   CONSTRAINT `fk_material_batches_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
   CONSTRAINT `chk_material_batches_quantity` CHECK ((`quantity` >= 0)),
   CONSTRAINT `chk_material_batches_status` CHECK ((`status` in (_gbk'available',_gbk'partial_used',_gbk'used_up',_gbk'disabled')))
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='鐗╂枡鎵规?琛';
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='物料批次表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -605,30 +605,30 @@ DROP TABLE IF EXISTS `production_batches`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `production_batches` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '涓婚敭',
-  `work_order_id` bigint unsigned NOT NULL COMMENT '宸ュ崟ID',
-  `batch_no` varchar(100) NOT NULL COMMENT '鐢熶骇鎵规?鍙',
-  `product_id` bigint unsigned NOT NULL COMMENT '浜у搧ID锛屽啑浣欏伐鍗曚骇鍝佷究浜庢煡璇㈣拷婧',
-  `route_id` bigint unsigned DEFAULT NULL COMMENT '鎵ц?宸ヨ壓璺?嚎ID',
-  `planned_quantity` decimal(12,4) NOT NULL COMMENT '鎵规?璁″垝鏁伴噺',
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `work_order_id` bigint unsigned NOT NULL COMMENT '工单ID',
+  `batch_no` varchar(100) NOT NULL COMMENT '生产批次号',
+  `product_id` bigint unsigned NOT NULL COMMENT '产品ID，冗余工单产品便于查询追溯',
+  `route_id` bigint unsigned DEFAULT NULL COMMENT '执行工艺路线ID',
+  `planned_quantity` decimal(12,4) NOT NULL COMMENT '批次计划数量',
   `status` varchar(50) NOT NULL DEFAULT 'pending' COMMENT 'pending/assigned/doing/completed/cancelled',
-  `material_status` varchar(50) NOT NULL DEFAULT 'ungenerated' COMMENT '鐗╂枡鐘舵?',
-  `dispatch_status` varchar(50) NOT NULL DEFAULT 'pending' COMMENT '娲惧伐鐘舵?',
-  `production_status` varchar(50) NOT NULL DEFAULT 'pending' COMMENT '鐢熶骇鐘舵?',
-  `inspection_status` varchar(50) NOT NULL DEFAULT 'pending' COMMENT '妫?獙鐘舵?',
-  `owner_id` bigint unsigned DEFAULT NULL COMMENT '鎵规?璐熻矗浜',
-  `plan_start_date` date DEFAULT NULL COMMENT '璁″垝寮??鏃ユ湡',
-  `plan_end_date` date DEFAULT NULL COMMENT '璁″垝瀹屾垚鏃ユ湡',
-  `actual_start_at` datetime DEFAULT NULL COMMENT '瀹為檯寮??鏃堕棿',
-  `actual_end_at` datetime DEFAULT NULL COMMENT '瀹為檯瀹屾垚鏃堕棿',
-  `remark` text COMMENT '澶囨敞',
-  `created_by` bigint unsigned DEFAULT NULL COMMENT '鍒涘缓浜',
-  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '鍒涘缓鏃堕棿',
-  `updated_by` bigint unsigned DEFAULT NULL COMMENT '鏇存柊浜',
-  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '鏇存柊鏃堕棿',
-  `is_deleted` tinyint NOT NULL DEFAULT '0' COMMENT '杞?垹闄ゆ爣璁',
-  `deleted_by` bigint unsigned DEFAULT NULL COMMENT '鍒犻櫎浜',
-  `deleted_at` datetime DEFAULT NULL COMMENT '鍒犻櫎鏃堕棿',
+  `material_status` varchar(50) NOT NULL DEFAULT 'ungenerated' COMMENT '物料状态',
+  `dispatch_status` varchar(50) NOT NULL DEFAULT 'pending' COMMENT '派工状态',
+  `production_status` varchar(50) NOT NULL DEFAULT 'pending' COMMENT '生产状态',
+  `inspection_status` varchar(50) NOT NULL DEFAULT 'pending' COMMENT '检验状态',
+  `owner_id` bigint unsigned DEFAULT NULL COMMENT '批次负责人',
+  `plan_start_date` date DEFAULT NULL COMMENT '计划开始日期',
+  `plan_end_date` date DEFAULT NULL COMMENT '计划完成日期',
+  `actual_start_at` datetime DEFAULT NULL COMMENT '实际开始时间',
+  `actual_end_at` datetime DEFAULT NULL COMMENT '实际完成时间',
+  `remark` text COMMENT '备注',
+  `created_by` bigint unsigned DEFAULT NULL COMMENT '创建人',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_by` bigint unsigned DEFAULT NULL COMMENT '更新人',
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `is_deleted` tinyint NOT NULL DEFAULT '0' COMMENT '软删除标记',
+  `deleted_by` bigint unsigned DEFAULT NULL COMMENT '删除人',
+  `deleted_at` datetime DEFAULT NULL COMMENT '删除时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_production_batches_no_deleted` (`batch_no`,`is_deleted`),
   KEY `idx_production_batches_work_order_id` (`work_order_id`),
@@ -653,7 +653,7 @@ CREATE TABLE `production_batches` (
   CONSTRAINT `chk_production_batches_production_status` CHECK ((`production_status` in (_gbk'pending',_gbk'doing',_gbk'completed'))),
   CONSTRAINT `chk_production_batches_quantity` CHECK ((`planned_quantity` > 0)),
   CONSTRAINT `chk_production_batches_status` CHECK ((`status` in (_gbk'pending',_gbk'assigned',_gbk'doing',_gbk'completed',_gbk'cancelled')))
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='鐢熶骇鎵规?琛';
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='生产批次表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -977,26 +977,26 @@ DROP TABLE IF EXISTS `work_orders`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `work_orders` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '涓婚敭',
-  `order_no` varchar(100) NOT NULL COMMENT '宸ュ崟鍙',
-  `product_id` bigint unsigned NOT NULL COMMENT '浜у搧ID',
-  `route_id` bigint unsigned DEFAULT NULL COMMENT '鏈?伐鍗曟墽琛屽伐鑹鸿矾绾縄D',
-  `planned_quantity` decimal(12,4) NOT NULL COMMENT '璁″垝鐢熶骇鏁伴噺',
-  `unit` varchar(50) NOT NULL DEFAULT 'pcs' COMMENT '鍗曚綅',
-  `owner_id` bigint unsigned DEFAULT NULL COMMENT '宸ュ崟璐熻矗浜',
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `order_no` varchar(100) NOT NULL COMMENT '工单号',
+  `product_id` bigint unsigned NOT NULL COMMENT '产品ID',
+  `route_id` bigint unsigned DEFAULT NULL COMMENT '本工单执行工艺路线ID',
+  `planned_quantity` decimal(12,4) NOT NULL COMMENT '计划生产数量',
+  `unit` varchar(50) NOT NULL DEFAULT 'pcs' COMMENT '单位',
+  `owner_id` bigint unsigned DEFAULT NULL COMMENT '工单负责人',
   `status` varchar(50) NOT NULL DEFAULT 'draft' COMMENT 'draft/released/doing/completed/closed/cancelled',
-  `plan_start_date` date DEFAULT NULL COMMENT '璁″垝寮??鏃ユ湡',
-  `plan_end_date` date DEFAULT NULL COMMENT '璁″垝瀹屾垚鏃ユ湡',
-  `actual_start_at` datetime DEFAULT NULL COMMENT '瀹為檯寮??鏃堕棿',
-  `actual_end_at` datetime DEFAULT NULL COMMENT '瀹為檯瀹屾垚鏃堕棿',
-  `remark` text COMMENT '澶囨敞',
-  `created_by` bigint unsigned DEFAULT NULL COMMENT '鍒涘缓浜',
-  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '鍒涘缓鏃堕棿',
-  `updated_by` bigint unsigned DEFAULT NULL COMMENT '鏇存柊浜',
-  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '鏇存柊鏃堕棿',
-  `is_deleted` tinyint NOT NULL DEFAULT '0' COMMENT '杞?垹闄ゆ爣璁',
-  `deleted_by` bigint unsigned DEFAULT NULL COMMENT '鍒犻櫎浜',
-  `deleted_at` datetime DEFAULT NULL COMMENT '鍒犻櫎鏃堕棿',
+  `plan_start_date` date DEFAULT NULL COMMENT '计划开始日期',
+  `plan_end_date` date DEFAULT NULL COMMENT '计划完成日期',
+  `actual_start_at` datetime DEFAULT NULL COMMENT '实际开始时间',
+  `actual_end_at` datetime DEFAULT NULL COMMENT '实际完成时间',
+  `remark` text COMMENT '备注',
+  `created_by` bigint unsigned DEFAULT NULL COMMENT '创建人',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_by` bigint unsigned DEFAULT NULL COMMENT '更新人',
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `is_deleted` tinyint NOT NULL DEFAULT '0' COMMENT '软删除标记',
+  `deleted_by` bigint unsigned DEFAULT NULL COMMENT '删除人',
+  `deleted_at` datetime DEFAULT NULL COMMENT '删除时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_work_orders_no_deleted` (`order_no`,`is_deleted`),
   KEY `idx_work_orders_product_id` (`product_id`),
@@ -1016,7 +1016,7 @@ CREATE TABLE `work_orders` (
   CONSTRAINT `fk_work_orders_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
   CONSTRAINT `chk_work_orders_quantity` CHECK ((`planned_quantity` > 0)),
   CONSTRAINT `chk_work_orders_status` CHECK ((`status` in (_gbk'draft',_gbk'released',_gbk'doing',_gbk'completed',_gbk'closed',_gbk'cancelled')))
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='宸ュ崟琛';
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='工单表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
