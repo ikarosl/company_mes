@@ -105,7 +105,7 @@
         <el-form-item v-if="!editingTaskId" label="选择工单" required>
           <el-select v-model="taskForm.workOrderId" filterable placeholder="请选择下达的工单" @change="handleTaskOrderChange">
             <el-option
-              v-for="order in workOrderOptions"
+              v-for="order in availableWorkOrderOptions"
               :key="order.id"
               :label="formatWorkOrder(order)"
               :value="order.id"
@@ -421,6 +421,9 @@ const loadPageData = async () => {
 };
 
 const selectedWorkOrder = computed(() => workOrderOptions.value.find((item) => item.id === taskForm.workOrderId) ?? null);
+const availableWorkOrderOptions = computed(() =>
+  workOrderOptions.value.filter((order) => getWorkOrderRemaining(order) > 0),
+);
 const selectedProduct = computed(() => productOptions.value.find((item) => item.id === selectedWorkOrder.value?.productId) ?? null);
 const selectedWorkOrderRemaining = computed(() => {
   if (!selectedWorkOrder.value) {

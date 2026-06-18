@@ -49,6 +49,7 @@ export class AuthClient {
   private refreshPromise: Promise<AuthSession> | null = null;
 
   constructor(options: AuthClientOptions) {
+    //options.request/api由apps\admin-web\src\api\auth.ts中的createAuthClient函数传入，分别是httpClient实例和authApi对象
     this.http = options.request;
     this.api = options.api;
     this.getSessionState = options.getSession;
@@ -77,6 +78,11 @@ export class AuthClient {
       this.setSessionState({ ...session, user: result.user });
     }
     return result;
+  }
+
+  async restoreSession() {
+    const data = await this.api.refresh();
+    return this.setSession(data);
   }
 
   private setupAuthInterceptors() {

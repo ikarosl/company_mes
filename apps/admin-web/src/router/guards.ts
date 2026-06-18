@@ -5,8 +5,17 @@ export const setupRouterGuards = (router: Router) => {
   router.beforeEach(async (to) => {
     const authStore = useAuthStore();
 
-    if (to.meta.guestOnly && authStore.session) {
-      return { name: 'dashboard' };
+    if (to.meta.guestOnly) {
+      if (authStore.session) {
+        return { name: 'dashboard' };
+      }
+
+      try {
+        await authStore.restoreSession();
+        return { name: 'dashboard' };
+      } catch {
+        return true;
+      }
     }
 
     if (!to.meta.requiresAuth) {
