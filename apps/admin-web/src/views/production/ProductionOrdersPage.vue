@@ -104,7 +104,7 @@
           <el-option label="50条/页" :value="50" />
         </el-select>
         <el-pagination
-          v-model:current-page="currentPage"
+          :current-page="currentPage"
           :page-size="pageSize"
           :total="total"
           layout="prev, pager, next, jumper"
@@ -186,9 +186,6 @@
           <el-table-column label="任务状态" width="120">
             <template #default="{ row }">{{ getBatchStatusMeta(row.status).label }}</template>
           </el-table-column>
-          <el-table-column label="物料状态" width="130">
-            <template #default="{ row }">{{ materialStatusLabels[row.materialStatus] ?? row.materialStatus }}</template>
-          </el-table-column>
           <el-table-column label="负责人" width="120">
             <template #default="{ row }">{{ row.ownerName || '-' }}</template>
           </el-table-column>
@@ -219,9 +216,6 @@
             <template #default="{ row }">
               <el-tag :type="getBatchStatusMeta(row.status).type" effect="light">{{ getBatchStatusMeta(row.status).label }}</el-tag>
             </template>
-          </el-table-column>
-          <el-table-column label="物料状态" width="130">
-            <template #default="{ row }">{{ materialStatusLabels[row.materialStatus] ?? row.materialStatus }}</template>
           </el-table-column>
           <el-table-column label="负责人" width="120">
             <template #default="{ row }">{{ row.ownerName || '-' }}</template>
@@ -307,23 +301,13 @@ const orderStatusOptions: Array<{ value: WorkOrderStatus; label: string; type: '
 ];
 
 const batchStatusOptions: Array<{ value: ProductionBatchStatus; label: string; type: 'info' | 'primary' | 'success' | 'danger' }> = [
-  { value: 'pending', label: '待处理', type: 'info' },
-  { value: 'assigned', label: '已派工', type: 'primary' },
-  { value: 'doing', label: '生产中', type: 'primary' },
+  { value: 'pending', label: '已生成批次', type: 'info' },
+  { value: 'material_pending', label: '已生成物料需求', type: 'primary' },
+  { value: 'material_assigned', label: '已分配物料批次', type: 'primary' },
+  { value: 'doing', label: '执行中', type: 'primary' },
   { value: 'completed', label: '已完成', type: 'success' },
   { value: 'cancelled', label: '已取消', type: 'danger' },
 ];
-
-const materialStatusLabels: Record<string, string> = {
-  ungenerated: '未生成需求',
-  unassigned: '未分配',
-  partial_assigned: '部分分配',
-  assigned: '已分配',
-  ready: '已齐套',
-  outbound: '已出库',
-  shortage: '缺料',
-  returned: '已退料',
-};
 
 const orders = ref<WorkOrderListItem[]>([]);
 const productOptions = ref<ProductListItem[]>([]);

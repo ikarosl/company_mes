@@ -50,10 +50,6 @@ export interface ProductionBatchListRow extends RowDataPacket {
   route_name: string | null;
   planned_quantity: string | number;
   status: string;
-  material_status: string;
-  dispatch_status: string;
-  production_status: string;
-  inspection_status: string;
   owner_id: number | null;
   owner_name: string | null;
   plan_start_date: Date | null;
@@ -105,15 +101,14 @@ export interface WorkerTaskListRow extends ProductionTaskListRow {
 }
 
 export interface TaskMaterialRequirementRow extends RowDataPacket {
-  id: number;
-  route_step_id: number;
-  route_step_name: string;
+  id: number | string;
+  usage_id: number | null;
   product_material_id: number;
   material_product_id: number;
   material_model: string;
   material_name: string;
-  quantity_per_unit: string | number;
-  planned_quantity: string | number;
+  plan_quantity: string | number;
+  used_quantity: string | number;
   unit: string | null;
   is_key_material: number;
   need_batch_record: number;

@@ -62,7 +62,8 @@
         </el-table-column>
         <el-table-column label="物料清单" width="120">
           <template #default="{ row }">
-            <el-tag v-if="row.materialCount > 0" type="success" effect="light">
+            <el-tag v-if="row.acquireMethod !=='self_made'" type="info" effect="light">无</el-tag>
+            <el-tag v-else-if="row.materialCount > 0" type="success" effect="light">
               {{ row.materialCount }} 项
             </el-tag>
             <el-tag v-else type="warning" effect="light">未配置</el-tag>
@@ -83,7 +84,7 @@
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">查看</el-button>
             <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-button link :type="row.materialCount > 0 ? 'primary' : 'warning'" @click="openMaterials(row)">
+            <el-button link v-if="row.acquireMethod ==='self_made'" :type="row.materialCount > 0 ? 'primary' : 'warning'" @click="openMaterials(row)" > 
               物料清单
             </el-button>
             <el-button link type="primary" @click="showInventory(row)">库存</el-button>
@@ -107,7 +108,7 @@
           <el-option label="50条/页" :value="50" />
         </el-select>
         <el-pagination
-          v-model:current-page="currentPage"
+          :current-page="currentPage"
           :page-size="pageSize"
           :total="total"
           layout="prev, pager, next, jumper"

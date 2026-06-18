@@ -1,9 +1,11 @@
 export type WorkOrderStatus = 'draft' | 'released' | 'doing' | 'completed' | 'closed' | 'cancelled';
-export type ProductionBatchStatus = 'pending' | 'assigned' | 'doing' | 'completed' | 'cancelled';
-export type BatchMaterialStatus = 'ungenerated' | 'unassigned' | 'partial_assigned' | 'assigned' | 'ready' | 'outbound' | 'shortage' | 'returned';
-export type BatchDispatchStatus = 'pending' | 'assigned';
-export type BatchProductionStatus = 'pending' | 'doing' | 'completed';
-export type BatchInspectionStatus = 'pending' | 'inspecting' | 'passed' | 'failed' | 'partial_pass';
+export type ProductionBatchStatus =
+  | 'pending'
+  | 'material_pending'
+  | 'material_assigned'
+  | 'doing'
+  | 'completed'
+  | 'cancelled';
 export type BatchStepStatus = 'pending' | 'doing' | 'completed' | 'abnormal' | 'skipped';
 
 export interface ProductionBatchItem {
@@ -18,10 +20,6 @@ export interface ProductionBatchItem {
   routeName: string | null;
   plannedQuantity: string;
   status: ProductionBatchStatus;
-  materialStatus: BatchMaterialStatus;
-  dispatchStatus: BatchDispatchStatus;
-  productionStatus: BatchProductionStatus;
-  inspectionStatus: BatchInspectionStatus;
   ownerId: string | null;
   ownerName: string | null;
   planStartDate: string | null;
@@ -68,14 +66,13 @@ export interface WorkerTaskItem extends ProductionBatchItem {
 
 export interface TaskMaterialRequirementItem {
   id: string;
-  routeStepId: string;
-  routeStepName: string;
+  usageId: string | null;
   productMaterialId: string;
   materialProductId: string;
   materialModel: string;
   materialName: string;
-  quantityPerUnit: string;
-  requiredQuantity: string;
+  planQuantity: string;
+  usedQuantity: string;
   unit: string | null;
   isKeyMaterial: boolean;
   needBatchRecord: boolean;
@@ -155,6 +152,7 @@ export interface CreateProductionBatchPayload {
 export interface CreateProductionTaskPayload extends CreateProductionBatchPayload {
   workOrderId: string;
   steps?: DispatchTaskStepPayload[];
+  materials?: TaskMaterialAssignmentPayload[];
 }
 
 export interface UpdateProductionBatchPayload {
@@ -166,19 +164,28 @@ export interface UpdateProductionBatchPayload {
   planEndDate?: string | null;
   status?: ProductionBatchStatus;
   remark?: string | null;
+  steps?: DispatchTaskStepPayload[];
+  materials?: TaskMaterialAssignmentPayload[];
 }
 
 export interface DispatchTaskStepPayload {
   routeStepId: string;
   responsibleUserId?: string | null;
+  sopFileId?: string | null;
 }
 
 export interface DispatchTaskPayload {
   steps?: DispatchTaskStepPayload[];
 }
 
+export interface TaskMaterialAssignmentPayload {
+  productMaterialId: string;
+  planQuantity?: string | number | null;
+}
+
 export interface UpdateBatchStepRecordPayload {
   responsibleUserId?: string | null;
+  sopFileId?: string | null;
   status?: BatchStepStatus;
   startedAt?: string | null;
   completedAt?: string | null;

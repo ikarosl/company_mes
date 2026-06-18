@@ -152,4 +152,10 @@ export const productionApi = {
       method: 'PUT',
       data,
     }),
+  uploadTaskStepSop: (id: string, recordId: string, data: FormData) =>
+    requestData<ProductionTaskDetail>({
+      url: `${BUSINESS_API.tasks}/${id}/steps/${recordId}/sop`,
+      method: 'POST',
+      data,
+    }),
 };

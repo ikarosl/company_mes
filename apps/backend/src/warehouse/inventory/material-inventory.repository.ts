@@ -77,14 +77,10 @@ export class MaterialInventoryRepository {
       LEFT JOIN (
         SELECT
           material_batch_id,
-          SUM(CASE
-            WHEN status IN ('reserved', 'part_used')
-              THEN GREATEST(reserved_quantity - used_quantity, 0)
-            ELSE 0
-          END) AS reserved_quantity,
+          SUM(GREATEST(plan_quantity - used_quantity, 0)) AS reserved_quantity,
           SUM(used_quantity) AS used_quantity
         FROM batch_material_usages
-        WHERE is_deleted = 0 AND status <> 'cancelled'
+        WHERE is_deleted = 0 AND material_batch_id IS NOT NULL
         GROUP BY material_batch_id
       ) u ON u.material_batch_id = mb.id
       WHERE ${where}
@@ -195,14 +191,10 @@ export class MaterialInventoryRepository {
     const [summary] = await this.database.query<RowDataPacket[]>(
       `
       SELECT
-        COALESCE(SUM(CASE
-          WHEN status IN ('reserved', 'part_used')
-            THEN GREATEST(reserved_quantity - used_quantity, 0)
-          ELSE 0
-        END), 0) AS reserved_quantity,
+        COALESCE(SUM(GREATEST(plan_quantity - used_quantity, 0)), 0) AS reserved_quantity,
         COALESCE(SUM(used_quantity), 0) AS used_quantity
       FROM batch_material_usages
-      WHERE material_batch_id = ? AND is_deleted = 0 AND status <> 'cancelled'
+      WHERE material_batch_id = ? AND is_deleted = 0
     `,
       [id],
     );
@@ -322,14 +314,10 @@ export class MaterialInventoryRepository {
       LEFT JOIN (
         SELECT
           material_batch_id,
-          SUM(CASE
-            WHEN status IN ('reserved', 'part_used')
-              THEN GREATEST(reserved_quantity - used_quantity, 0)
-            ELSE 0
-          END) AS reserved_quantity,
+          SUM(GREATEST(plan_quantity - used_quantity, 0)) AS reserved_quantity,
           SUM(used_quantity) AS used_quantity
         FROM batch_material_usages
-        WHERE is_deleted = 0 AND status <> 'cancelled'
+        WHERE is_deleted = 0 AND material_batch_id IS NOT NULL
         GROUP BY material_batch_id
       ) u ON u.material_batch_id = mb.id
       WHERE mb.id = ? AND mb.is_deleted = 0
@@ -351,9 +339,13 @@ export class MaterialInventoryRepository {
       SELECT
         bmu.id,
         bmu.batch_id,
-        bmu.reserved_quantity,
+        bmu.plan_quantity AS reserved_quantity,
         bmu.used_quantity,
-        bmu.status,
+        CASE
+          WHEN bmu.used_quantity >= bmu.plan_quantity THEN 'used'
+          WHEN bmu.used_quantity > 0 THEN 'part_used'
+          ELSE 'reserved'
+        END AS status,
         bmu.recorded_by,
         u.display_name AS recorded_by_name,
         bmu.recorded_at,
