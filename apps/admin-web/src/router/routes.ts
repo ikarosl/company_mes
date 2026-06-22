@@ -106,13 +106,21 @@ export const routes: RouteRecordRaw[] = [
           permission: PERMISSIONS.warehouse.inventory.page,
         },
       },
+plannedPage(
+  'warehouse/finished-transactions',
+  'warehouse-finished-transactions',
+  '成品出入库管理',
+  '仓储管理',
+  ['入库', '出库', '发运', '查看成品出入库记录'],
+  PERMISSIONS.warehouse.finishedTransactions.page,
+),
       plannedPage(
-        'warehouse/transactions',
-        'warehouse-transactions',
-        '出入库管理',
+        'warehouse/material-transactions',
+        'warehouse-material-transactions',
+        '物料出入库管理',
         '仓储管理',
-        ['入库', '出库', '发运', '退料', '查看出入库记录'],
-        PERMISSIONS.warehouse.transactions.page,
+        ['入库', '出库', '退料', '查看物料出入库记录'],
+        PERMISSIONS.warehouse.materialTransactions.page,
       ),
 
       {
