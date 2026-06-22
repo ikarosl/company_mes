@@ -55,7 +55,7 @@
         </el-table-column>
         <el-table-column label="数量" width="150" align="right">
           <template #default="{ row }">
-            {{ formatQuantity(row.assignedQuantity) }} / {{ formatQuantity(row.plannedQuantity) }} {{ row.unit }}
+            {{ formatQuantity(row.assignedQuantity) }} / {{ formatQuantity(row.plannedQuantity) }}
           </template>
         </el-table-column>
         <el-table-column label="负责人" width="120">
@@ -129,16 +129,14 @@
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="工艺路线">
-            <el-select v-model="orderForm.routeId" clearable filterable placeholder="请选择执行路线">
-              <el-option v-for="route in routeOptions" :key="route.id" :label="route.routeName" :value="route.id" />
-            </el-select>
-          </el-form-item>
           <el-form-item label="计划数量" required>
             <el-input-number v-model="orderForm.plannedQuantity" :min="0.0001" :precision="4" :step="1" />
           </el-form-item>
-          <el-form-item label="单位">
-            <el-input v-model="orderForm.unit" placeholder="pcs" />
+          <el-form-item label="客户订单号">
+            <el-input v-model="orderForm.customerOrderNo" placeholder="可选填写" />
+          </el-form-item>
+          <el-form-item label="客户名称">
+            <el-input v-model="orderForm.customerName" placeholder="可选填写" />
           </el-form-item>
           <el-form-item label="负责人">
             <el-select v-model="orderForm.ownerId" clearable filterable placeholder="请选择负责人">
@@ -169,8 +167,10 @@
           <el-descriptions-item label="产品">{{ activeOrder.productName }}</el-descriptions-item>
           <el-descriptions-item label="型号">{{ activeOrder.productModel }}</el-descriptions-item>
           <el-descriptions-item label="工艺路线">{{ activeOrder.routeName || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="计划数量">{{ formatQuantity(activeOrder.plannedQuantity) }} {{ activeOrder.unit }}</el-descriptions-item>
-          <el-descriptions-item label="已分配">{{ formatQuantity(activeOrder.assignedQuantity) }} {{ activeOrder.unit }}</el-descriptions-item>
+          <el-descriptions-item label="计划数量">{{ formatQuantity(activeOrder.plannedQuantity) }}</el-descriptions-item>
+          <el-descriptions-item label="已分配">{{ formatQuantity(activeOrder.assignedQuantity) }}</el-descriptions-item>
+          <el-descriptions-item label="客户订单号">{{ activeOrder.customerOrderNo || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="客户名称">{{ activeOrder.customerName || '-' }}</el-descriptions-item>
           <el-descriptions-item label="负责人">{{ activeOrder.ownerName || '-' }}</el-descriptions-item>
           <el-descriptions-item label="状态">{{ getOrderStatusMeta(activeOrder.status).label }}</el-descriptions-item>
           <el-descriptions-item label="计划完成">{{ activeOrder.planEndDate || '-' }}</el-descriptions-item>
@@ -201,7 +201,7 @@
         <div class="task-toolbar">
           <div>
             <span class="order-no">{{ taskOrder.orderNo }}</span>
-            <span class="sub-text">计划 {{ formatQuantity(taskOrder.plannedQuantity) }} {{ taskOrder.unit }}，已分配 {{ formatQuantity(taskOrder.assignedQuantity) }}</span>
+            <span class="sub-text">计划 {{ formatQuantity(taskOrder.plannedQuantity) }}，已分配 {{ formatQuantity(taskOrder.assignedQuantity) }}</span>
           </div>
           <el-button type="primary" :icon="Plus" :disabled="taskOrder.status === 'draft' || Number(taskOrder.plannedQuantity) <= Number(taskOrder.assignedQuantity)" @click="openCreateBatch">
             新增生产批次
@@ -338,9 +338,9 @@ const query = reactive({ keyword: '', productId: '', ownerId: '', status: '' });
 const orderForm = reactive({
   orderNo: '',
   productId: '',
-  routeId: '',
   plannedQuantity: 1,
-  unit: 'pcs',
+  customerOrderNo: '',
+  customerName: '',
   ownerId: '',
   planStartDate: '',
   planEndDate: '',
@@ -440,9 +440,9 @@ const resetOrderForm = () => {
   Object.assign(orderForm, {
     orderNo: '',
     productId: '',
-    routeId: '',
     plannedQuantity: 1,
-    unit: 'pcs',
+    customerOrderNo: '',
+    customerName: '',
     ownerId: '',
     planStartDate: '',
     planEndDate: '',
@@ -461,9 +461,9 @@ const openEdit = (row: WorkOrderListItem) => {
   Object.assign(orderForm, {
     orderNo: row.orderNo,
     productId: row.productId,
-    routeId: row.routeId ?? '',
     plannedQuantity: Number(row.plannedQuantity),
-    unit: row.unit,
+    customerOrderNo: row.customerOrderNo ?? '',
+    customerName: row.customerName ?? '',
     ownerId: row.ownerId ?? '',
     planStartDate: row.planStartDate ?? '',
     planEndDate: row.planEndDate ?? '',
@@ -472,12 +472,7 @@ const openEdit = (row: WorkOrderListItem) => {
   orderDialogVisible.value = true;
 };
 
-const handleOrderProductChange = (productId: string) => {
-  const product = productOptions.value.find((item) => item.id === productId);
-  if (product) {
-    orderForm.unit = product.unit;
-  }
-};
+const handleOrderProductChange = () => {};
 
 const submitOrder = async () => {
   if (!orderForm.orderNo.trim() || !orderForm.productId || orderForm.plannedQuantity <= 0) {
@@ -490,9 +485,9 @@ const submitOrder = async () => {
     const payload = {
       orderNo: orderForm.orderNo,
       productId: orderForm.productId,
-      routeId: orderForm.routeId || null,
       plannedQuantity: orderForm.plannedQuantity,
-      unit: orderForm.unit,
+      customerOrderNo: orderForm.customerOrderNo || null,
+      customerName: orderForm.customerName || null,
       ownerId: orderForm.ownerId || null,
       planStartDate: orderForm.planStartDate || null,
       planEndDate: orderForm.planEndDate || null,

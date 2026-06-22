@@ -173,15 +173,12 @@
           <el-table :data="createPreviewMaterials" class="detail-table">
             <el-table-column prop="materialModel" label="物料型号" min-width="160" />
             <el-table-column prop="materialName" label="物料名称" min-width="160" />
+            <el-table-column label="单位用量" width="120" align="right">
+              <template #default="{ row }">{{ formatQuantity(row.quantityPerUnit) }}</template>
+            </el-table-column>
             <el-table-column label="需求数量" width="170" align="right">
               <template #default="{ row }">
-                <el-input-number
-                  v-model="row.planQuantity"
-                  :min="0"
-                  :precision="4"
-                  :step="1"
-                  controls-position="right"
-                />
+                {{ formatQuantity(row.planQuantity) }}
               </template>
             </el-table-column>
             <el-table-column label="单位" width="90">
@@ -240,6 +237,9 @@
             <el-table :data="activeTask.materialRequirements" class="detail-table">
               <el-table-column prop="materialModel" label="物料编码" min-width="160" />
               <el-table-column prop="materialName" label="物料名称" min-width="160" />
+              <el-table-column label="单位用量" width="120" align="right">
+                <template #default="{ row }">{{ formatQuantity(row.quantityPerUnit) }}</template>
+              </el-table-column>
               <el-table-column label="需求数量" width="120" align="right">
                 <template #default="{ row }">{{ formatQuantity(row.planQuantity) }}</template>
               </el-table-column>
@@ -616,12 +616,9 @@ const refreshCreatePreview = async (options: { keepSteps?: boolean; keepMaterial
       }));
     }
     if (!options.keepMaterials) {
-      const existingQuantityMap = new Map(
-        createPreviewMaterials.value.map((row) => [row.productMaterialId, row.planQuantity]),
-      );
       createPreviewMaterials.value = preview.materialRequirements.map((row) => ({
         ...row,
-        planQuantity: existingQuantityMap.get(row.productMaterialId) ?? row.planQuantity,
+        planQuantity: row.planQuantity,
       }));
     }
     return true;
@@ -648,12 +645,6 @@ const submitTask = async () => {
     return;
   }
 
-  const invalidMaterial = createPreviewMaterials.value.find((row) => Number(row.planQuantity) < 0);
-  if (invalidMaterial) {
-    ElMessage.warning('物料需求数量不能小于 0');
-    return;
-  }
-
   submitting.value = true;
   try {
     const payload = {
@@ -664,13 +655,9 @@ const submitTask = async () => {
       planEndDate: taskForm.planEndDate || null,
       remark: taskForm.remark,
       steps: createPreviewSteps.value.map((row) => ({
-        routeStepId: row.routeStepId,
+        processRouteStepsId: row.processRouteStepsId,
         responsibleUserId: row.responsibleUserId,
         sopFileId: row.sopFileId,
-      })),
-      materials: createPreviewMaterials.value.map((row) => ({
-        productMaterialId: row.productMaterialId,
-        planQuantity: row.planQuantity,
       })),
     };
 
@@ -727,7 +714,7 @@ const submitDispatch = async () => {
   try {
     await productionApi.dispatchTask(dispatchTaskId.value, {
       steps: dispatchRows.value.map((row) => ({
-        routeStepId: row.routeStepId,
+        processRouteStepsId: row.processRouteStepsId,
         responsibleUserId: row.responsibleUserId,
         sopFileId: row.sopFileId,
       })),

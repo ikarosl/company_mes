@@ -93,6 +93,7 @@ export interface ProductMaterialItem {
   materialModel: string;
   materialName: string;
   materialUnit: string;
+  quantityPerUnit: string;
   unit: string | null;
   isKeyMaterial: boolean;
   needBatchRecord: boolean;
@@ -104,6 +105,7 @@ export interface ProductMaterialItem {
 export interface ProductMaterialPayload {
   id?: string;
   materialProductId: string;
+  quantityPerUnit?: string | number | null;
   unit?: string | null;
   isKeyMaterial?: boolean;
   needBatchRecord?: boolean;
@@ -184,6 +186,8 @@ export interface ProcessRouteStepPayload {
   processId: string;
   stepOrder: number;
   defaultOwnerId?: string | null;
+  needInspection?: boolean;
+  needRecord?: boolean;
   status?: number | boolean;
   remark?: string | null;
 }
@@ -196,6 +200,8 @@ export interface ProcessRouteStepItem extends ProcessRouteStepPayload {
   description: string | null;
   defaultOwnerId: string | null;
   defaultOwnerName: string | null;
+  needInspection: boolean;
+  needRecord: boolean;
   sopFileId: string | null;
   sopFileName: string | null;
   sopFileUrl: string | null;

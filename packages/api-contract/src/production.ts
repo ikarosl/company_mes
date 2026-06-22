@@ -32,7 +32,7 @@ export interface ProductionBatchItem {
 export interface BatchStepRecordItem {
   id: string;
   batchId: string;
-  routeStepId: string;
+  processRouteStepsId: string;
   stepOrder: number;
   stepName: string;
   sopFileId: string | null;
@@ -51,7 +51,7 @@ export interface BatchStepRecordItem {
 
 export interface WorkerTaskItem extends ProductionBatchItem {
   stepRecordId: string;
-  routeStepId: string;
+  processRouteStepsId: string;
   stepOrder: number;
   stepName: string;
   stepStatus: BatchStepStatus;
@@ -71,6 +71,7 @@ export interface TaskMaterialRequirementItem {
   materialProductId: string;
   materialModel: string;
   materialName: string;
+  quantityPerUnit: string;
   planQuantity: string;
   usedQuantity: string;
   unit: string | null;
@@ -98,7 +99,8 @@ export interface WorkOrderListItem {
   routeName: string | null;
   plannedQuantity: string;
   assignedQuantity: string;
-  unit: string;
+  customerOrderNo: string | null;
+  customerName: string | null;
   ownerId: string | null;
   ownerName: string | null;
   status: WorkOrderStatus;
@@ -118,9 +120,9 @@ export interface WorkOrderDetail extends WorkOrderListItem {
 export interface CreateWorkOrderPayload {
   orderNo: string;
   productId: string;
-  routeId?: string | null;
   plannedQuantity: string | number;
-  unit?: string | null;
+  customerOrderNo?: string | null;
+  customerName?: string | null;
   ownerId?: string | null;
   planStartDate?: string | null;
   planEndDate?: string | null;
@@ -130,9 +132,9 @@ export interface CreateWorkOrderPayload {
 export interface UpdateWorkOrderPayload {
   orderNo?: string;
   productId?: string;
-  routeId?: string | null;
   plannedQuantity?: string | number;
-  unit?: string | null;
+  customerOrderNo?: string | null;
+  customerName?: string | null;
   ownerId?: string | null;
   planStartDate?: string | null;
   planEndDate?: string | null;
@@ -152,7 +154,6 @@ export interface CreateProductionBatchPayload {
 export interface CreateProductionTaskPayload extends CreateProductionBatchPayload {
   workOrderId: string;
   steps?: DispatchTaskStepPayload[];
-  materials?: TaskMaterialAssignmentPayload[];
 }
 
 export interface UpdateProductionBatchPayload {
@@ -165,22 +166,16 @@ export interface UpdateProductionBatchPayload {
   status?: ProductionBatchStatus;
   remark?: string | null;
   steps?: DispatchTaskStepPayload[];
-  materials?: TaskMaterialAssignmentPayload[];
 }
 
 export interface DispatchTaskStepPayload {
-  routeStepId: string;
+  processRouteStepsId: string;
   responsibleUserId?: string | null;
   sopFileId?: string | null;
 }
 
 export interface DispatchTaskPayload {
   steps?: DispatchTaskStepPayload[];
-}
-
-export interface TaskMaterialAssignmentPayload {
-  productMaterialId: string;
-  planQuantity?: string | number | null;
 }
 
 export interface UpdateBatchStepRecordPayload {

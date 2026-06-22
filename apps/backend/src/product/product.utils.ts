@@ -56,6 +56,7 @@ export const mapProductMaterial = (row: ProductMaterialListRow): ProductMaterial
   materialModel: row.material_model,
   materialName: row.material_name,
   materialUnit: row.material_unit,
+  quantityPerUnit: decimalString(row.quantity_per_unit),
   unit: row.unit,
   isKeyMaterial: Boolean(row.is_key_material),
   needBatchRecord: Boolean(row.need_batch_record),
@@ -91,13 +92,15 @@ export const mapProcessOption = (row: ProcessOptionRow): ProcessOption => ({
 export const mapProcessRouteStep = (row: ProcessRouteStepListRow): ProcessRouteStepItem => ({
   id: String(row.id),
   routeId: String(row.route_id),
-  processId: String(row.process_step_id ?? row.process_id),
+  processId: String(row.process_step_id),
   stepOrder: row.step_order,
   processCode: row.process_code,
   processName: row.process_name,
   description: row.description,
   defaultOwnerId: row.default_owner_id === null ? null : String(row.default_owner_id),
   defaultOwnerName: row.default_owner_name,
+  needInspection: row.need_inspection === 1,
+  needRecord: row.need_record === 1,
   sopFileId: row.sop_file_id === null ? null : String(row.sop_file_id),
   sopFileName: row.sop_file_name,
   sopFileUrl: row.sop_file_url,
@@ -187,6 +190,11 @@ export const readPositiveDecimal = (value: string | number | null | undefined, m
   }
 
   return amount.toFixed(4);
+};
+
+export const decimalString = (value: string | number | null | undefined) => {
+  const amount = Number(value ?? 0);
+  return Number.isFinite(amount) ? amount.toFixed(4) : '0.0000';
 };
 
 export const parseSpecValues = (value: string | null): ProductSpecValue[] => {
