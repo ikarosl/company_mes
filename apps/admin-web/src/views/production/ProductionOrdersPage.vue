@@ -203,7 +203,7 @@
             <span class="order-no">{{ taskOrder.orderNo }}</span>
             <span class="sub-text">计划 {{ formatQuantity(taskOrder.plannedQuantity) }} {{ taskOrder.unit }}，已分配 {{ formatQuantity(taskOrder.assignedQuantity) }}</span>
           </div>
-          <el-button type="primary" :icon="Plus" :disabled="taskOrder.status === 'draft'" @click="openCreateBatch">
+          <el-button type="primary" :icon="Plus" :disabled="taskOrder.status === 'draft' || Number(taskOrder.plannedQuantity) <= Number(taskOrder.assignedQuantity)" @click="openCreateBatch">
             新增生产批次
           </el-button>
         </div>
@@ -238,7 +238,13 @@
           <el-input v-model="batchForm.batchNo" placeholder="不填则系统自动生成" />
         </el-form-item>
         <el-form-item label="计划数量" required>
-          <el-input-number v-model="batchForm.plannedQuantity" :min="0.0001" :precision="4" :step="1" />
+          <el-input-number
+            v-model="batchForm.plannedQuantity"
+            :min="0.0001"
+            :max="batchQuantityMax ?? undefined"
+            :precision="4"
+            :step="1"
+          />
         </el-form-item>
         <el-form-item label="工艺路线">
           <el-select v-model="batchForm.routeId" clearable filterable placeholder="默认沿用工单路线">
@@ -274,7 +280,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type {
@@ -351,6 +357,19 @@ const batchForm = reactive({
   remark: '',
 });
 
+const editingBatch = computed(() => taskBatches.value.find((item) => item.id === editingBatchId.value) ?? null);
+const batchQuantityMax = computed(() => {
+  if (!taskOrder.value) {
+    return null;
+  }
+
+  const plannedQuantity = Number(taskOrder.value.plannedQuantity);
+  const assignedQuantity = Number(taskOrder.value.assignedQuantity);
+  const currentBatchQuantity = editingBatch.value ? Number(editingBatch.value.plannedQuantity) : 0;
+  const maxQuantity = plannedQuantity - assignedQuantity + currentBatchQuantity;
+  return Number.isFinite(maxQuantity) ? Math.max(maxQuantity, 0) : null;
+});
+
 const loadOptions = async () => {
   const [products, routes, users] = await Promise.all([
     productApi.listProducts({ page: 1, pageSize: 100, status: 'enabled' }),
@@ -375,8 +394,20 @@ const loadOrders = async () => {
     });
     orders.value = page.items;
     total.value = page.total;
+    syncTaskOrderFromOrders();
   } finally {
     loading.value = false;
+  }
+};
+
+const syncTaskOrderFromOrders = () => {
+  if (!taskOrder.value) {
+    return;
+  }
+
+  const latestOrder = orders.value.find((item) => item.id === taskOrder.value?.id);
+  if (latestOrder) {
+    taskOrder.value = latestOrder;
   }
 };
 
@@ -495,10 +526,11 @@ const openTasks = async (row: WorkOrderListItem) => {
 };
 
 const resetBatchForm = () => {
+  const maxQuantity = batchQuantityMax.value ?? 1;
   Object.assign(batchForm, {
     batchNo: '',
     routeId: taskOrder.value?.routeId ?? '',
-    plannedQuantity: 1,
+    plannedQuantity: Math.min(1, Math.max(maxQuantity, 0.0001)),
     ownerId: taskOrder.value?.ownerId ?? '',
     status: 'pending' as ProductionBatchStatus,
     planStartDate: taskOrder.value?.planStartDate ?? '',
@@ -531,6 +563,11 @@ const openEditBatch = (row: ProductionBatchItem) => {
 const submitBatch = async () => {
   if (!taskOrder.value || batchForm.plannedQuantity <= 0) {
     ElMessage.warning('请填写生产批次数量');
+    return;
+  }
+
+  if (batchQuantityMax.value !== null && batchForm.plannedQuantity > batchQuantityMax.value) {
+    ElMessage.warning('生产批次数量不能超过工单剩余可分配数量');
     return;
   }
 

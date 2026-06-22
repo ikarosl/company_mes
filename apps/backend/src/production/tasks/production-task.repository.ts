@@ -130,6 +130,7 @@ export class ProductionTaskRepository {
       INNER JOIN products p ON p.id = b.product_id AND p.is_deleted = 0
       INNER JOIN batch_step_records sr ON sr.batch_id = b.id AND sr.is_deleted = 0
       WHERE ${where}
+        AND b.status = 'doing'
         AND sr.responsible_user_id = ?
         ${stepStatus ? 'AND sr.status = ?' : ''}
     `,
@@ -180,6 +181,7 @@ export class ProductionTaskRepository {
       LEFT JOIN users ru ON ru.id = sr.responsible_user_id
       LEFT JOIN batch_step_records all_sr ON all_sr.batch_id = b.id AND all_sr.is_deleted = 0
       WHERE ${where}
+        AND b.status = 'doing'
         AND sr.responsible_user_id = ?
         ${stepStatus ? 'AND sr.status = ?' : ''}
       GROUP BY b.id, b.work_order_id, wo.order_no, b.batch_no, b.product_id, p.product_model, p.product_name,

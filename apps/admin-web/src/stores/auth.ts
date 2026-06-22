@@ -8,6 +8,8 @@ const STORAGE_KEY = 'company.admin.auth.session';
 
 export const useAuthStore = defineStore('auth', () => {
   const session = ref<AuthSession | null>(readStoredSession());
+  //createAuthClient函数在../api/auth，是一个高级函数，提前注入了HTTP客户端和API接口实现，在这里调用完成初始化并额外传入set/get Session 的方法，
+  //最终返回一个完整的AuthClient实例，封装了登录、登出、获取当前用户、验证Token、恢复会话等功能，并且自动处理Token刷新和错误情况
   const authClient = createAuthClient({
     getSession: () => session.value,
     setSession: (nextSession: AuthSession | null) => {
@@ -30,6 +32,8 @@ export const useAuthStore = defineStore('auth', () => {
 
   const validateToken = () => authClient.validateToken();
 
+  const restoreSession = () => authClient.restoreSession();
+
   const hasPermission = (permission?: string) => {
     if (!permission) {
       return true;
@@ -44,6 +48,7 @@ export const useAuthStore = defineStore('auth', () => {
     logout,
     getCurrentUser,
     validateToken,
+    restoreSession,
     hasPermission,
   };
 });
