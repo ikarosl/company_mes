@@ -44,4 +44,16 @@ export const warehouseApi = {
       url: `${BUSINESS_API.warehouseInventory}/${id}/${disabled ? 'disable' : 'enable'}`,
       method: 'PUT',
     }),
+  listFinishedTransactions: (params?: QueryParams) =>
+    requestData<PageResult<unknown>>({
+      url: BUSINESS_API.warehouseFinishedTransactions,
+      method: 'GET',
+      params,
+    }),
+  listMaterialTransactions: (params?: QueryParams) =>
+    requestData<PageResult<unknown>>({
+      url: BUSINESS_API.warehouseMaterialTransactions,
+      method: 'GET',
+      params,
+    }),
 };

@@ -12,7 +12,7 @@
             <span>{{ group.title }}</span>
           </template>
           <el-menu-item v-for="item in group.items" :key="item.path" :index="item.path">
-            {{ item.title }}
+            {{ getMenuItemTitle(item) }}
           </el-menu-item>
         </el-sub-menu>
       </el-menu>
@@ -103,8 +103,13 @@ const menuGroups: MenuGroup[] = [
       },
       {
         title: '出入库管理',
-        path: '/warehouse/transactions',
-        permission: PERMISSIONS.warehouse.transactions.page,
+        path: '/warehouse/finished-transactions',
+        permission: PERMISSIONS.warehouse.finishedTransactions.page,
+      },
+      {
+        title: '物料出入库管理',
+        path: '/warehouse/material-transactions',
+        permission: PERMISSIONS.warehouse.materialTransactions.page,
       },
     ],
   },
@@ -168,6 +173,15 @@ const menuGroups: MenuGroup[] = [
 ];
 
 const canShow = (permission?: string) => authStore.hasPermission(permission);
+
+const getMenuItemTitle = (item: MenuItem) => {
+  const titleMap: Record<string, string> = {
+    '/warehouse/finished-transactions': '成品出入库管理',
+    '/warehouse/material-transactions': '物料出入库管理',
+  };
+
+  return titleMap[item.path] ?? item.title;
+};
 
 const visibleMenuGroups = computed(() =>
   menuGroups

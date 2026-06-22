@@ -119,7 +119,8 @@ product
 
 warehouse
   inventory
-  transactions
+  finished-transactions
+  material-transactions
 
 production
   orders
@@ -440,7 +441,8 @@ remark
 /product/routes
 
 /warehouse/inventory
-/warehouse/transactions
+/warehouse/finished-transactions
+/warehouse/material-transactions
 
 /production/orders
 /production/tasks
