@@ -47,6 +47,7 @@ export class AuthClient {
   //请注意该方法本质是用于持久化token信息到localStorage，其持久化为AuthSession类型的对象
   private readonly setSessionState: (session: AuthSession | null) => void;
   private refreshPromise: Promise<AuthSession> | null = null;
+  private sessionVersion = 0;
 
   constructor(options: AuthClientOptions) {
     //options.request/api由apps\admin-web\src\api\auth.ts中的createAuthClient函数传入，分别是httpClient实例和authApi对象
@@ -58,13 +59,20 @@ export class AuthClient {
   }
 
   async login(payload: LoginRequest) {
+    const sessionVersion = this.sessionVersion;
     const data = await this.api.login(payload);
-    return this.setSession(data);
+    return this.setSessionIfCurrent(data, sessionVersion);
   }
 
-  logout() {
+  async logout() {
+    this.clearSession();
+    await this.api.logout().catch(() => undefined);
+  }
+
+  clearSession() {
+    this.sessionVersion += 1;
+    this.refreshPromise = null;
     this.setSessionState(null);
-    void this.api.logout().catch(() => undefined);
   }
 
   async getCurrentUser() {
@@ -81,8 +89,9 @@ export class AuthClient {
   }
 
   async restoreSession() {
+    const sessionVersion = this.sessionVersion;
     const data = await this.api.refresh();
-    return this.setSession(data);
+    return this.setSessionIfCurrent(data, sessionVersion);
   }
 
   private setupAuthInterceptors() {
@@ -127,7 +136,7 @@ export class AuthClient {
           config.skipRefresh = true;
           return this.http.request(config);
         } catch (refreshError) {
-          this.logout();
+          this.clearSession();
           throw toRequestError(refreshError);
         }
       }
@@ -161,11 +170,12 @@ export class AuthClient {
       throw new Error('Not authenticated');
     }
 
+    const sessionVersion = this.sessionVersion;
     this.refreshPromise ??= this.api
       .refresh()
-      .then((data) => this.setSession(data))
+      .then((data) => this.setSessionIfCurrent(data, sessionVersion))
       .catch((error: unknown) => {
-        this.logout();
+        this.clearSession();
         throw error;
       })
       .finally(() => {
@@ -173,6 +183,17 @@ export class AuthClient {
       });
 
     return this.refreshPromise;
+  }
+
+  private setSessionIfCurrent(
+    data: TokenPair & { user: UserProfile },
+    sessionVersion: number,
+  ): AuthSession {
+    if (sessionVersion !== this.sessionVersion) {
+      throw new Error('Session changed before token response was applied');
+    }
+
+    return this.setSession(data);
   }
 
   private setSession(data: TokenPair & { user: UserProfile }): AuthSession {
