@@ -328,27 +328,153 @@
 
 ## 三、仓储物料
 
-### 18. `material_batches`
+### 18. `material_batch`
 
-职责：维护物料批次库存台账，记录某个物料产品的批次号、供应商、接收日期、当前数量和批次状态。
+职责：维护物料批次基础信息，记录某个物料的批次号、供应商、生产日期和批次业务状态。该表只表达批次是否可用、冻结或停用，不表达库存是否用完；库存是否用完应由库存流水汇总判断。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `id` | `bigint unsigned` | 主键，自增 |
-| `product_id` | `bigint unsigned` | 物料对应的产品 ID，关联 `products.id` |
-| `material_batch_no` | `varchar(100)` | 物料批次号，结合软删除标记唯一 |
-| `supplier_name` | `varchar(255)` | 供应商名称 |
-| `received_date` | `date` | 入库或接收日期 |
-| `quantity` | `decimal(12,4)` | 当前库存台账数量，默认 `0.0000` |
-| `status` | `varchar(50)` | 状态：`available`、`partial_used`、`used_up`、`disabled` |
-| `remark` | `text` | 备注 |
-| `created_by` | `bigint unsigned` | 创建人，关联 `users.id` |
-| `created_at` | `datetime` | 创建时间 |
-| `updated_by` | `bigint unsigned` | 更新人，关联 `users.id` |
-| `updated_at` | `datetime` | 更新时间 |
-| `is_deleted` | `tinyint` | 软删除标记，默认 `0` |
-| `deleted_by` | `bigint unsigned` | 删除人，关联 `users.id` |
-| `deleted_at` | `datetime` | 删除时间 |
+| `id` | `BIGINT` | 主键 |
+| `material_id` | `BIGINT` | 物料 ID |
+| `batch_code` | `VARCHAR(100)` | 批次号，展示和追溯使用 |
+| `provider` | `VARCHAR(100)` | 供应商 |
+| `production_date` | `DATE` | 生产日期 |
+| `batch_status` | `VARCHAR(20)` | 批次业务状态，默认 `可用`；可选语义：`可用`、`冻结`、`停用`，不要用它表示用完 |
+| `created_at` | `TIMESTAMP` | 创建时间，默认 `CURRENT_TIMESTAMP` |
+| `updated_at` | `TIMESTAMP` | 更新时间，默认 `CURRENT_TIMESTAMP` |
+
+约束：
+
+- 主键：`id`
+- 唯一约束：`UNIQUE (material_id, batch_code)`
+- 唯一约束：`UNIQUE (id, material_id)`
+
+### 19. `inventory_transaction`
+
+职责：维护库存流水，记录所有会影响库存数量或库存状态的变动明细。库存现存量、可分配库存、批次是否用完等结果应从该表按物料、批次和库存状态汇总得出，而不是写回物料批次表。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | `BIGINT` | 主键 |
+| `material_id` | `BIGINT` | 物料 ID，冗余保存，便于按物料汇总库存 |
+| `batch_id` | `BIGINT` | 批次 ID |
+| `transaction_type` | `VARCHAR(30)` | 库存变动类型：`入库`、`出库`、`退料入库`、`报废出库`、`盘点调整`、`状态转入`、`状态转出` |
+| `quantity` | `DECIMAL(12,4)` | 库存变动数量。正数表示增加，负数表示减少，不能为 `0` |
+| `stock_status` | `VARCHAR(20)` | 库存状态，默认 `可用`；可选语义：`可用`、`待检`、`冻结`、`不良`。可分配库存只统计 `stock_status = 可用` |
+| `reference_type` | `VARCHAR(50)` | 来源明细类型：`PO_DETAIL`、`OUTBOUND_DETAIL`、`RETURN_DETAIL`、`SCRAP`、`STOCK_CHECK`、`STATUS_TRANSFER` |
+| `reference_detail_id` | `BIGINT` | 来源明细 ID。建议指向明细行，不要只指向主单 |
+| `idempotency_key` | `VARCHAR(100)` | 幂等键，防止同一业务动作重复生成库存流水 |
+| `remark` | `TEXT` | 备注 |
+| `created_at` | `TIMESTAMP` | 创建时间，默认 `CURRENT_TIMESTAMP` |
+
+约束：
+
+- 检查约束：`CHECK (quantity <> 0)`
+- 唯一约束：`UNIQUE (idempotency_key)`
+- 外键：`FOREIGN KEY (batch_id, material_id) REFERENCES material_batch(id, material_id)`
+
+### 20. `material_demand`
+
+职责：维护生产任务的物料需求，是物料分配、出库、退料和报废补料的需求来源表。正常需求直接关联生产任务和物料；追加补料、报废补料通过 `parent_demand_id` 关联原始需求，报废补料还可通过 `source_scrap_id` 防止同一报废单重复生成补料需求。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | `BIGINT` | 主键 |
+| `task_id` | `BIGINT` | 生产任务 ID |
+| `material_id` | `BIGINT` | 物料 ID |
+| `need_number` | `DECIMAL(12,4)` | 需求数量，必须大于 `0` |
+| `demand_type` | `INT` | 需求类型，默认 `0`；`0` 正常需求、`1` 追加补料、`2` 报废补料 |
+| `parent_demand_id` | `BIGINT` | 补料需求关联的原始需求 ID，正常需求为空，关联 `material_demand.id` |
+| `source_scrap_id` | `BIGINT` | 报废补料关联的报废单 ID，唯一，避免同一报废单重复生成补料需求 |
+| `reason_type` | `VARCHAR(50)` | 补料原因：`生产损耗`、`物料不良`、`返工补料`、`其他` |
+| `status` | `VARCHAR(30)` | 状态，默认 `待分配`；可选语义：`待分配`、`部分分配`、`已分配`、`部分出库`、`已出库`、`退料处理中`、`报废处理中`、`已关闭`、`已取消` |
+| `allocated_quantity` | `DECIMAL(12,4)` | 累计已分配数量，默认 `0`，来自 `material_allocation.assigned_number` 汇总 |
+| `outbound_quantity` | `DECIMAL(12,4)` | 累计出库数量，默认 `0`，来自 `outbound_detail.outbound_number` 汇总 |
+| `returned_quantity` | `DECIMAL(12,4)` | 累计退料数量，默认 `0`，来自 `return_detail.return_number` 汇总 |
+| `scrapped_quantity` | `DECIMAL(12,4)` | 累计报废数量，默认 `0`，来自 `material_scrap.scrap_number` 汇总 |
+| `version` | `INT` | 乐观锁版本号，默认 `0` |
+| `remark` | `TEXT` | 备注 |
+| `created_at` | `TIMESTAMP` | 创建时间，默认 `CURRENT_TIMESTAMP` |
+| `updated_at` | `TIMESTAMP` | 更新时间，默认 `CURRENT_TIMESTAMP` |
+
+约束：
+
+- 检查约束：`CHECK (need_number > 0)`
+- 检查约束：`CHECK (allocated_quantity >= 0)`
+- 检查约束：`CHECK (outbound_quantity >= 0)`
+- 检查约束：`CHECK (returned_quantity >= 0)`
+- 检查约束：`CHECK (scrapped_quantity >= 0)`
+- 检查约束：`CHECK (allocated_quantity <= need_number)`
+- 检查约束：`CHECK (returned_quantity <= outbound_quantity)`
+- 唯一约束：`UNIQUE (source_scrap_id)`
+- 外键：`FOREIGN KEY (parent_demand_id) REFERENCES material_demand(id)`
+
+### 21. `material_allocation`
+
+职责：维护物料需求的分配明细，记录某条需求分配到了哪些物料批次以及每个分配行后续出库、退料、报废的累计数量。该表是需求与批次之间的业务关联表。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | `BIGINT` | 主键 |
+| `demand_id` | `BIGINT` | 需求 ID，关联 `material_demand.id` |
+| `material_batch_id` | `BIGINT` | 分配的物料批次 ID，关联 `material_batch.id` |
+| `assigned_number` | `DECIMAL(12,4)` | 分配数量，必须大于 `0` |
+| `outbound_quantity` | `DECIMAL(12,4)` | 本分配行累计出库数量，默认 `0` |
+| `returned_quantity` | `DECIMAL(12,4)` | 本分配行累计退料数量，默认 `0` |
+| `scrapped_quantity` | `DECIMAL(12,4)` | 本分配行累计报废数量，默认 `0`；包括已分配未出库报废，以及退料后报废 |
+| `version` | `INT` | 乐观锁版本号，默认 `0` |
+| `created_at` | `TIMESTAMP` | 创建时间，默认 `CURRENT_TIMESTAMP` |
+| `updated_at` | `TIMESTAMP` | 更新时间，默认 `CURRENT_TIMESTAMP` |
+
+约束：
+
+- 检查约束：`CHECK (assigned_number > 0)`
+- 检查约束：`CHECK (outbound_quantity >= 0)`
+- 检查约束：`CHECK (returned_quantity >= 0)`
+- 检查约束：`CHECK (scrapped_quantity >= 0)`
+- 检查约束：`CHECK (returned_quantity <= outbound_quantity)`
+- 检查约束：`CHECK (outbound_quantity + scrapped_quantity <= assigned_number + returned_quantity)`
+- 可出库量公式：`assigned_number - outbound_quantity + returned_quantity - scrapped_quantity`
+- 外键：`FOREIGN KEY (demand_id) REFERENCES material_demand(id)`
+- 外键：`FOREIGN KEY (material_batch_id) REFERENCES material_batch(id)`
+
+### 22. `outbound_order`
+
+职责：维护物料出库主单，记录一次出库动作对应的需求、出库单号、单据状态和实际出库时间。具体出库批次和数量应由出库明细表承接。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | `BIGINT` | 主键 |
+| `outbound_no` | `VARCHAR(50)` | 出库单号，唯一 |
+| `demand_id` | `BIGINT` | 本次出库对应的需求 ID，关联 `material_demand.id` |
+| `status` | `VARCHAR(20)` | 状态，默认 `待拣货`；可选语义：`待拣货`、`已拣货`、`部分出库`、`已出库`、`已取消` |
+| `version` | `INT` | 乐观锁版本号，默认 `0` |
+| `created_at` | `TIMESTAMP` | 创建时间，默认 `CURRENT_TIMESTAMP` |
+| `outbound_at` | `TIMESTAMP` | 实际出库时间 |
+
+约束：
+
+- 唯一约束：`UNIQUE (outbound_no)`
+- 外键：`FOREIGN KEY (demand_id) REFERENCES material_demand(id)`
+
+### 23. `outbound_detail`
+
+职责：维护出库明细，记录出库主单中每个分配明细行的本次出库数量。该表通过 `allocation_id` 追溯到具体需求分配和物料批次。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | `BIGINT` | 主键 |
+| `outbound_id` | `BIGINT` | 出库主表 ID，关联 `outbound_order.id` |
+| `allocation_id` | `BIGINT` | 分配明细 ID，关联 `material_allocation.id` |
+| `outbound_number` | `DECIMAL(12,4)` | 本次出库数量，必须大于 `0` |
+| `created_at` | `TIMESTAMP` | 创建时间，默认 `CURRENT_TIMESTAMP` |
+
+约束：
+
+- 检查约束：`CHECK (outbound_number > 0)`
+- 唯一约束：`UNIQUE (outbound_id, allocation_id)`
+- 外键：`FOREIGN KEY (outbound_id) REFERENCES outbound_order(id)`
+- 外键：`FOREIGN KEY (allocation_id) REFERENCES material_allocation(id)`
 
 ### 废弃表：`batch_material_usages`
 
@@ -356,7 +482,7 @@
 
 ## 四、生产执行
 
-### 19. `work_orders`
+### 24. `work_orders`
 
 职责：维护生产工单，记录产品、执行工艺路线、计划数量、负责人、计划日期和工单状态。
 
@@ -383,7 +509,7 @@
 | `deleted_by` | `bigint unsigned` | 删除人，关联 `users.id` |
 | `deleted_at` | `datetime` | 删除时间 |
 
-### 20. `production_batches`
+### 25. `production_batches`
 
 职责：维护生产批次，承接工单并拆分具体批次，记录批次计划、工艺路线、负责人以及物料、派工、生产、检验等状态。
 
@@ -414,7 +540,7 @@
 | `deleted_by` | `bigint unsigned` | 删除人，关联 `users.id` |
 | `deleted_at` | `datetime` | 删除时间 |
 
-### 21. `batch_step_records`
+### 26. `batch_step_records`
 
 职责：记录生产批次中每个工艺路线工序的派工与报工情况，是批次生产过程追溯的关键节点记录表。
 
