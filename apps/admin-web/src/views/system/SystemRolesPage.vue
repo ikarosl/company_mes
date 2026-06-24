@@ -89,7 +89,7 @@
     <el-dialog
       v-model="roleDialogVisible"
       :title="editingRoleId ? '编辑角色' : '新增角色'"
-      width="560px"
+      :width="DialogWidth.md"
     >
       <el-form class="dialog-form" label-width="104px" :model="roleForm">
         <el-form-item label="角色名称" required>
@@ -114,7 +114,7 @@
     <el-dialog
       v-model="permissionDialogVisible"
       title="分配权限"
-      width="1080px"
+      :width="DialogWidth.xl"
       class="permission-dialog"
       :close-on-click-modal="false"
       @closed="resetPermissionDialog"
@@ -253,7 +253,6 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
-import { ElMessage } from 'element-plus';
 import { Plus, Refresh, Search, Setting } from '@element-plus/icons-vue';
 import type {
   SystemPermissionTreeNode,
@@ -261,6 +260,8 @@ import type {
   SystemUserListItem,
 } from '@company/api-contract';
 import { systemApi } from '../../api/system';
+import { DialogWidth } from '../../utils/dialog';
+import { EMessage } from '../../utils/message';
 
 type RoleWithUpdateTime = SystemRoleListItem & {
   updatedAt?: string | null;
@@ -457,11 +458,11 @@ const openEdit = (row: SystemRoleListItem) => {
 
 const submitRole = () => {
   if (!roleForm.name.trim() || !roleForm.code.trim()) {
-    ElMessage.warning('请填写角色名称和角色编码');
+    EMessage.warning('请填写角色名称和角色编码');
     return;
   }
 
-  ElMessage.warning('角色新增/编辑接口尚未接入');
+  EMessage.warning('角色新增/编辑接口尚未接入');
 };
 
 const collectPermissionIds = (node: SystemPermissionTreeNode): string[] => [
@@ -604,7 +605,7 @@ const openAssignPermissions = async (row: SystemRoleListItem) => {
     checkedPermissionIds.value = new Set(rolePermissions.permissionIds);
     await selectDefaultPermissionNode();
   } catch {
-    ElMessage.error('加载权限数据失败');
+    EMessage.error('加载权限数据失败');
   } finally {
     permissionLoading.value = false;
   }
@@ -621,11 +622,11 @@ const submitRolePermissions = async () => {
     await systemApi.assignRolePermissions(editingRoleId.value, {
       permissionIds: [...checkedPermissionIds.value],
     });
-    ElMessage.success('角色权限已保存');
+    EMessage.success('角色权限已保存');
     permissionDialogVisible.value = false;
     await loadPageData();
   } catch {
-    ElMessage.error('保存角色权限失败');
+    EMessage.error('保存角色权限失败');
   } finally {
     permissionSaving.value = false;
   }
@@ -633,11 +634,11 @@ const submitRolePermissions = async () => {
 
 const deleteRole = (row: SystemRoleListItem) => {
   void row;
-  ElMessage.warning('角色删除接口尚未接入');
+  EMessage.warning('角色删除接口尚未接入');
 };
 
 const showColumnSettingPending = () => {
-  ElMessage.info('列设置暂未接入');
+  EMessage.info('列设置暂未接入');
 };
 
 watch(permissionKeyword, (keyword) => {

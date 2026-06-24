@@ -11,7 +11,13 @@ export type QueryParams = PageQuery & {
   recordType?: string;
   materialBatchId?: string;
   materialBatchNo?: string;
+  materialKeyword?: string;
+  materialStatus?: string;
+  shortage?: string;
+  keyMaterial?: string;
   supplierName?: string;
+  transactionType?: string;
+  productionBatchNo?: string;
   batchNo?: string;
   logType?: string;
   module?: string;

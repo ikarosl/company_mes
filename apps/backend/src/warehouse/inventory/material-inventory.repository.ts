@@ -63,6 +63,7 @@ export class MaterialInventoryRepository {
         c.product_type,
         mb.material_batch_no,
         mb.supplier_name,
+        mb.protocol_code,
         mb.received_date,
         mb.quantity,
         COALESCE(u.reserved_quantity, 0) AS reserved_quantity,
@@ -77,7 +78,7 @@ export class MaterialInventoryRepository {
       LEFT JOIN (
         SELECT
           material_batch_id,
-          SUM(GREATEST(plan_quantity - used_quantity, 0)) AS reserved_quantity,
+          SUM(GREATEST(reserved_quantity - used_quantity, 0)) AS reserved_quantity,
           SUM(used_quantity) AS used_quantity
         FROM batch_material_usages
         WHERE is_deleted = 0 AND material_batch_id IS NOT NULL
@@ -118,15 +119,16 @@ export class MaterialInventoryRepository {
     const result = (await this.database.execute(
       `
       INSERT INTO material_batches (
-        product_id, material_batch_no, supplier_name, received_date, quantity,
+        product_id, material_batch_no, supplier_name, protocol_code, received_date, quantity,
         status, remark, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
     `,
       [
         productId,
         materialBatchNo,
         normalizeOptionalString(payload.supplierName),
+        normalizeOptionalString(payload.protocolCode),
         normalizeDate(payload.receivedDate),
         quantity,
         status,
@@ -159,6 +161,7 @@ export class MaterialInventoryRepository {
       SET product_id = ?,
         material_batch_no = ?,
         supplier_name = ?,
+        protocol_code = ?,
         received_date = ?,
         quantity = ?,
         status = ?,
@@ -172,6 +175,9 @@ export class MaterialInventoryRepository {
         payload.supplierName === undefined
           ? current.supplier_name
           : normalizeOptionalString(payload.supplierName),
+        payload.protocolCode === undefined
+          ? current.protocol_code
+          : normalizeOptionalString(payload.protocolCode),
         payload.receivedDate === undefined
           ? formatDate(current.received_date)
           : normalizeDate(payload.receivedDate),
@@ -191,7 +197,7 @@ export class MaterialInventoryRepository {
     const [summary] = await this.database.query<RowDataPacket[]>(
       `
       SELECT
-        COALESCE(SUM(GREATEST(plan_quantity - used_quantity, 0)), 0) AS reserved_quantity,
+        COALESCE(SUM(GREATEST(reserved_quantity - used_quantity, 0)), 0) AS reserved_quantity,
         COALESCE(SUM(used_quantity), 0) AS used_quantity
       FROM batch_material_usages
       WHERE material_batch_id = ? AND is_deleted = 0
@@ -273,7 +279,7 @@ export class MaterialInventoryRepository {
   private async getMaterialBatchRow(id: number) {
     const [row] = await this.database.query<MaterialBatchRow[]>(
       `
-      SELECT id, product_id, material_batch_no, supplier_name, received_date, quantity, status, remark
+      SELECT id, product_id, material_batch_no, supplier_name, protocol_code, received_date, quantity, status, remark
       FROM material_batches
       WHERE id = ? AND is_deleted = 0
       LIMIT 1
@@ -300,6 +306,7 @@ export class MaterialInventoryRepository {
         c.product_type,
         mb.material_batch_no,
         mb.supplier_name,
+        mb.protocol_code,
         mb.received_date,
         mb.quantity,
         COALESCE(u.reserved_quantity, 0) AS reserved_quantity,
@@ -314,7 +321,7 @@ export class MaterialInventoryRepository {
       LEFT JOIN (
         SELECT
           material_batch_id,
-          SUM(GREATEST(plan_quantity - used_quantity, 0)) AS reserved_quantity,
+          SUM(GREATEST(reserved_quantity - used_quantity, 0)) AS reserved_quantity,
           SUM(used_quantity) AS used_quantity
         FROM batch_material_usages
         WHERE is_deleted = 0 AND material_batch_id IS NOT NULL
@@ -413,6 +420,7 @@ export class MaterialInventoryRepository {
       productType: row.product_type,
       materialBatchNo: row.material_batch_no,
       supplierName: row.supplier_name,
+      protocolCode: row.protocol_code,
       receivedDate: formatDate(row.received_date),
       quantity: formatDecimal(quantity),
       reservedQuantity: formatDecimal(reservedQuantity),

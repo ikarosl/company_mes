@@ -13,10 +13,12 @@ import ProductCategoriesPage from '../views/product/ProductCategoriesPage.vue';
 import ProductsPage from '../views/product/ProductsPage.vue';
 import ProcessesPage from '../views/product/ProcessesPage.vue';
 import ProcessRoutesPage from '../views/product/ProcessRoutesPage.vue';
+import MaterialAllocationPage from '../views/production/MaterialAllocationPage.vue';
 import ProductionOrdersPage from '../views/production/ProductionOrdersPage.vue';
 import ProductionTasksPage from '../views/production/ProductionTasksPage.vue';
 import WorkerTasksPage from '../views/WorkerTasksPage.vue';
 import WarehouseInventoryPage from '../views/warehouse/WarehouseInventoryPage.vue';
+import MaterialTransactionsPage from '../views/warehouse/MaterialTransactionsPage.vue';
 // import ProcessTemplatesPage from '../views/ProcessTemplatesPage.vue';
 // import ProductionBatchDetailPage from '../views/ProductionBatchDetailPage.vue';
 // import ProductionBatchesPage from '../views/ProductionBatchesPage.vue';
@@ -114,14 +116,16 @@ plannedPage(
   ['入库', '出库', '发运', '查看成品出入库记录'],
   PERMISSIONS.warehouse.finishedTransactions.page,
 ),
-      plannedPage(
-        'warehouse/material-transactions',
-        'warehouse-material-transactions',
-        '物料出入库管理',
-        '仓储管理',
-        ['入库', '出库', '退料', '查看物料出入库记录'],
-        PERMISSIONS.warehouse.materialTransactions.page,
-      ),
+      {
+        path: 'warehouse/material-transactions',
+        name: 'warehouse-material-transactions',
+        component: MaterialTransactionsPage,
+        meta: {
+          title: '物料出入库管理',
+          section: '仓储管理',
+          permission: PERMISSIONS.warehouse.materialTransactions.page,
+        },
+      },
 
       {
         path: 'product/processes',
@@ -207,14 +211,16 @@ plannedPage(
       //   '生产管理',
       //   ['查看', '生成物料需求', '查看缺料情况', '分配物料', '查看分配明细'],
       // ),
-      plannedPage(
-        'production/material-allocation',
-        'production-material-allocation',
-        '物料分配',
-        '生产管理',
-        ['查看', '分配物料', '确认齐套', '确认出库', '退料', '查看物料批次'],
-        PERMISSIONS.production.materialAllocation.page,
-      ),
+      {
+        path: 'production/material-allocation',
+        name: 'production-material-allocation',
+        component: MaterialAllocationPage,
+        meta: {
+          title: '物料分配',
+          section: '生产管理',
+          permission: PERMISSIONS.production.materialAllocation.page,
+        },
+      },
       plannedPage(
         'production/dispatch',
         'production-dispatch',

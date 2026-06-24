@@ -78,7 +78,7 @@
     <el-dialog
       v-model="categoryDialogVisible"
       :title="editingCategoryId ? '编辑分类' : '新增分类'"
-      width="640px"
+      :width="DialogWidth.md"
     >
       <el-form class="dialog-form" label-width="96px" :model="categoryForm">
         <el-form-item label="产品属性" required>
@@ -105,7 +105,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="detailDialogVisible" title="分类详情" width="640px">
+    <el-dialog v-model="detailDialogVisible" title="分类详情" :width="DialogWidth.md">
       <el-descriptions v-if="detailRow" :column="2" border>
         <el-descriptions-item label="产品属性">{{ detailRow.productAttribute }}</el-descriptions-item>
         <el-descriptions-item label="产品类型">{{ detailRow.productType }}</el-descriptions-item>
@@ -121,10 +121,12 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessageBox } from 'element-plus';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type { ProductCategoryListItem } from '@company/api-contract';
 import { productApi } from '../../api/product';
+import { DialogWidth } from '../../utils/dialog';
+import { EMessage } from '../../utils/message';
 
 const categories = ref<ProductCategoryListItem[]>([]);
 const loading = ref(false);
@@ -216,7 +218,7 @@ const openDetail = (row: ProductCategoryListItem) => {
 
 const submitCategory = async () => {
   if (!categoryForm.productAttribute.trim() || !categoryForm.productType.trim()) {
-    ElMessage.warning('请填写产品属性和产品类型');
+    EMessage.warning('请填写产品属性和产品类型');
     return;
   }
 
@@ -231,10 +233,10 @@ const submitCategory = async () => {
 
     if (editingCategoryId.value) {
       await productApi.updateCategory(editingCategoryId.value, payload);
-      ElMessage.success('分类已更新');
+      EMessage.success('分类已更新');
     } else {
       await productApi.createCategory(payload);
-      ElMessage.success('分类已新增');
+      EMessage.success('分类已新增');
     }
 
     categoryDialogVisible.value = false;
@@ -258,7 +260,7 @@ const toggleStatus = async (row: ProductCategoryListItem) => {
   }
 
   await productApi.changeCategoryStatus(row.id, nextStatus);
-  ElMessage.success(`分类已${actionText}`);
+  EMessage.success(`分类已${actionText}`);
   await loadCategories();
 };
 

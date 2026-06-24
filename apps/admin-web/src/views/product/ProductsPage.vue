@@ -120,7 +120,7 @@
     <el-dialog
       v-model="productDialogVisible"
       :title="editingProductId ? '编辑产品' : '新增产品'"
-      width="860px"
+      :width="DialogWidth.lg"
     >
       <el-form class="dialog-form" label-width="104px" :model="productForm">
         <div class="form-section-title">基础信息</div>
@@ -199,7 +199,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="detailDialogVisible" title="产品详情" width="760px">
+    <el-dialog v-model="detailDialogVisible" title="产品详情" :width="DialogWidth.lg">
       <el-descriptions v-if="detailRow" :column="2" border>
         <el-descriptions-item label="产品型号">{{ detailRow.productModel }}</el-descriptions-item>
         <el-descriptions-item label="产品名称">{{ detailRow.productName }}</el-descriptions-item>
@@ -228,7 +228,7 @@
       </el-descriptions>
     </el-dialog>
 
-    <el-dialog v-model="materialDialogVisible" title="配置产品物料清单" width="1000px">
+    <el-dialog v-model="materialDialogVisible" title="配置产品物料清单" :width="DialogWidth.xl">
       <template v-if="materialProduct">
         <el-alert
           v-if="!materialRows.length"
@@ -310,7 +310,7 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessageBox } from 'element-plus';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type {
   ProductAcquireMethod,
@@ -320,6 +320,8 @@ import type {
   ProductSpecValue,
 } from '@company/api-contract';
 import { productApi } from '../../api/product';
+import { DialogWidth } from '../../utils/dialog';
+import { EMessage } from '../../utils/message';
 
 type SpecFormRow = {
   key: string;
@@ -532,12 +534,12 @@ const fillMaterialUnit = (row: MaterialFormRow) => {
 
 const submitProduct = async () => {
   if (!productForm.productModel.trim() || !productForm.productName.trim() || !productForm.unit.trim()) {
-    ElMessage.warning('请填写产品型号、产品名称和单位');
+    EMessage.warning('请填写产品型号、产品名称和单位');
     return;
   }
 
   if (!productForm.categoryId) {
-    ElMessage.warning('请选择产品分类');
+    EMessage.warning('请选择产品分类');
     return;
   }
 
@@ -545,7 +547,7 @@ const submitProduct = async () => {
     (item) => item.value.trim() && !item.key.trim(),
   );
   if (invalidSpec) {
-    ElMessage.warning('已填写参数值的规格必须填写参数名称');
+    EMessage.warning('已填写参数值的规格必须填写参数名称');
     return;
   }
 
@@ -565,10 +567,10 @@ const submitProduct = async () => {
     let savedProduct: ProductListItem;
     if (editingProductId.value) {
       savedProduct = await productApi.updateProduct(editingProductId.value, payload);
-      ElMessage.success('产品已更新');
+      EMessage.success('产品已更新');
     } else {
       savedProduct = await productApi.createProduct(payload);
-      ElMessage.success(creatingMaterialFromBom.value ? '物料信息已新增' : '产品已新增');
+      EMessage.success(creatingMaterialFromBom.value ? '物料信息已新增' : '产品已新增');
     }
 
     productDialogVisible.value = false;
@@ -606,19 +608,19 @@ const submitMaterials = async () => {
 
   const invalidRow = materialRows.value.some((item) => !item.materialProductId);
   if (invalidRow) {
-    ElMessage.warning('请选择物料');
+    EMessage.warning('请选择物料');
     return;
   }
 
   const invalidQuantity = materialRows.value.some((item) => Number(item.quantityPerUnit) <= 0);
   if (invalidQuantity) {
-    ElMessage.warning('请填写大于 0 的单位用量');
+    EMessage.warning('请填写大于 0 的单位用量');
     return;
   }
 
   const materialIds = materialRows.value.map((item) => item.materialProductId);
   if (new Set(materialIds).size !== materialIds.length) {
-    ElMessage.warning('同一个物料不能重复配置');
+    EMessage.warning('同一个物料不能重复配置');
     return;
   }
 
@@ -635,7 +637,7 @@ const submitMaterials = async () => {
         remark: item.remark || null,
       })),
     });
-    ElMessage.success('物料清单已保存');
+    EMessage.success('物料清单已保存');
     materialDialogVisible.value = false;
     await loadProducts();
   } finally {
@@ -657,18 +659,18 @@ const toggleStatus = async (row: ProductListItem) => {
   }
 
   await productApi.changeProductStatus(row.id, nextStatus);
-  ElMessage.success(`产品已${actionText}`);
+  EMessage.success(`产品已${actionText}`);
   await loadProducts();
 };
 
 const showInventory = async (row: ProductListItem) => {
   await productApi.getProductInventory(row.id);
-  ElMessage.info('库存接口已接入，库存管理模块完成后将显示明细');
+  EMessage.info('库存接口已接入，库存管理模块完成后将显示明细');
 };
 
 const showRoutes = async (row: ProductListItem) => {
   await productApi.getProductRoutes(row.id);
-  ElMessage.info('工艺路线接口已接入，工艺路线模块完成后将显示明细');
+  EMessage.info('工艺路线接口已接入，工艺路线模块完成后将显示明细');
 };
 
 const toMaterialFormRow = (item: ProductMaterialItem): MaterialFormRow => ({

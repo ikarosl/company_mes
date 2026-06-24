@@ -53,6 +53,9 @@
         <el-table-column label="供应商" min-width="150">
           <template #default="{ row }">{{ row.supplierName || '-' }}</template>
         </el-table-column>
+        <el-table-column label="技术协议编码" min-width="150">
+          <template #default="{ row }">{{ row.protocolCode || '-' }}</template>
+        </el-table-column>
         <el-table-column label="库存数量" width="120" align="right">
           <template #default="{ row }">{{ formatQuantity(row.quantity) }}</template>
         </el-table-column>
@@ -111,7 +114,8 @@
     <el-dialog
       v-model="formDialogVisible"
       :title="editingBatchId ? '编辑物料批次' : '新增物料批次'"
-      width="760px"
+      :width="DialogWidth.lg"
+      class="business-dialog"
     >
       <el-form class="dialog-form" label-width="104px" :model="batchForm">
         <div class="form-grid">
@@ -130,6 +134,9 @@
           </el-form-item>
           <el-form-item label="供应商">
             <el-input v-model="batchForm.supplierName" placeholder="请输入供应商名称" />
+          </el-form-item>
+          <el-form-item label="技术协议编码">
+            <el-input v-model="batchForm.protocolCode" maxlength="50" placeholder="请输入检测依据编码" />
           </el-form-item>
           <el-form-item label="入库日期">
             <el-date-picker
@@ -163,7 +170,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="detailDialogVisible" title="库存详情" width="760px">
+    <el-dialog v-model="detailDialogVisible" title="库存详情" :width="DialogWidth.lg" class="business-dialog">
       <el-descriptions v-if="detailRow" :column="2" border>
         <el-descriptions-item label="物料名称">{{ detailRow.productName }}</el-descriptions-item>
         <el-descriptions-item label="物料型号">{{ detailRow.productModel }}</el-descriptions-item>
@@ -172,6 +179,7 @@
         </el-descriptions-item>
         <el-descriptions-item label="物料批次号">{{ detailRow.materialBatchNo }}</el-descriptions-item>
         <el-descriptions-item label="供应商">{{ detailRow.supplierName || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="技术协议编码">{{ detailRow.protocolCode || '-' }}</el-descriptions-item>
         <el-descriptions-item label="入库日期">{{ detailRow.receivedDate || '-' }}</el-descriptions-item>
         <el-descriptions-item label="库存数量">{{ formatQuantity(detailRow.quantity) }}</el-descriptions-item>
         <el-descriptions-item label="预留数量">{{ formatQuantity(detailRow.reservedQuantity) }}</el-descriptions-item>
@@ -185,7 +193,7 @@
       </el-descriptions>
     </el-dialog>
 
-    <el-dialog v-model="reservationDialogVisible" title="预留明细" width="820px">
+    <el-dialog v-model="reservationDialogVisible" title="预留明细" :width="DialogWidth.lg" class="business-dialog">
       <el-table :data="activeDetail?.reservations ?? []" class="detail-table">
         <el-table-column label="生产批次ID" width="120">
           <template #default="{ row }">{{ row.batchId || '-' }}</template>
@@ -211,7 +219,7 @@
       </el-table>
     </el-dialog>
 
-    <el-dialog v-model="usageDialogVisible" title="使用明细" width="820px">
+    <el-dialog v-model="usageDialogVisible" title="使用明细" :width="DialogWidth.lg" class="business-dialog">
       <el-table :data="activeDetail?.usages ?? []" class="detail-table">
         <el-table-column label="生产批次ID" width="120">
           <template #default="{ row }">{{ row.batchId || '-' }}</template>
@@ -237,7 +245,7 @@
       </el-table>
     </el-dialog>
 
-    <el-dialog v-model="stocktakeDialogVisible" title="库存盘点" width="480px">
+    <el-dialog v-model="stocktakeDialogVisible" title="库存盘点" :width="DialogWidth.sm" class="business-dialog">
       <el-form class="dialog-form" label-width="92px" :model="stocktakeForm">
         <el-form-item label="盘点数量" required>
           <el-input-number v-model="stocktakeForm.quantity" :min="0" :precision="4" :step="1" />
@@ -256,7 +264,7 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessageBox } from 'element-plus';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type {
   MaterialBatchDetail,
@@ -266,6 +274,8 @@ import type {
 } from '@company/api-contract';
 import { productApi } from '../../api/product';
 import { warehouseApi } from '../../api/warehouse';
+import { DialogWidth } from '../../utils/dialog';
+import { EMessage } from '../../utils/message';
 
 const statusOptions: Array<{ value: MaterialBatchStatus; label: string; type: 'success' | 'warning' | 'info' | 'danger' }> = [
   { value: 'available', label: '可用', type: 'success' },
@@ -291,6 +301,7 @@ const stocktakeDialogVisible = ref(false);
 const editingBatchId = ref<string | null>(null);
 const stocktakeBatchId = ref<string | null>(null);
 
+/** 库存列表查询条件，不参与库存数量计算。 */
 const query = reactive({
   keyword: '',
   materialBatchNo: '',
@@ -298,10 +309,12 @@ const query = reactive({
   status: '',
 });
 
+/** 物料批次表单：技术协议编码作为该入库批次的检测依据快照。 */
 const batchForm = reactive({
   productId: '',
   materialBatchNo: '',
   supplierName: '',
+  protocolCode: '',
   receivedDate: '',
   quantity: 0,
   status: 'available' as MaterialBatchStatus,
@@ -369,6 +382,7 @@ const resetBatchForm = () => {
     productId: '',
     materialBatchNo: '',
     supplierName: '',
+    protocolCode: '',
     receivedDate: '',
     quantity: 0,
     status: 'available' as MaterialBatchStatus,
@@ -391,6 +405,7 @@ const openEdit = async (row: MaterialBatchListItem) => {
     productId: row.productId,
     materialBatchNo: row.materialBatchNo,
     supplierName: row.supplierName ?? '',
+    protocolCode: row.protocolCode ?? '',
     receivedDate: row.receivedDate ?? '',
     quantity: Number(row.quantity),
     status: row.status,
@@ -430,7 +445,7 @@ const openStocktake = (row: MaterialBatchListItem) => {
 
 const submitBatch = async () => {
   if (!batchForm.productId || !batchForm.materialBatchNo.trim()) {
-    ElMessage.warning('请选择物料并填写批次号');
+    EMessage.warning('请选择物料并填写批次号');
     return;
   }
 
@@ -440,6 +455,7 @@ const submitBatch = async () => {
       productId: batchForm.productId,
       materialBatchNo: batchForm.materialBatchNo,
       supplierName: batchForm.supplierName,
+      protocolCode: batchForm.protocolCode,
       receivedDate: batchForm.receivedDate || null,
       quantity: batchForm.quantity,
       status: batchForm.status,
@@ -448,14 +464,16 @@ const submitBatch = async () => {
 
     if (editingBatchId.value) {
       await warehouseApi.updateInventory(editingBatchId.value, payload);
-      ElMessage.success('物料批次已更新');
+      EMessage.success('物料批次已更新');
     } else {
       await warehouseApi.createInventory(payload);
-      ElMessage.success('物料批次已新增');
+      EMessage.success('物料批次已新增');
     }
 
     formDialogVisible.value = false;
     await loadInventory();
+  } catch (error) {
+    EMessage.error(error, editingBatchId.value ? '物料批次更新失败' : '物料批次新增失败');
   } finally {
     submitting.value = false;
   }
@@ -472,9 +490,11 @@ const submitStocktake = async () => {
       quantity: stocktakeForm.quantity,
       remark: stocktakeForm.remark,
     });
-    ElMessage.success('库存盘点已保存');
+    EMessage.success('库存盘点已保存');
     stocktakeDialogVisible.value = false;
     await loadInventory();
+  } catch (error) {
+    EMessage.error(error, '库存盘点失败');
   } finally {
     submitting.value = false;
   }
@@ -494,7 +514,7 @@ const toggleStatus = async (row: MaterialBatchListItem) => {
   }
 
   await warehouseApi.changeInventoryStatus(row.id, disabled);
-  ElMessage.success(`物料批次已${actionText}`);
+  EMessage.success(`物料批次已${actionText}`);
   await loadInventory();
 };
 
@@ -645,6 +665,11 @@ onMounted(loadPageData);
 .dialog-form :deep(.el-input-number),
 .dialog-form :deep(.el-textarea) {
   width: 100%;
+}
+
+.business-dialog :deep(.el-dialog__body) {
+  max-height: 70vh;
+  overflow-y: auto;
 }
 
 @media (max-width: 1120px) {

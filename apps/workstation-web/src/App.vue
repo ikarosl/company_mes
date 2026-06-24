@@ -10,5 +10,6 @@
 import { SumResult } from '@company/ui';
 import { sum } from '@company/utils';
 
+// 员工端当前仅保留共享包联调入口，一期业务仍以管理端为主。
 const sample = sum(1, 2);
 </script>

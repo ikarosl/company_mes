@@ -90,7 +90,7 @@
       </div>
     </section>
 
-    <el-dialog v-model="detailDialogVisible" title="任务详情" width="1040px">
+    <el-dialog v-model="detailDialogVisible" title="任务详情" :width="DialogWidth.xl">
       <template v-if="activeTask">
         <el-descriptions :column="3" border>
           <el-descriptions-item label="生产批次号">{{ activeTask.batchNo }}</el-descriptions-item>
@@ -128,7 +128,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="reportDialogVisible" title="提交报工" width="640px">
+    <el-dialog v-model="reportDialogVisible" title="提交报工" :width="DialogWidth.md">
       <el-form class="dialog-form" label-width="108px" :model="reportForm">
         <el-form-item label="当前工序">
           <el-input :model-value="reportStepName" disabled />
@@ -162,7 +162,6 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
-import { ElMessage } from 'element-plus';
 import { Refresh } from '@element-plus/icons-vue';
 import type {
   BatchStepStatus,
@@ -172,6 +171,8 @@ import type {
 } from '@company/api-contract';
 import { productApi } from '../api/product';
 import { productionApi } from '../api/production';
+import { DialogWidth } from '../utils/dialog';
+import { EMessage } from '../utils/message';
 
 const stepStatusOptions: Array<{ value: BatchStepStatus; label: string; type: 'info' | 'primary' | 'success' | 'danger' }> = [
   { value: 'pending', label: '待开始', type: 'info' },
@@ -263,7 +264,7 @@ const startStep = async (row: WorkerTaskItem) => {
     status: 'doing',
     startedAt: new Date().toISOString(),
   });
-  ElMessage.success('工序已开始');
+  EMessage.success('工序已开始');
   await loadTasks();
 };
 
@@ -285,7 +286,7 @@ const submitReport = async () => {
   }
 
   if (reportForm.outputQuantity <= 0 && reportForm.abnormalQuantity <= 0) {
-    ElMessage.warning('请填写完成数量或异常数量');
+    EMessage.warning('请填写完成数量或异常数量');
     return;
   }
 
@@ -300,7 +301,7 @@ const submitReport = async () => {
       abnormalQuantity: reportForm.abnormalQuantity,
       remark: reportForm.remark,
     });
-    ElMessage.success('报工已提交');
+    EMessage.success('报工已提交');
     reportDialogVisible.value = false;
     await loadTasks();
   } finally {

@@ -74,6 +74,32 @@ export const mapProductionBatch = (row: ProductionBatchListRow): ProductionBatch
   remark: row.remark,
   createdAt: row.created_at.toISOString(),
   updatedAt: row.updated_at.toISOString(),
+  ...('step_count' in row
+    ? {
+        stepCount: Number(row.step_count ?? 0),
+        assignedStepCount: Number(row.assigned_step_count ?? 0),
+        dispatchStatus:
+          Number(row.step_count ?? 0) === 0
+            ? 'missing_steps' as const
+            : Number(row.assigned_step_count ?? 0) === 0
+              ? 'unassigned' as const
+              : Number(row.assigned_step_count ?? 0) < Number(row.step_count ?? 0)
+                ? 'partial' as const
+                : 'assigned' as const,
+        materialRequirementCount: Number(row.material_requirement_count ?? 0),
+        assignedMaterialCount: Number(row.assigned_material_count ?? 0),
+        materialStatus:
+          Number(row.material_requirement_count ?? 0) === 0
+            ? 'missing_demand' as const
+            : Number(row.used_material_count ?? 0) === Number(row.material_requirement_count ?? 0)
+              ? 'used' as const
+              : Number(row.assigned_material_count ?? 0) === 0
+                ? 'unallocated' as const
+                : Number(row.assigned_material_count ?? 0) < Number(row.material_requirement_count ?? 0)
+                  ? 'partial' as const
+                  : 'allocated' as const,
+      }
+    : {}),
 });
 
 export const mapBatchStepRecord = (row: BatchStepRecordListRow): BatchStepRecordItem => ({

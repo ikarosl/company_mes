@@ -86,7 +86,7 @@
     <el-dialog
       v-model="processDialogVisible"
       :title="editingProcessId ? '编辑工序' : '新增工序'"
-      width="640px"
+      :width="DialogWidth.md"
     >
       <el-form class="dialog-form" label-width="96px" :model="processForm">
         <el-form-item label="工序编码" required>
@@ -116,7 +116,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="uploadDialogVisible" title="上传工序技术文件" width="520px">
+    <el-dialog v-model="uploadDialogVisible" title="上传工序技术文件" :width="DialogWidth.md">
       <el-upload
         drag
         action=""
@@ -135,7 +135,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="detailDialogVisible" title="工序详情" width="640px">
+    <el-dialog v-model="detailDialogVisible" title="工序详情" :width="DialogWidth.md">
       <el-descriptions v-if="detailRow" :column="2" border>
         <el-descriptions-item label="工序编码">{{ detailRow.processCode }}</el-descriptions-item>
         <el-descriptions-item label="工序名称">{{ detailRow.processName }}</el-descriptions-item>
@@ -163,10 +163,12 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
-import { ElMessage, ElMessageBox, type UploadFile, type UploadFiles } from 'element-plus';
+import { ElMessageBox, type UploadFile, type UploadFiles } from 'element-plus';
 import { Plus, Refresh, UploadFilled } from '@element-plus/icons-vue';
 import type { ProcessListItem } from '@company/api-contract';
 import { productApi } from '../../api/product';
+import { DialogWidth } from '../../utils/dialog';
+import { EMessage } from '../../utils/message';
 
 const processes = ref<ProcessListItem[]>([]);
 const loading = ref(false);
@@ -269,7 +271,7 @@ const openDetail = (row: ProcessListItem) => {
 
 const submitProcess = async () => {
   if (!processForm.processCode.trim() || !processForm.processName.trim()) {
-    ElMessage.warning('请填写工序编码和工序名称');
+    EMessage.warning('请填写工序编码和工序名称');
     return;
   }
 
@@ -285,10 +287,10 @@ const submitProcess = async () => {
 
     if (editingProcessId.value) {
       await productApi.updateProcess(editingProcessId.value, payload);
-      ElMessage.success('工序已更新');
+      EMessage.success('工序已更新');
     } else {
       await productApi.createProcess(payload);
-      ElMessage.success('工序已新增');
+      EMessage.success('工序已新增');
     }
 
     processDialogVisible.value = false;
@@ -310,7 +312,7 @@ const handleUploadRemove = () => {
 
 const submitUpload = async () => {
   if (!uploadingProcessId.value || !selectedFile.value) {
-    ElMessage.warning('请选择要上传的技术文件');
+    EMessage.warning('请选择要上传的技术文件');
     return;
   }
 
@@ -320,7 +322,7 @@ const submitUpload = async () => {
   submitting.value = true;
   try {
     await productApi.uploadProcessSop(uploadingProcessId.value, formData);
-    ElMessage.success('技术文件已上传');
+    EMessage.success('技术文件已上传');
     uploadDialogVisible.value = false;
     await loadProcesses();
   } finally {
@@ -342,7 +344,7 @@ const toggleStatus = async (row: ProcessListItem) => {
   }
 
   await productApi.changeProcessStatus(row.id, nextStatus);
-  ElMessage.success(`工序已${actionText}`);
+  EMessage.success(`工序已${actionText}`);
   await loadProcesses();
 };
 

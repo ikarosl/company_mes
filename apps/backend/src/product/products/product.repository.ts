@@ -248,6 +248,7 @@ export class ProductRepository {
   async configureProductMaterials(productId: number, payload: ConfigureProductMaterialsPayload) {
     await this.getProductRow(productId);
     const materials = await this.normalizeMaterialPayloads(productId, payload.materials ?? []);
+    await this.assertProductMaterialsUnlocked(productId);
     const activeRows = await this.getProductMaterialRows(productId, false);
     const allRows = await this.getProductMaterialRows(productId, true);
     const activeByMaterialId = new Map(activeRows.map((row) => [row.material_product_id, row]));
@@ -336,9 +337,163 @@ export class ProductRepository {
           ],
         );
       }
+
+      // 已生成但尚未分配的需求跟随最新 BOM；已分配或已使用记录由前置校验锁定。
+      await execute(
+        connection,
+        `
+        INSERT INTO batch_material_usages (
+          batch_id, product_materials_id, material_batch_id, plan_quantity,
+          reserved_quantity, used_quantity, unit, status, recorded_at,
+          created_at, updated_at
+        )
+        SELECT
+          b.id,
+          pm.id,
+          NULL,
+          pm.quantity_per_unit * b.planned_quantity,
+          0,
+          0,
+          pm.unit,
+          'reserved',
+          NOW(),
+          NOW(),
+          NOW()
+        FROM production_batches b
+        INNER JOIN work_orders wo
+          ON wo.id = b.work_order_id
+          AND wo.product_id = ?
+          AND wo.is_deleted = 0
+        INNER JOIN product_materials pm
+          ON pm.product_id = wo.product_id
+          AND pm.is_deleted = 0
+        WHERE b.is_deleted = 0
+          AND EXISTS (
+            SELECT 1
+            FROM batch_material_usages generated
+            WHERE generated.batch_id = b.id
+              AND generated.is_deleted = 0
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM batch_material_usages current_usage
+            WHERE current_usage.batch_id = b.id
+              AND current_usage.product_materials_id = pm.id
+              AND current_usage.is_deleted = 0
+          )
+        ON DUPLICATE KEY UPDATE
+          batch_material_usages.plan_quantity = IF(
+            batch_material_usages.material_batch_id IS NULL
+              AND batch_material_usages.reserved_quantity = 0
+              AND batch_material_usages.used_quantity = 0,
+            pm.quantity_per_unit * b.planned_quantity,
+            batch_material_usages.plan_quantity
+          ),
+          batch_material_usages.unit = IF(
+            batch_material_usages.material_batch_id IS NULL
+              AND batch_material_usages.reserved_quantity = 0
+              AND batch_material_usages.used_quantity = 0,
+            pm.unit,
+            batch_material_usages.unit
+          ),
+          batch_material_usages.status = IF(
+            batch_material_usages.material_batch_id IS NULL
+              AND batch_material_usages.reserved_quantity = 0
+              AND batch_material_usages.used_quantity = 0,
+            'reserved',
+            batch_material_usages.status
+          ),
+          batch_material_usages.is_deleted = IF(
+            batch_material_usages.material_batch_id IS NULL
+              AND batch_material_usages.reserved_quantity = 0
+              AND batch_material_usages.used_quantity = 0,
+            0,
+            batch_material_usages.is_deleted
+          ),
+          batch_material_usages.deleted_by = IF(
+            batch_material_usages.material_batch_id IS NULL
+              AND batch_material_usages.reserved_quantity = 0
+              AND batch_material_usages.used_quantity = 0,
+            NULL,
+            batch_material_usages.deleted_by
+          ),
+          batch_material_usages.deleted_at = IF(
+            batch_material_usages.material_batch_id IS NULL
+              AND batch_material_usages.reserved_quantity = 0
+              AND batch_material_usages.used_quantity = 0,
+            NULL,
+            batch_material_usages.deleted_at
+          ),
+          batch_material_usages.updated_at = NOW()
+      `,
+        [productId],
+      );
+
+      await execute(
+        connection,
+        `
+        UPDATE batch_material_usages bmu
+        INNER JOIN product_materials pm
+          ON pm.id = bmu.product_materials_id
+          AND pm.product_id = ?
+          AND pm.is_deleted = 0
+        INNER JOIN production_batches b
+          ON b.id = bmu.batch_id
+          AND b.is_deleted = 0
+        SET bmu.plan_quantity = pm.quantity_per_unit * b.planned_quantity,
+          bmu.unit = COALESCE(pm.unit, bmu.unit),
+          bmu.updated_at = NOW()
+        WHERE bmu.is_deleted = 0
+          AND bmu.material_batch_id IS NULL
+          AND bmu.reserved_quantity = 0
+          AND bmu.used_quantity = 0
+      `,
+        [productId],
+      );
+
+      await execute(
+        connection,
+        `
+        UPDATE batch_material_usages bmu
+        INNER JOIN product_materials pm
+          ON pm.id = bmu.product_materials_id
+          AND pm.product_id = ?
+          AND pm.is_deleted = 1
+        SET bmu.is_deleted = 1,
+          bmu.deleted_at = NOW(),
+          bmu.updated_at = NOW()
+        WHERE bmu.is_deleted = 0
+          AND bmu.material_batch_id IS NULL
+          AND bmu.reserved_quantity = 0
+          AND bmu.used_quantity = 0
+      `,
+        [productId],
+      );
     });
 
     return this.listProductMaterials(productId);
+  }
+
+  private async assertProductMaterialsUnlocked(productId: number) {
+    const [row] = await this.database.query<(CountRow)[]>(
+      `
+      SELECT COUNT(*) AS total
+      FROM product_materials pm
+      INNER JOIN batch_material_usages bmu ON bmu.product_materials_id = pm.id AND bmu.is_deleted = 0
+      WHERE pm.product_id = ?
+        AND pm.is_deleted = 0
+        AND (
+          bmu.material_batch_id IS NOT NULL
+          OR bmu.reserved_quantity > 0
+          OR bmu.used_quantity > 0
+        )
+    `,
+      [productId],
+    );
+
+    if ((row?.total ?? 0) > 0) {
+      throw new BadRequestException('该产品已有物料批次分配或使用记录，不能修改产品物料清单');
+    }
   }
 
   private buildListFilters(filters: ProductFilters) {

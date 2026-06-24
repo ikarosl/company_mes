@@ -1,3 +1,4 @@
+/** 系统用户列表项，供用户管理和业务负责人选择器复用。 */
 export interface SystemUserListItem {
   id: string;
   username: string;
@@ -12,6 +13,7 @@ export interface SystemUserListItem {
   lastLoginAt: string | null;
 }
 
+/** 角色列表及其权限、用户数量汇总。 */
 export interface SystemRoleListItem {
   id: string;
   name: string;
@@ -23,6 +25,7 @@ export interface SystemRoleListItem {
   updatedAt: string | null;
 }
 
+/** 权限基础信息，覆盖菜单、页面和接口权限。 */
 export interface SystemPermissionListItem {
   id: string;
   parentId: string;
@@ -35,15 +38,18 @@ export interface SystemPermissionListItem {
   status: number;
 }
 
+/** 前端权限树节点。 */
 export interface SystemPermissionTreeNode extends SystemPermissionListItem {
   children: SystemPermissionTreeNode[];
 }
 
+/** 角色当前绑定的权限集合。 */
 export interface SystemRolePermissionDetail {
   roleId: string;
   permissionIds: string[];
 }
 
+/** 操作审计日志的列表及详情共用结构。 */
 export interface OperationLogListItem {
   id: string;
   logType: string;

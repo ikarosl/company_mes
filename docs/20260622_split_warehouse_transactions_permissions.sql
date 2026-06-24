@@ -1,6 +1,8 @@
 -- Split the old warehouse transaction permission set into finished-goods and material transaction scopes.
 -- This migration only adjusts RBAC metadata; it does not change business tables.
 
+SET NAMES utf8mb4;
+
 START TRANSACTION;
 
 UPDATE permissions

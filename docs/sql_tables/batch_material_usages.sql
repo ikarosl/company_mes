@@ -24,6 +24,7 @@ CREATE TABLE `batch_material_usages` (
   `deleted_by` bigint unsigned DEFAULT NULL COMMENT '删除人',
   `deleted_at` datetime DEFAULT NULL COMMENT '删除时间',
   PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_batch_material_usages_batch_material` (`batch_id`,`product_materials_id`),
   KEY `idx_batch_material_usages_batch_id` (`batch_id`),
   KEY `idx_batch_material_usages_product_materials_id` (`product_materials_id`),
   KEY `idx_batch_material_usages_material_batch_id` (`material_batch_id`),

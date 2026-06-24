@@ -71,8 +71,8 @@
 import { reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import type { FormInstance, FormRules } from 'element-plus';
-import { ElMessage } from 'element-plus';
 import { useAuthStore } from '../stores/auth';
+import { EMessage } from '../utils/message';
 
 const route = useRoute();
 const router = useRouter();
@@ -105,7 +105,7 @@ const handleLogin = async () => {
 
   try {
     await authStore.login(form);
-    ElMessage.success('登录成功');
+    EMessage.success('登录成功');
     await router.push(typeof route.query.redirect === 'string' ? route.query.redirect : '/');
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '登录失败';

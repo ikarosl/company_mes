@@ -3,6 +3,7 @@ import ElementPlus from 'element-plus';
 import { createPinia } from 'pinia';
 import 'element-plus/dist/index.css';
 import 'nprogress/nprogress.css';
+import './styles/global.css';
 import App from './App.vue';
 import { router } from './router';
 

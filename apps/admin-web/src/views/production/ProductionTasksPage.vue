@@ -65,17 +65,39 @@
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="物料状态" width="120">
+          <template #default="{ row }">
+            <el-tag :type="getMaterialStatusMeta(row.materialStatus).type" effect="light">
+              {{ getMaterialStatusMeta(row.materialStatus).label }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="派工状态" width="110">
+          <template #default="{ row }">
+            <el-tag :type="getDispatchStatusMeta(row.dispatchStatus).type" effect="light">
+              {{ getDispatchStatusMeta(row.dispatchStatus).label }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="负责人" width="120">
           <template #default="{ row }">{{ row.ownerName || '-' }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="360" fixed="right">
+        <el-table-column label="操作" width="440" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">查看</el-button>
-            <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-button link type="primary" @click="generateMaterials(row)">生成物料</el-button>
-            <el-button link type="primary" @click="openDispatch(row)">派工</el-button>
-            <el-button link type="primary" :disabled="row.status === 'completed'" @click="startTask(row)">开始</el-button>
-            <el-button link type="primary" :disabled="row.status === 'completed'" @click="finishTask(row)">完成</el-button>
+            <el-button link type="primary" :disabled="!canConfigureTask(row)" @click="openEdit(row)">编辑</el-button>
+            <el-button
+              link
+              type="primary"
+              :disabled="!canConfigureTask(row)"
+              @click="row.materialStatus === 'missing_demand' ? generateMaterials(row) : openDetail(row)"
+            >
+              {{ row.materialStatus === 'missing_demand' ? '生成物料' : '查看物料' }}
+            </el-button>
+            <el-button link type="primary" @click="openMaterialAllocation">物料分配</el-button>
+            <el-button link type="primary" :disabled="!canConfigureTask(row)" @click="openDispatch(row)">派工</el-button>
+            <el-button link type="primary" :disabled="!canStartTask(row)" @click="startTask(row)">开始</el-button>
+            <el-button link type="primary" :disabled="row.status !== 'doing'" @click="finishTask(row)">完成</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -91,7 +113,7 @@
       </div>
     </section>
 
-    <el-dialog v-model="taskDialogVisible" :title="editingTaskId ? '编辑任务' : '新增任务'" width="980px">
+    <el-dialog v-model="taskDialogVisible" :title="editingTaskId ? '编辑任务' : '新增任务'" :width="DialogWidth.xl" class="business-dialog">
       <el-form class="dialog-form" label-width="108px" :model="taskForm">
         <el-form-item v-if="!editingTaskId" label="选择工单" required>
           <el-select v-model="taskForm.workOrderId" filterable placeholder="请选择下达的工单" @change="handleTaskOrderChange">
@@ -196,7 +218,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="detailDialogVisible" title="任务详情" width="1040px">
+    <el-dialog v-model="detailDialogVisible" title="任务详情" :width="DialogWidth.xl" class="business-dialog">
       <template v-if="activeTask">
         <el-descriptions :column="3" border>
           <el-descriptions-item label="批次号">{{ activeTask.batchNo }}</el-descriptions-item>
@@ -258,7 +280,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="dispatchDialogVisible" title="任务派工" width="860px">
+    <el-dialog v-model="dispatchDialogVisible" title="任务派工" :width="DialogWidth.lg" class="business-dialog">
       <el-table :data="dispatchRows" class="detail-table">
         <el-table-column prop="stepOrder" label="序号" width="70" />
         <el-table-column prop="stepName" label="工序" min-width="180" />
@@ -283,7 +305,77 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="stepDialogVisible" title="编辑工序记录" width="640px">
+    <el-dialog v-model="materialDemandDialogVisible" title="生成物料需求" :width="DialogWidth.lg" class="business-dialog">
+      <template v-if="materialDemandTask">
+        <el-descriptions :column="3" border class="material-demand-summary">
+          <el-descriptions-item label="批次号">{{ materialDemandTask.batchNo }}</el-descriptions-item>
+          <el-descriptions-item label="产品">{{ materialDemandTask.productName }}</el-descriptions-item>
+          <el-descriptions-item label="计划数量">{{ formatQuantity(materialDemandTask.plannedQuantity) }}</el-descriptions-item>
+        </el-descriptions>
+        <el-table :data="materialDemandPreviewRows" class="detail-table">
+          <el-table-column prop="materialModel" label="物料编码" min-width="160" />
+          <el-table-column prop="materialName" label="物料名称" min-width="160" />
+          <el-table-column label="单位用量" width="120" align="right">
+            <template #default="{ row }">{{ formatQuantity(row.quantityPerUnit) }}</template>
+          </el-table-column>
+          <el-table-column label="需求数量" width="120" align="right">
+            <template #default="{ row }">{{ formatQuantity(row.planQuantity) }}</template>
+          </el-table-column>
+          <el-table-column label="单位" width="80">
+            <template #default="{ row }">{{ row.unit || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="批次记录" width="100">
+            <template #default="{ row }">{{ row.needBatchRecord ? '是' : '否' }}</template>
+          </el-table-column>
+        </el-table>
+      </template>
+      <template #footer>
+        <el-button @click="materialDemandDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="confirmGenerateMaterials">确认生成</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="startCheckDialogVisible" title="开始生产确认" :width="DialogWidth.md" class="business-dialog">
+      <template v-if="startCheck">
+        <el-alert
+          v-if="startCheck.blockers.length"
+          title="暂时不能开始生产"
+          type="error"
+          :closable="false"
+          show-icon
+        >
+          <div v-for="item in startCheck.blockers" :key="item">{{ item }}</div>
+        </el-alert>
+        <el-alert
+          v-else-if="startCheck.warnings.length"
+          title="物料尚未完全分配"
+          type="warning"
+          :closable="false"
+          show-icon
+        >
+          <div v-for="item in startCheck.warnings" :key="item">{{ item }}</div>
+        </el-alert>
+        <el-descriptions :column="2" border class="start-check-summary">
+          <el-descriptions-item label="物料需求">{{ startCheck.materialRequirementCount }} 项</el-descriptions-item>
+          <el-descriptions-item label="未分配">{{ startCheck.unallocatedMaterialCount }} 项</el-descriptions-item>
+          <el-descriptions-item label="工序数量">{{ startCheck.stepCount }} 道</el-descriptions-item>
+          <el-descriptions-item label="未派工">{{ startCheck.unassignedStepCount }} 道</el-descriptions-item>
+        </el-descriptions>
+      </template>
+      <template #footer>
+        <el-button @click="startCheckDialogVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :disabled="!startCheck?.canStart"
+          :loading="submitting"
+          @click="confirmStartTask"
+        >
+          确认开始生产
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="stepDialogVisible" title="编辑工序记录" :width="DialogWidth.md" class="business-dialog">
       <el-form class="dialog-form" label-width="108px" :model="stepForm">
         <el-form-item label="负责人">
           <el-select v-model="stepForm.responsibleUserId" clearable filterable placeholder="请选择负责人">
@@ -332,7 +424,8 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
-import { ElMessage, ElMessageBox, type UploadRawFile } from 'element-plus';
+import { useRouter } from 'vue-router';
+import { ElMessageBox, type UploadRawFile } from 'element-plus';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type {
   BatchStepRecordItem,
@@ -343,6 +436,7 @@ import type {
   ProductionBatchItem,
   ProductionBatchStatus,
   ProductionTaskDetail,
+  ProductionTaskStartCheck,
   TaskMaterialRequirementItem,
   SystemUserListItem,
   WorkOrderListItem,
@@ -350,7 +444,10 @@ import type {
 import { productApi } from '../../api/product';
 import { productionApi } from '../../api/production';
 import { systemApi } from '../../api/system';
+import { DialogWidth } from '../../utils/dialog';
+import { EMessage } from '../../utils/message';
 
+/** 生产任务状态字典：只表达批次执行阶段，物料和派工状态单独展示。 */
 const taskStatusOptions: Array<{ value: ProductionBatchStatus; label: string; type: 'info' | 'primary' | 'success' | 'danger' }> = [
   { value: 'pending', label: '已生成批次', type: 'info' },
   { value: 'material_pending', label: '已生成物料需求', type: 'primary' },
@@ -359,6 +456,22 @@ const taskStatusOptions: Array<{ value: ProductionBatchStatus; label: string; ty
   { value: 'completed', label: '已完成', type: 'success' },
   { value: 'cancelled', label: '已取消', type: 'danger' },
 ];
+/** 物料状态由需求、预留和实际出库数量实时汇总。 */
+const materialStatusOptions = {
+  missing_demand: { label: '未生成', type: 'info' },
+  unallocated: { label: '未分配', type: 'info' },
+  partial: { label: '部分分配', type: 'warning' },
+  allocated: { label: '已分配', type: 'primary' },
+  shortage: { label: '缺料', type: 'danger' },
+  used: { label: '已出库', type: 'success' },
+} as const;
+/** 派工状态由批次工序总数和已指定负责人数量实时汇总。 */
+const dispatchStatusOptions = {
+  missing_steps: { label: '无工序', type: 'info' },
+  unassigned: { label: '未派工', type: 'info' },
+  partial: { label: '部分派工', type: 'warning' },
+  assigned: { label: '已派工', type: 'success' },
+} as const;
 const stepStatusOptions: Array<{ value: BatchStepStatus; label: string }> = [
   { value: 'pending', label: '待开始' },
   { value: 'doing', label: '进行中' },
@@ -371,7 +484,9 @@ type MaterialDemandFormRow = Omit<TaskMaterialRequirementItem, 'planQuantity'> &
   planQuantity: string | number;
 };
 
+/** 任务列表及页面路由：物料分配操作跳转到独立的分块列表页。 */
 const tasks = ref<ProductionBatchItem[]>([]);
+const router = useRouter();
 const productOptions = ref<ProductListItem[]>([]);
 const routeOptions = ref<ProcessRouteListItem[]>([]);
 const userOptions = ref<SystemUserListItem[]>([]);
@@ -380,6 +495,8 @@ const processOptions = ref<ProcessOption[]>([]);
 const activeTask = ref<ProductionTaskDetail | null>(null);
 const createPreviewSteps = ref<Array<BatchStepRecordItem & { responsibleUserId: string | null; sopFileId: string | null }>>([]);
 const createPreviewMaterials = ref<MaterialDemandFormRow[]>([]);
+const materialDemandTask = ref<ProductionBatchItem | null>(null);
+const materialDemandPreviewRows = ref<TaskMaterialRequirementItem[]>([]);
 const editingTaskId = ref<string | null>(null);
 const editingTaskOriginalQuantity = ref(0);
 const dispatchTaskId = ref<string | null>(null);
@@ -392,10 +509,17 @@ const pageSize = ref(10);
 const taskDialogVisible = ref(false);
 const detailDialogVisible = ref(false);
 const dispatchDialogVisible = ref(false);
+const materialDemandDialogVisible = ref(false);
+const startCheckDialogVisible = ref(false);
 const stepDialogVisible = ref(false);
 const dispatchRows = ref<Array<BatchStepRecordItem & { responsibleUserId: string | null; sopFileId: string | null }>>([]);
+/** 开始生产检查弹窗：保存当前任务及后端返回的阻断项、警告项。 */
+const startCheckTaskId = ref<string | null>(null);
+const startCheck = ref<ProductionTaskStartCheck | null>(null);
 
+/** 任务列表查询条件。 */
 const query = reactive({ keyword: '', productId: '', ownerId: '', status: '' });
+/** 新增/编辑任务表单：工艺路线决定后续可派工的工序范围。 */
 const taskForm = reactive({
   workOrderId: '',
   batchNo: '',
@@ -584,7 +708,7 @@ const handleTaskOrderChange = (workOrderId: string) => {
   if (taskForm.plannedQuantity <= 0) {
     createPreviewSteps.value = [];
     createPreviewMaterials.value = [];
-    ElMessage.warning('该工单已无可分配数量');
+    EMessage.warning('该工单已无可分配数量');
     return;
   }
 
@@ -629,19 +753,19 @@ const refreshCreatePreview = async (options: { keepSteps?: boolean; keepMaterial
     if (!options.keepMaterials) {
       createPreviewMaterials.value = [];
     }
-    ElMessage.error(error instanceof Error ? error.message : '任务预览失败');
+    EMessage.error(error, '任务预览失败');
     return false;
   }
 };
 
 const submitTask = async () => {
   if (taskForm.plannedQuantity <= 0 || (!editingTaskId.value && !taskForm.workOrderId)) {
-    ElMessage.warning('请选择所属工单并填写计划数量');
+    EMessage.warning('请选择所属工单并填写计划数量');
     return;
   }
 
   if (taskQuantityMax.value !== null && taskForm.plannedQuantity > taskQuantityMax.value) {
-    ElMessage.warning('计划数量不能超过工单剩余数量');
+    EMessage.warning('计划数量不能超过工单剩余数量');
     return;
   }
 
@@ -663,7 +787,7 @@ const submitTask = async () => {
 
     if (editingTaskId.value) {
       await productionApi.updateTask(editingTaskId.value, payload);
-      ElMessage.success('任务已更新');
+      EMessage.success('任务已更新');
     } else {
       const previewReady = await refreshCreatePreview();
       if (!previewReady) {
@@ -675,7 +799,7 @@ const submitTask = async () => {
         workOrderId: taskForm.workOrderId,
         batchNo: taskForm.batchNo || null,
       });
-      ElMessage.success('任务已新增');
+      EMessage.success('任务已新增');
     }
 
     taskDialogVisible.value = false;
@@ -692,10 +816,27 @@ const openDetail = async (row: ProductionBatchItem) => {
 };
 
 const generateMaterials = async (row: ProductionBatchItem) => {
-  const result = await productionApi.generateTaskMaterialDemand(row.id);
-  activeTask.value = result.task;
-  ElMessage.success('已生成 ' + result.materials.length + ' 条物料需求');
-  await loadTasks();
+  materialDemandTask.value = row;
+  materialDemandPreviewRows.value = await productionApi.previewTaskMaterialDemand(row.id);
+  materialDemandDialogVisible.value = true;
+};
+
+const confirmGenerateMaterials = async () => {
+  if (!materialDemandTask.value) {
+    return;
+  }
+
+  submitting.value = true;
+  try {
+    const result = await productionApi.generateTaskMaterialDemand(materialDemandTask.value.id);
+    activeTask.value = result.task;
+    materialDemandPreviewRows.value = result.materials;
+    EMessage.success('已生成 ' + result.materials.length + ' 条物料需求');
+    materialDemandDialogVisible.value = false;
+    await loadTasks();
+  } finally {
+    submitting.value = false;
+  }
 };
 
 const openDispatch = async (row: ProductionBatchItem) => {
@@ -719,7 +860,7 @@ const submitDispatch = async () => {
         sopFileId: row.sopFileId,
       })),
     });
-    ElMessage.success('派工已保存');
+    EMessage.success('派工已保存');
     dispatchDialogVisible.value = false;
     await loadTasks();
   } finally {
@@ -727,10 +868,27 @@ const submitDispatch = async () => {
   }
 };
 
+/** 先读取后端开始前检查，弹窗展示阻断项和物料分配警告。 */
 const startTask = async (row: ProductionBatchItem) => {
-  await productionApi.startTask(row.id);
-  ElMessage.success('任务已开始');
-  await loadTasks();
+  startCheckTaskId.value = row.id;
+  startCheck.value = await productionApi.previewTaskStart(row.id);
+  startCheckDialogVisible.value = true;
+};
+
+/** 确认开始生产；后端会再次校验，避免绕过前端直接改变状态。 */
+const confirmStartTask = async () => {
+  if (!startCheckTaskId.value || !startCheck.value?.canStart) {
+    return;
+  }
+  submitting.value = true;
+  try {
+    await productionApi.startTask(startCheckTaskId.value);
+    EMessage.success('任务已开始');
+    startCheckDialogVisible.value = false;
+    await loadTasks();
+  } finally {
+    submitting.value = false;
+  }
 };
 
 const finishTask = async (row: ProductionBatchItem) => {
@@ -745,7 +903,7 @@ const finishTask = async (row: ProductionBatchItem) => {
   }
 
   await productionApi.finishTask(row.id);
-  ElMessage.success('任务已完成');
+  EMessage.success('任务已完成');
   await loadTasks();
 };
 
@@ -784,7 +942,7 @@ const submitStep = async () => {
       abnormalQuantity: stepForm.abnormalQuantity,
       remark: stepForm.remark,
     });
-    ElMessage.success('工序记录已更新');
+    EMessage.success('工序记录已更新');
     stepDialogVisible.value = false;
   } finally {
     submitting.value = false;
@@ -792,6 +950,15 @@ const submitStep = async () => {
 };
 
 const getTaskStatusMeta = (status: ProductionBatchStatus) => taskStatusOptions.find((item) => item.value === status) ?? taskStatusOptions[0];
+const getMaterialStatusMeta = (status: ProductionBatchItem['materialStatus']) =>
+  materialStatusOptions[status ?? 'missing_demand'];
+const getDispatchStatusMeta = (status: ProductionBatchItem['dispatchStatus']) =>
+  dispatchStatusOptions[status ?? 'missing_steps'];
+const canConfigureTask = (row: ProductionBatchItem) =>
+  !['doing', 'completed', 'cancelled'].includes(row.status);
+const canStartTask = (row: ProductionBatchItem) =>
+  ['pending', 'material_pending', 'material_assigned'].includes(row.status);
+const openMaterialAllocation = () => router.push('/production/material-allocation');
 const formatProduct = (product: ProductListItem) => `${product.productModel} / ${product.productName}`;
 const formatTaskProduct = (order: WorkOrderListItem) => `${order.productModel} / ${order.productName}`;
 const formatRoute = (route: ProcessRouteListItem) => `${route.routeName}${route.productType ? ` / ${route.productType}` : ''}`;
@@ -824,7 +991,7 @@ const uploadStepSopFile = (file: UploadRawFile, row: BatchStepRecordItem & { sop
     }
 
     activeTask.value = task;
-    ElMessage.success('实际参考文件已上传');
+    EMessage.success('实际参考文件已上传');
   })();
 
   return false;
@@ -840,7 +1007,7 @@ const uploadEditingStepSopFile = (file: UploadRawFile) => {
     activeTask.value = await productionApi.uploadTaskStepSop(editingTaskId.value!, editingStepId.value!, formData);
     const updated = activeTask.value.steps.find((step) => step.id === editingStepId.value);
     stepForm.sopFileId = updated?.sopFileId ?? '';
-    ElMessage.success('实际参考文件已上传');
+    EMessage.success('实际参考文件已上传');
   })();
 
   return false;
@@ -977,6 +1144,11 @@ onMounted(loadPageData);
 
 .file-cell :deep(.el-select) {
   flex: 1;
+}
+
+.business-dialog :deep(.el-dialog__body) {
+  max-height: 70vh;
+  overflow-y: auto;
 }
 
 @media (max-width: 1120px) {

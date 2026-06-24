@@ -3,6 +3,11 @@ import {
   type CreateMaterialBatchPayload,
   type MaterialBatchDetail,
   type MaterialBatchListItem,
+  type MaterialInboundPayload,
+  type MaterialOutboundPayload,
+  type MaterialReturnPayload,
+  type MaterialTransactionDemandOption,
+  type MaterialTransactionListItem,
   type PageResult,
   type StocktakeMaterialBatchPayload,
   type UpdateMaterialBatchPayload,
@@ -51,9 +56,32 @@ export const warehouseApi = {
       params,
     }),
   listMaterialTransactions: (params?: QueryParams) =>
-    requestData<PageResult<unknown>>({
+    requestData<PageResult<MaterialTransactionListItem>>({
       url: BUSINESS_API.warehouseMaterialTransactions,
       method: 'GET',
       params,
+    }),
+  listMaterialTransactionDemands: () =>
+    requestData<MaterialTransactionDemandOption[]>({
+      url: `${BUSINESS_API.warehouseMaterialTransactions}/demands`,
+      method: 'GET',
+    }),
+  materialInbound: (data: MaterialInboundPayload) =>
+    requestData<{ materialBatchId: string }>({
+      url: `${BUSINESS_API.warehouseMaterialTransactions}/inbound`,
+      method: 'POST',
+      data,
+    }),
+  materialOutbound: (data: MaterialOutboundPayload) =>
+    requestData<{ success: boolean }>({
+      url: `${BUSINESS_API.warehouseMaterialTransactions}/outbound`,
+      method: 'POST',
+      data,
+    }),
+  materialReturn: (data: MaterialReturnPayload) =>
+    requestData<{ success: boolean }>({
+      url: `${BUSINESS_API.warehouseMaterialTransactions}/return`,
+      method: 'POST',
+      data,
     }),
 };

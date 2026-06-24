@@ -79,6 +79,12 @@ export class ProductionTaskController {
   }
 
   @RequirePermission(PERMISSIONS.production.tasks.generateMaterialDemand)
+  @Get(':id/material-demand-preview')
+  previewMaterialDemand(@Param('id') id: string) {
+    return this.tasks.previewMaterialDemand(readId(id));
+  }
+
+  @RequirePermission(PERMISSIONS.production.tasks.generateMaterialDemand)
   @Post(':id/material-demand')
   generateMaterialDemand(@Param('id') id: string) {
     return this.tasks.generateMaterialDemand(readId(id));
@@ -94,6 +100,12 @@ export class ProductionTaskController {
   @Post(':id/dispatch')
   dispatchTask(@Param('id') id: string, @Body() body: DispatchTaskPayload) {
     return this.tasks.dispatchTask(readId(id), body);
+  }
+
+  @RequirePermission(PERMISSIONS.production.tasks.start)
+  @Get(':id/start-preview')
+  previewStartTask(@Param('id') id: string) {
+    return this.tasks.previewStartTask(readId(id));
   }
 
   @RequirePermission(PERMISSIONS.production.tasks.start)
@@ -146,7 +158,8 @@ export class ProductionTaskController {
 
 const decodeUploadFileName = (fileName: string) => {
   const decoded = Buffer.from(fileName, 'latin1').toString('utf8');
-  return decoded.includes('锟?') ? fileName : decoded;
+  // 浏览器上传的中文文件名可能按 latin1 传输；解码产生替换字符时保留原文件名。
+  return decoded.includes('\uFFFD') ? fileName : decoded;
 };
 
 const sanitizeFileName = (fileName: string) =>

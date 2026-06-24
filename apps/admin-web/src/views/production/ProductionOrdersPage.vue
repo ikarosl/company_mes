@@ -113,7 +113,7 @@
       </div>
     </section>
 
-    <el-dialog v-model="orderDialogVisible" :title="editingOrderId ? '编辑工单' : '新增工单'" width="860px">
+    <el-dialog v-model="orderDialogVisible" :title="editingOrderId ? '编辑工单' : '新增工单'" :width="DialogWidth.lg">
       <el-form class="dialog-form" label-width="108px" :model="orderForm">
         <div class="form-grid">
           <el-form-item label="工单号" required>
@@ -160,7 +160,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="detailDialogVisible" title="工单详情" width="1000px">
+    <el-dialog v-model="detailDialogVisible" title="工单详情" :width="DialogWidth.xl">
       <template v-if="activeOrder">
         <el-descriptions :column="3" border>
           <el-descriptions-item label="工单号">{{ activeOrder.orderNo }}</el-descriptions-item>
@@ -196,7 +196,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="taskDialogVisible" title="生产批次" width="1000px">
+    <el-dialog v-model="taskDialogVisible" title="生产批次" :width="DialogWidth.xl">
       <template v-if="taskOrder">
         <div class="task-toolbar">
           <div>
@@ -232,7 +232,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="batchFormDialogVisible" :title="editingBatchId ? '编辑生产批次' : '新增生产批次'" width="640px">
+    <el-dialog v-model="batchFormDialogVisible" :title="editingBatchId ? '编辑生产批次' : '新增生产批次'" :width="DialogWidth.md">
       <el-form class="dialog-form" label-width="108px" :model="batchForm">
         <el-form-item label="批次号">
           <el-input v-model="batchForm.batchNo" placeholder="不填则系统自动生成" />
@@ -281,7 +281,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessageBox } from 'element-plus';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type {
   ProcessRouteListItem,
@@ -296,6 +296,8 @@ import type {
 import { productApi } from '../../api/product';
 import { productionApi } from '../../api/production';
 import { systemApi } from '../../api/system';
+import { DialogWidth } from '../../utils/dialog';
+import { EMessage } from '../../utils/message';
 
 const orderStatusOptions: Array<{ value: WorkOrderStatus; label: string; type: 'info' | 'primary' | 'success' | 'warning' | 'danger' }> = [
   { value: 'draft', label: '草稿', type: 'info' },
@@ -476,7 +478,7 @@ const handleOrderProductChange = () => {};
 
 const submitOrder = async () => {
   if (!orderForm.orderNo.trim() || !orderForm.productId || orderForm.plannedQuantity <= 0) {
-    ElMessage.warning('请填写工单号、产品和计划数量');
+    EMessage.warning('请填写工单号、产品和计划数量');
     return;
   }
 
@@ -496,10 +498,10 @@ const submitOrder = async () => {
 
     if (editingOrderId.value) {
       await productionApi.updateOrder(editingOrderId.value, payload);
-      ElMessage.success('工单已更新');
+      EMessage.success('工单已更新');
     } else {
       await productionApi.createOrder(payload);
-      ElMessage.success('工单已新增');
+      EMessage.success('工单已新增');
     }
 
     orderDialogVisible.value = false;
@@ -557,12 +559,12 @@ const openEditBatch = (row: ProductionBatchItem) => {
 
 const submitBatch = async () => {
   if (!taskOrder.value || batchForm.plannedQuantity <= 0) {
-    ElMessage.warning('请填写生产批次数量');
+    EMessage.warning('请填写生产批次数量');
     return;
   }
 
   if (batchQuantityMax.value !== null && batchForm.plannedQuantity > batchQuantityMax.value) {
-    ElMessage.warning('生产批次数量不能超过工单剩余可分配数量');
+    EMessage.warning('生产批次数量不能超过工单剩余可分配数量');
     return;
   }
 
@@ -584,10 +586,10 @@ const submitBatch = async () => {
         batchNo: batchForm.batchNo,
         status: batchForm.status,
       });
-      ElMessage.success('生产批次已更新');
+      EMessage.success('生产批次已更新');
     } else {
       await productionApi.createOrderBatch(taskOrder.value.id, payload);
-      ElMessage.success('生产批次已新增');
+      EMessage.success('生产批次已新增');
     }
 
     batchFormDialogVisible.value = false;
@@ -618,7 +620,7 @@ const changeOrderStatus = async (
   }
 
   await productionApi.changeOrderStatus(row.id, status);
-  ElMessage.success(`工单已${label}`);
+  EMessage.success(`工单已${label}`);
   await loadOrders();
 };
 

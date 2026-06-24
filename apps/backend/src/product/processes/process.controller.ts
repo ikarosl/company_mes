@@ -108,7 +108,8 @@ export class ProcessController {
 
 const decodeUploadFileName = (fileName: string) => {
   const decoded = Buffer.from(fileName, 'latin1').toString('utf8');
-  return decoded.includes('�') ? fileName : decoded;
+  // 解码结果包含 Unicode 替换字符时，保留原始文件名，避免中文文件名被二次破坏。
+  return decoded.includes('\uFFFD') ? fileName : decoded;
 };
 
 const sanitizeFileName = (fileName: string) =>

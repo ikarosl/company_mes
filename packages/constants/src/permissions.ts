@@ -1,3 +1,4 @@
+/** 管理端和后端 Guard 共用的权限编码。 */
 export const PERMISSIONS = {
   dashboard: {
     page: 'dashboard:page',

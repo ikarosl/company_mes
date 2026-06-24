@@ -4,8 +4,12 @@ import {
   type CreateProductionTaskPayload,
   type CreateWorkOrderPayload,
   type DispatchTaskPayload,
+  type AllocateMaterialPayload,
+  type MaterialAllocationAvailableBatchItem,
+  type MaterialAllocationBatchItem,
   type PageResult,
   type ProductionTaskCreatePreview,
+  type ProductionTaskStartCheck,
   type ProductionTaskDetail,
   type ProductionBatchItem,
   type UpdateBatchStepRecordPayload,
@@ -125,6 +129,11 @@ export const productionApi = {
       method: 'PUT',
       data,
     }),
+  previewTaskMaterialDemand: (id: string) =>
+    requestData<ProductionTaskDetail['materialRequirements']>({
+      url: `${BUSINESS_API.tasks}/${id}/material-demand-preview`,
+      method: 'GET',
+    }),
   generateTaskMaterialDemand: (id: string) =>
     requestData<{ task: ProductionTaskDetail; materials: ProductionTaskDetail['materialRequirements'] }>({
       url: `${BUSINESS_API.tasks}/${id}/material-demand`,
@@ -151,6 +160,33 @@ export const productionApi = {
       url: `${BUSINESS_API.tasks}/${id}/steps/${recordId}`,
       method: 'PUT',
       data,
+    }),
+  previewTaskStart: (id: string) =>
+    requestData<ProductionTaskStartCheck>({
+      url: `${BUSINESS_API.tasks}/${id}/start-preview`,
+      method: 'GET',
+    }),
+  listMaterialAllocations: (params?: QueryParams) =>
+    requestData<PageResult<MaterialAllocationBatchItem>>({
+      url: BUSINESS_API.materialAllocation,
+      method: 'GET',
+      params,
+    }),
+  listAvailableMaterialBatches: (productMaterialId: string) =>
+    requestData<MaterialAllocationAvailableBatchItem[]>({
+      url: `${BUSINESS_API.materialAllocation}/product-materials/${productMaterialId}/available-batches`,
+      method: 'GET',
+    }),
+  allocateMaterial: (batchId: string, data: AllocateMaterialPayload) =>
+    requestData<MaterialAllocationBatchItem>({
+      url: `${BUSINESS_API.materialAllocation}/batches/${batchId}/allocate`,
+      method: 'POST',
+      data,
+    }),
+  clearMaterialAllocation: (batchId: string, productMaterialId: string) =>
+    requestData<MaterialAllocationBatchItem>({
+      url: `${BUSINESS_API.materialAllocation}/batches/${batchId}/product-materials/${productMaterialId}`,
+      method: 'DELETE',
     }),
   uploadTaskStepSop: (id: string, recordId: string, data: FormData) =>
     requestData<ProductionTaskDetail>({

@@ -61,7 +61,7 @@
       </el-table-column>
     </el-table>
 
-    <el-drawer v-model="detailVisible" size="640px" title="日志详情">
+    <el-dialog v-model="detailVisible" title="日志详情" :width="DialogWidth.lg">
       <el-descriptions v-if="activeLog" border :column="1" class="detail-block">
         <el-descriptions-item label="动作">{{ activeLog.action }}</el-descriptions-item>
         <el-descriptions-item label="用户">{{
@@ -77,7 +77,7 @@
       <pre>{{ JSON.stringify(activeLog?.afterData, null, 2) }}</pre>
       <h2>变更前数据</h2>
       <pre>{{ JSON.stringify(activeLog?.beforeData, null, 2) }}</pre>
-    </el-drawer>
+    </el-dialog>
   </section>
 </template>
 
@@ -85,7 +85,10 @@
 import { onMounted, reactive, ref } from 'vue';
 import type { OperationLogListItem } from '@company/api-contract';
 import { systemApi } from '../../api/system';
+import { DialogWidth } from '../../utils/dialog';
+import { EMessage } from '../../utils/message';
 
+/** 日志列表和筛选条件保持在页面级，详情仅通过 Modal 查看。 */
 const loading = ref(false);
 const detailVisible = ref(false);
 const logs = ref<OperationLogListItem[]>([]);
@@ -106,6 +109,8 @@ const loadLogs = async () => {
       result: query.result || undefined,
       userId: query.userId || undefined,
     });
+  } catch (error) {
+    EMessage.error(error, '日志加载失败');
   } finally {
     loading.value = false;
   }

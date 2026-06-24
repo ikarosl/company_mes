@@ -65,6 +65,10 @@ export interface ProductionTaskListRow extends ProductionBatchListRow {
   order_no: string;
   step_count: number;
   finished_step_count: number;
+  assigned_step_count: number;
+  material_requirement_count: number;
+  assigned_material_count: number;
+  used_material_count: number;
 }
 
 export interface BatchStepRecordListRow extends RowDataPacket {

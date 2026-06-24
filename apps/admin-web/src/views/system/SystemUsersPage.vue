@@ -109,7 +109,7 @@
     <el-dialog
       v-model="userDialogVisible"
       :title="editingUserId ? '编辑用户' : '新增用户'"
-      width="560px"
+      :width="DialogWidth.md"
     >
       <el-form class="dialog-form" label-width="92px" :model="userForm">
         <el-form-item label="用户账号" required>
@@ -157,7 +157,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="passwordDialogVisible" :title="passwordDialogTitle" width="460px">
+    <el-dialog v-model="passwordDialogVisible" :title="passwordDialogTitle" :width="DialogWidth.sm">
       <el-form class="dialog-form" label-width="92px" :model="passwordForm">
         <el-form-item label="新密码" required>
           <el-input v-model="passwordForm.password" show-password />
@@ -171,7 +171,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="roleDialogVisible" title="分配角色" width="500px">
+    <el-dialog v-model="roleDialogVisible" title="分配角色" :width="DialogWidth.md">
       <el-form class="dialog-form" label-width="92px">
         <el-form-item label="用户">
           <el-input :model-value="assigningUser?.displayName ?? ''" disabled />
@@ -197,7 +197,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref } from 'vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessageBox } from 'element-plus';
 import { Filter, Key, Plus, Refresh, Setting } from '@element-plus/icons-vue';
 import type {
   SystemDepartmentOption,
@@ -205,6 +205,8 @@ import type {
   SystemUserListItem,
 } from '@company/api-contract';
 import { systemApi } from '../../api/system';
+import { DialogWidth } from '../../utils/dialog';
+import { EMessage } from '../../utils/message';
 
 type UserForm = {
   username: string;
@@ -379,12 +381,12 @@ const submitUser = async () => {
   const password = userForm.password.trim();
 
   if (!username || !displayName) {
-    ElMessage.warning('请填写用户账号和姓名');
+    EMessage.warning('请填写用户账号和姓名');
     return;
   }
 
   if (!editingUserId.value && password.length < 6) {
-    ElMessage.warning('初始密码至少 6 位');
+    EMessage.warning('初始密码至少 6 位');
     return;
   }
 
@@ -398,7 +400,7 @@ const submitUser = async () => {
         email: userForm.email,
         mobile: userForm.mobile,
       });
-      ElMessage.success('用户信息已更新');
+      EMessage.success('用户信息已更新');
     } else {
       await systemApi.createUser({
         username,
@@ -410,7 +412,7 @@ const submitUser = async () => {
         status: userForm.enabled ? 1 : 0,
         roleIds: userForm.roleIds,
       });
-      ElMessage.success('用户已新增');
+      EMessage.success('用户已新增');
     }
     userDialogVisible.value = false;
     await loadUsers();
@@ -431,7 +433,7 @@ const toggleStatus = async (row: SystemUserListItem) => {
   }
 
   await systemApi.changeUserStatus(row.id, { status: nextStatus });
-  ElMessage.success(`用户已${actionText}`);
+  EMessage.success(`用户已${actionText}`);
   await loadUsers();
 };
 
@@ -443,7 +445,7 @@ const openResetPassword = (row: SystemUserListItem) => {
 
 const openBatchResetPassword = () => {
   if (selectedUsers.value.length === 0) {
-    ElMessage.warning('请先选择需要重置密码的用户');
+    EMessage.warning('请先选择需要重置密码的用户');
     return;
   }
 
@@ -455,7 +457,7 @@ const openBatchResetPassword = () => {
 const submitResetPassword = async () => {
   const password = passwordForm.password.trim();
   if (password.length < 6) {
-    ElMessage.warning('新密码至少 6 位');
+    EMessage.warning('新密码至少 6 位');
     return;
   }
 
@@ -464,7 +466,7 @@ const submitResetPassword = async () => {
     await Promise.all(
       resettingUsers.value.map((user) => systemApi.resetUserPassword(user.id, { password })),
     );
-    ElMessage.success('密码已重置');
+    EMessage.success('密码已重置');
     passwordDialogVisible.value = false;
   } finally {
     savingPassword.value = false;
@@ -485,7 +487,7 @@ const submitAssignRoles = async () => {
   savingRoles.value = true;
   try {
     await systemApi.assignUserRoles(assigningUser.value.id, { roleIds: roleForm.roleIds });
-    ElMessage.success('角色已分配');
+    EMessage.success('角色已分配');
     roleDialogVisible.value = false;
     await loadUsers();
   } finally {
@@ -494,7 +496,7 @@ const submitAssignRoles = async () => {
 };
 
 const showColumnSettingPending = () => {
-  ElMessage.info('列设置暂未接入');
+  EMessage.info('列设置暂未接入');
 };
 
 const focusFirstFilter = async () => {

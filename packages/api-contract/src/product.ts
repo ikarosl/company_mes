@@ -253,8 +253,10 @@ export interface ConfigureProcessRouteStepsPayload {
   steps: ProcessRouteStepPayload[];
 }
 
+/** 物料批次库存状态。 */
 export type MaterialBatchStatus = 'available' | 'partial_used' | 'used_up' | 'disabled';
 
+/** 物料批次库存列表项，protocolCode 是该入库批次的检测依据编码。 */
 export interface MaterialBatchListItem {
   id: string;
   productId: string;
@@ -264,6 +266,7 @@ export interface MaterialBatchListItem {
   productType: string | null;
   materialBatchNo: string;
   supplierName: string | null;
+  protocolCode: string | null;
   receivedDate: string | null;
   quantity: string;
   reservedQuantity: string;
@@ -292,10 +295,12 @@ export interface MaterialBatchDetail extends MaterialBatchListItem {
   usages: MaterialBatchUsageItem[];
 }
 
+/** 新增物料批次或物料入库的公共请求参数。 */
 export interface CreateMaterialBatchPayload {
   productId: string;
   materialBatchNo: string;
   supplierName?: string | null;
+  protocolCode?: string | null;
   receivedDate?: string | null;
   quantity?: string | number | null;
   status?: MaterialBatchStatus;
@@ -306,6 +311,7 @@ export interface UpdateMaterialBatchPayload {
   productId?: string;
   materialBatchNo?: string;
   supplierName?: string | null;
+  protocolCode?: string | null;
   receivedDate?: string | null;
   quantity?: string | number | null;
   status?: MaterialBatchStatus;
@@ -314,5 +320,64 @@ export interface UpdateMaterialBatchPayload {
 
 export interface StocktakeMaterialBatchPayload {
   quantity: string | number;
+  remark?: string | null;
+}
+
+/** 物料出入库整合列表的记录类型。 */
+export type MaterialTransactionType = 'inbound' | 'outbound';
+
+/** 入库批次和累计生产出库记录的统一展示结构。 */
+export interface MaterialTransactionListItem {
+  id: string;
+  transactionType: MaterialTransactionType;
+  materialBatchId: string;
+  materialBatchNo: string;
+  materialProductId: string;
+  materialModel: string;
+  materialName: string;
+  supplierName: string | null;
+  protocolCode: string | null;
+  quantity: string;
+  unit: string | null;
+  productionBatchId: string | null;
+  productionBatchNo: string | null;
+  workOrderNo: string | null;
+  recordedByName: string | null;
+  recordedAt: string;
+  remark: string | null;
+}
+
+/** 生产领料下拉项：定位唯一需求及其已分配物料批次。 */
+export interface MaterialTransactionDemandOption {
+  usageId: string;
+  productionBatchId: string;
+  productionBatchNo: string;
+  workOrderNo: string;
+  productMaterialId: string;
+  materialProductId: string;
+  materialModel: string;
+  materialName: string;
+  materialBatchId: string;
+  materialBatchNo: string;
+  reservedQuantity: string;
+  usedQuantity: string;
+  remainingQuantity: string;
+  unit: string | null;
+}
+
+export interface MaterialInboundPayload extends CreateMaterialBatchPayload {}
+
+/** 生产领料出库请求。 */
+export interface MaterialOutboundPayload {
+  usageId: string;
+  quantity: string | number;
+  remark?: string | null;
+}
+
+/** 生产退料请求，原因用于审计和后续追溯。 */
+export interface MaterialReturnPayload {
+  usageId: string;
+  quantity: string | number;
+  reason: string;
   remark?: string | null;
 }

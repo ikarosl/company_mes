@@ -13,6 +13,7 @@ export interface MaterialBatchListRow extends RowDataPacket {
   product_type: string | null;
   material_batch_no: string;
   supplier_name: string | null;
+  protocol_code: string | null;
   received_date: Date | null;
   quantity: string | number | null;
   reserved_quantity: string | number | null;
@@ -28,6 +29,7 @@ export interface MaterialBatchRow extends RowDataPacket {
   product_id: number;
   material_batch_no: string;
   supplier_name: string | null;
+  protocol_code: string | null;
   received_date: Date | null;
   quantity: string | number | null;
   status: string;

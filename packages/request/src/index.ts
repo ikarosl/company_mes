@@ -5,6 +5,7 @@ import axios, {
   type InternalAxiosRequestConfig,
 } from 'axios';
 
+/** 请求客户端创建参数，允许业务端注入超时、重试和加载状态策略。 */
 export interface RequestClientOptions {
   baseURL?: string;
   timeoutMs?: number;

@@ -1,3 +1,4 @@
+/** 认证模块 API 路径。 */
 export const AUTH_API = {
   login: '/auth/login',
   refresh: '/auth/refresh',
@@ -6,6 +7,7 @@ export const AUTH_API = {
   validate: '/auth/validate',
 } as const;
 
+/** 系统管理模块 API 路径。 */
 export const SYSTEM_API = {
   users: '/system/users',
   departmentOptions: '/system/departments/options',
@@ -15,6 +17,7 @@ export const SYSTEM_API = {
   logs: '/system/logs',
 } as const;
 
+/** 生产业务模块 API 路径。 */
 export const BUSINESS_API = {
   products: '/products',
   productCategories: '/product-categories',

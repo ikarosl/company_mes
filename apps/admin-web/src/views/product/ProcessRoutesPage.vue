@@ -87,7 +87,7 @@
     <el-dialog
       v-model="routeDialogVisible"
       :title="editingRouteId ? '编辑工艺路线' : '新增工艺路线'"
-      width="640px"
+      :width="DialogWidth.md"
     >
       <el-form class="dialog-form" label-width="112px" :model="routeForm">
         <el-form-item label="路线编号" required>
@@ -122,7 +122,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="stepsDialogVisible" title="配置工序顺序" width="1000px">
+    <el-dialog v-model="stepsDialogVisible" title="配置工序顺序" :width="DialogWidth.xl">
       <div class="step-toolbar">
         <div class="toolbar-left">
           <el-button :icon="Refresh" @click="loadProcessOptions">刷新工序</el-button>
@@ -182,7 +182,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="detailDialogVisible" title="工艺路线详情" width="860px">
+    <el-dialog v-model="detailDialogVisible" title="工艺路线详情" :width="DialogWidth.lg">
       <el-descriptions v-if="detailRow" :column="2" border>
         <el-descriptions-item label="路线编号">{{ detailRow.routeCode }}</el-descriptions-item>
         <el-descriptions-item label="路线名称">{{ detailRow.routeName }}</el-descriptions-item>
@@ -215,7 +215,7 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessageBox } from 'element-plus';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type {
   ProcessOption,
@@ -226,6 +226,8 @@ import type {
 } from '@company/api-contract';
 import { productApi } from '../../api/product';
 import { systemApi } from '../../api/system';
+import { DialogWidth } from '../../utils/dialog';
+import { EMessage } from '../../utils/message';
 
 type StepFormRow = {
   processId: string;
@@ -376,12 +378,12 @@ const openDetail = async (row: ProcessRouteListItem) => {
 
 const submitRoute = async () => {
   if (!routeForm.routeCode.trim() || !routeForm.routeName.trim()) {
-    ElMessage.warning('请填写路线编号和路线名称');
+    EMessage.warning('请填写路线编号和路线名称');
     return;
   }
 
   if (!routeForm.productCategoryId) {
-    ElMessage.warning('请选择使用产品类型');
+    EMessage.warning('请选择使用产品类型');
     return;
   }
 
@@ -398,10 +400,10 @@ const submitRoute = async () => {
 
     if (editingRouteId.value) {
       await productApi.updateRoute(editingRouteId.value, payload);
-      ElMessage.success('工艺路线已更新');
+      EMessage.success('工艺路线已更新');
     } else {
       await productApi.createRoute(payload);
-      ElMessage.success('工艺路线已新增');
+      EMessage.success('工艺路线已新增');
     }
 
     routeDialogVisible.value = false;
@@ -452,12 +454,12 @@ const submitSteps = async () => {
 
   const processIds = stepForm.steps.map((step) => step.processId).filter(Boolean);
   if (processIds.length !== stepForm.steps.length) {
-    ElMessage.warning('请选择每一道路线步骤对应的工序');
+    EMessage.warning('请选择每一道路线步骤对应的工序');
     return;
   }
 
   if (new Set(processIds).size !== processIds.length) {
-    ElMessage.warning('同一条工艺路线中不能重复选择同一个工序');
+    EMessage.warning('同一条工艺路线中不能重复选择同一个工序');
     return;
   }
 
@@ -472,7 +474,7 @@ const submitSteps = async () => {
         remark: step.remark,
       })),
     });
-    ElMessage.success('工序顺序已保存');
+    EMessage.success('工序顺序已保存');
     stepsDialogVisible.value = false;
     await loadRoutes();
   } finally {
@@ -494,7 +496,7 @@ const toggleStatus = async (row: ProcessRouteListItem) => {
   }
 
   await productApi.changeRouteStatus(row.id, nextStatus);
-  ElMessage.success(`工艺路线已${actionText}`);
+  EMessage.success(`工艺路线已${actionText}`);
   await loadRoutes();
 };
 
@@ -510,7 +512,7 @@ const deleteRoute = async (row: ProcessRouteListItem) => {
   }
 
   await productApi.deleteRoute(row.id);
-  ElMessage.success('工艺路线已删除');
+  EMessage.success('工艺路线已删除');
   await loadRoutes();
 };
 
