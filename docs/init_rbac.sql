@@ -1,6 +1,6 @@
 -- MySQL dump 10.13  Distrib 8.0.46, for Win64 (x86_64)
 --
--- Host: 127.0.0.1    Database: company_test
+-- Host: 127.0.0.1    Database: company_mes_v2
 -- ------------------------------------------------------
 -- Server version	8.0.46
 
@@ -16,10 +16,10 @@
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
 
 --
--- Current Database: `company_test`
+-- Current Database: `company_mes_v2`
 --
 
-USE `company_test` IF EXISTS `company_test`;
+USE `company_mes_v2`;
 
 --
 -- Table structure for table `batch_material_usages`
@@ -288,11 +288,11 @@ UNLOCK TABLES;
 
 --
 --
--- Dumping events for database 'company_test'
+-- Dumping events for database 'company_mes_v2'
 --
 
 --
--- Dumping routines for database 'company_test'
+-- Dumping routines for database 'company_mes_v2'
 --
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 

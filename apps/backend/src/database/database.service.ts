@@ -7,13 +7,13 @@ export class DatabaseService implements OnModuleDestroy {
 
   constructor() {
     this.pool = createPool({
-      host: process.env.DB_HOST ?? '127.0.0.1',
-      port: Number(process.env.DB_PORT ?? 3306),
-      user: process.env.DB_USER ?? 'root',
-      password: process.env.DB_PASSWORD ?? '123456',
-      database: process.env.DB_NAME ?? 'company_test',
+      host: requiredEnv('DB_HOST'),
+      port: positiveIntegerEnv('DB_PORT'),
+      user: requiredEnv('DB_USER'),
+      password: requiredEnv('DB_PASSWORD', true),
+      database: requiredEnv('DB_NAME'),
       charset: 'utf8mb4',
-      connectionLimit: Number(process.env.DB_CONNECTION_LIMIT ?? 10),
+      connectionLimit: positiveIntegerEnv('DB_CONNECTION_LIMIT'),
     });
   }
 
@@ -49,3 +49,23 @@ export class DatabaseService implements OnModuleDestroy {
 }
 
 export type QueryParam = string | number | boolean | Date | null;
+
+const requiredEnv = (name: string, allowEmpty = false) => {
+  const value = process.env[name];
+
+  if (value === undefined || (!allowEmpty && value.trim() === '')) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+
+  return value;
+};
+
+const positiveIntegerEnv = (name: string) => {
+  const value = Number(requiredEnv(name));
+
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`Environment variable ${name} must be a positive integer`);
+  }
+
+  return value;
+};
