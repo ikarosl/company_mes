@@ -54,7 +54,8 @@ const WORK_ORDER_STATUSES = new Set<WorkOrderStatus>([
 ]);
 const BATCH_STATUSES = new Set<ProductionBatchStatus>([
   'pending',
-  'assigned',
+  'material_pending',
+  'material_assigned',
   'doing',
   'completed',
   'cancelled',
@@ -83,11 +84,12 @@ export class WorkOrderRepository {
         wo.product_id,
         p.product_model,
         p.product_name,
-        wo.route_id,
+        p.default_route_id AS route_id,
         r.route_name,
         wo.planned_quantity,
         COALESCE(b.assigned_quantity, 0) AS assigned_quantity,
-        wo.unit,
+        wo.customer_order_no,
+        wo.customer_name,
         wo.owner_id,
         u.display_name AS owner_name,
         wo.status,
@@ -98,7 +100,7 @@ export class WorkOrderRepository {
         wo.updated_at
       FROM work_orders wo
       INNER JOIN products p ON p.id = wo.product_id AND p.is_deleted = 0
-      LEFT JOIN process_routes r ON r.id = wo.route_id AND r.is_deleted = 0
+      LEFT JOIN process_routes r ON r.id = p.default_route_id AND r.is_deleted = 0
       LEFT JOIN users u ON u.id = wo.owner_id
       LEFT JOIN (
         SELECT work_order_id, SUM(planned_quantity) AS assigned_quantity
@@ -126,19 +128,17 @@ export class WorkOrderRepository {
   async createOrder(payload: CreateWorkOrderPayload) {
     const orderNo = readRequiredString(payload.orderNo, 'Missing order no');
     const productId = readPositiveId(payload.productId, 'Missing product');
-    const routeId = nullableId(payload.routeId);
     const plannedQuantity = readDecimal(payload.plannedQuantity, 'Invalid planned quantity');
     const ownerId = nullableId(payload.ownerId);
 
-    const product = await this.assertProductAvailable(productId);
-    await this.assertRouteAvailable(routeId, product.category_id);
+    await this.assertProductAvailable(productId);
     await this.assertUserAvailable(ownerId);
     await this.assertOrderNoAvailable(orderNo);
 
     const result = (await this.database.execute(
       `
       INSERT INTO work_orders (
-        order_no, product_id, route_id, planned_quantity, unit, owner_id,
+        order_no, product_id, planned_quantity, owner_id, customer_order_no, customer_name,
         status, plan_start_date, plan_end_date, remark, created_at, updated_at
       )
       VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, NOW(), NOW())
@@ -146,10 +146,10 @@ export class WorkOrderRepository {
       [
         orderNo,
         productId,
-        routeId,
         plannedQuantity,
-        normalizeOptionalString(payload.unit) ?? product.unit,
         ownerId,
+        normalizeOptionalString(payload.customerOrderNo),
+        normalizeOptionalString(payload.customerName),
         normalizeDate(payload.planStartDate),
         normalizeDate(payload.planEndDate),
         normalizeOptionalString(payload.remark),
@@ -165,13 +165,15 @@ export class WorkOrderRepository {
 
     const productId =
       payload.productId === undefined ? current.product_id : readPositiveId(payload.productId, 'Missing product');
-    const product = await this.assertProductAvailable(productId);
-    const routeId = payload.routeId === undefined ? current.route_id : nullableId(payload.routeId);
+    await this.assertProductAvailable(productId);
     const orderNo =
       payload.orderNo === undefined ? current.order_no : readRequiredString(payload.orderNo, 'Missing order no');
     const ownerId = payload.ownerId === undefined ? current.owner_id : nullableId(payload.ownerId);
+    const customerOrderNo =
+      payload.customerOrderNo === undefined ? current.customer_order_no : normalizeOptionalString(payload.customerOrderNo);
+    const customerName =
+      payload.customerName === undefined ? current.customer_name : normalizeOptionalString(payload.customerName);
 
-    await this.assertRouteAvailable(routeId, product.category_id);
     await this.assertUserAvailable(ownerId);
     await this.assertOrderNoAvailable(orderNo, id);
 
@@ -180,10 +182,10 @@ export class WorkOrderRepository {
       UPDATE work_orders
       SET order_no = ?,
         product_id = ?,
-        route_id = ?,
         planned_quantity = ?,
-        unit = ?,
         owner_id = ?,
+        customer_order_no = ?,
+        customer_name = ?,
         plan_start_date = ?,
         plan_end_date = ?,
         remark = ?,
@@ -193,12 +195,12 @@ export class WorkOrderRepository {
       [
         orderNo,
         productId,
-        routeId,
         payload.plannedQuantity === undefined
           ? decimalString(current.planned_quantity)
           : readDecimal(payload.plannedQuantity, 'Invalid planned quantity'),
-        payload.unit === undefined ? current.unit : normalizeOptionalString(payload.unit) ?? product.unit,
         ownerId,
+        customerOrderNo,
+        customerName,
         payload.planStartDate === undefined ? formatDate(current.plan_start_date) : normalizeDate(payload.planStartDate),
         payload.planEndDate === undefined ? formatDate(current.plan_end_date) : normalizeDate(payload.planEndDate),
         payload.remark === undefined ? current.remark : normalizeOptionalString(payload.remark),
@@ -237,17 +239,13 @@ export class WorkOrderRepository {
         b.id,
         b.work_order_id,
         b.batch_no,
-        b.product_id,
+        wo.product_id,
         p.product_model,
         p.product_name,
         b.route_id,
         r.route_name,
         b.planned_quantity,
         b.status,
-        b.material_status,
-        b.dispatch_status,
-        b.production_status,
-        b.inspection_status,
         b.owner_id,
         u.display_name AS owner_name,
         b.plan_start_date,
@@ -256,7 +254,8 @@ export class WorkOrderRepository {
         b.created_at,
         b.updated_at
       FROM production_batches b
-      INNER JOIN products p ON p.id = b.product_id AND p.is_deleted = 0
+      INNER JOIN work_orders wo ON wo.id = b.work_order_id AND wo.is_deleted = 0
+      INNER JOIN products p ON p.id = wo.product_id AND p.is_deleted = 0
       LEFT JOIN process_routes r ON r.id = b.route_id AND r.is_deleted = 0
       LEFT JOIN users u ON u.id = b.owner_id
       WHERE b.work_order_id = ? AND b.is_deleted = 0
@@ -280,22 +279,21 @@ export class WorkOrderRepository {
     const routeId = payload.routeId === undefined ? order.route_id : nullableId(payload.routeId);
 
     await this.assertUserAvailable(ownerId);
-    await this.assertRouteAvailable(routeId, (await this.assertProductAvailable(order.product_id)).category_id);
+    await this.assertRouteAvailable(routeId, order.product_id);
     await this.assertBatchNoAvailable(batchNo);
     await this.assertBatchQuantityWithinOrder(orderId, decimalNumber(plannedQuantity));
 
     const result = (await this.database.execute(
       `
       INSERT INTO production_batches (
-        work_order_id, batch_no, product_id, route_id, planned_quantity, owner_id,
+        work_order_id, batch_no, route_id, planned_quantity, owner_id,
         plan_start_date, plan_end_date, remark, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
     `,
       [
         orderId,
         batchNo,
-        order.product_id,
         routeId,
         plannedQuantity,
         ownerId,
@@ -324,7 +322,7 @@ export class WorkOrderRepository {
     const status = payload.status === undefined ? current.status : readBatchStatus(payload.status);
 
     await this.assertUserAvailable(ownerId);
-    await this.assertRouteAvailable(routeId, (await this.assertProductAvailable(order.product_id)).category_id);
+    await this.assertRouteAvailable(routeId, order.product_id);
     await this.assertBatchNoAvailable(batchNo, batchId);
     await this.assertBatchQuantityWithinOrder(orderId, decimalNumber(plannedQuantity), batchId);
 
@@ -391,9 +389,11 @@ export class WorkOrderRepository {
   private async getOrderRow(id: number) {
     const [row] = await this.database.query<WorkOrderRow[]>(
       `
-      SELECT id, order_no, product_id, route_id, planned_quantity, unit, owner_id, status, plan_start_date, plan_end_date, remark
-      FROM work_orders
-      WHERE id = ? AND is_deleted = 0
+      SELECT wo.id, wo.order_no, wo.product_id, p.default_route_id AS route_id, wo.planned_quantity,
+        wo.customer_order_no, wo.customer_name, wo.owner_id, wo.status, wo.plan_start_date, wo.plan_end_date, wo.remark
+      FROM work_orders wo
+      INNER JOIN products p ON p.id = wo.product_id AND p.is_deleted = 0
+      WHERE wo.id = ? AND wo.is_deleted = 0
       LIMIT 1
     `,
       [id],
@@ -415,11 +415,12 @@ export class WorkOrderRepository {
         wo.product_id,
         p.product_model,
         p.product_name,
-        wo.route_id,
+        p.default_route_id AS route_id,
         r.route_name,
         wo.planned_quantity,
         COALESCE(b.assigned_quantity, 0) AS assigned_quantity,
-        wo.unit,
+        wo.customer_order_no,
+        wo.customer_name,
         wo.owner_id,
         u.display_name AS owner_name,
         wo.status,
@@ -430,7 +431,7 @@ export class WorkOrderRepository {
         wo.updated_at
       FROM work_orders wo
       INNER JOIN products p ON p.id = wo.product_id AND p.is_deleted = 0
-      LEFT JOIN process_routes r ON r.id = wo.route_id AND r.is_deleted = 0
+      LEFT JOIN process_routes r ON r.id = p.default_route_id AND r.is_deleted = 0
       LEFT JOIN users u ON u.id = wo.owner_id
       LEFT JOIN (
         SELECT work_order_id, SUM(planned_quantity) AS assigned_quantity
@@ -458,17 +459,13 @@ export class WorkOrderRepository {
         b.id,
         b.work_order_id,
         b.batch_no,
-        b.product_id,
+        wo.product_id,
         p.product_model,
         p.product_name,
         b.route_id,
         r.route_name,
         b.planned_quantity,
         b.status,
-        b.material_status,
-        b.dispatch_status,
-        b.production_status,
-        b.inspection_status,
         b.owner_id,
         u.display_name AS owner_name,
         b.plan_start_date,
@@ -477,7 +474,8 @@ export class WorkOrderRepository {
         b.created_at,
         b.updated_at
       FROM production_batches b
-      INNER JOIN products p ON p.id = b.product_id AND p.is_deleted = 0
+      INNER JOIN work_orders wo ON wo.id = b.work_order_id AND wo.is_deleted = 0
+      INNER JOIN products p ON p.id = wo.product_id AND p.is_deleted = 0
       LEFT JOIN process_routes r ON r.id = b.route_id AND r.is_deleted = 0
       LEFT JOIN users u ON u.id = b.owner_id
       WHERE b.id = ? AND b.is_deleted = 0
@@ -525,10 +523,10 @@ export class WorkOrderRepository {
 
   private async assertProductAvailable(productId: number) {
     const [row] = await this.database.query<
-      (RowDataPacket & { id: number; unit: string; category_id: number | null })[]
+      (RowDataPacket & { id: number; category_id: number | null })[]
     >(
       `
-      SELECT id, unit, category_id
+      SELECT id, category_id
       FROM products
       WHERE id = ? AND status = 1 AND is_deleted = 0
       LIMIT 1
@@ -543,11 +541,15 @@ export class WorkOrderRepository {
     return row;
   }
 
-  private async assertRouteAvailable(routeId: number | null, productCategoryId: number | null) {
+  private async assertRouteAvailable(routeId: number | null, productId: number) {
     if (routeId === null) {
       return;
     }
 
+    const [product] = await this.database.query<(RowDataPacket & { category_id: number | null })[]>(
+      'SELECT category_id FROM products WHERE id = ? AND is_deleted = 0 LIMIT 1',
+      [productId],
+    );
     const [row] = await this.database.query<(RowDataPacket & { id: number; product_category_id: number | null })[]>(
       `
       SELECT id, product_category_id
@@ -562,7 +564,7 @@ export class WorkOrderRepository {
       throw new BadRequestException('Route not found or disabled');
     }
 
-    if (row.product_category_id !== null && productCategoryId !== null && row.product_category_id !== productCategoryId) {
+    if (row.product_category_id !== null && product?.category_id !== null && row.product_category_id !== product?.category_id) {
       throw new BadRequestException('Route product type does not match product');
     }
   }

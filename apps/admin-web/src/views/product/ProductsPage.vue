@@ -62,7 +62,8 @@
         </el-table-column>
         <el-table-column label="物料清单" width="120">
           <template #default="{ row }">
-            <el-tag v-if="row.materialCount > 0" type="success" effect="light">
+            <el-tag v-if="row.acquireMethod !=='self_made'" type="info" effect="light">无</el-tag>
+            <el-tag v-else-if="row.materialCount > 0" type="success" effect="light">
               {{ row.materialCount }} 项
             </el-tag>
             <el-tag v-else type="warning" effect="light">未配置</el-tag>
@@ -83,7 +84,7 @@
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">查看</el-button>
             <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-button link :type="row.materialCount > 0 ? 'primary' : 'warning'" @click="openMaterials(row)">
+            <el-button link v-if="row.acquireMethod ==='self_made'" :type="row.materialCount > 0 ? 'primary' : 'warning'" @click="openMaterials(row)" > 
               物料清单
             </el-button>
             <el-button link type="primary" @click="showInventory(row)">库存</el-button>
@@ -107,7 +108,7 @@
           <el-option label="50条/页" :value="50" />
         </el-select>
         <el-pagination
-          v-model:current-page="currentPage"
+          :current-page="currentPage"
           :page-size="pageSize"
           :total="total"
           layout="prev, pager, next, jumper"
@@ -266,6 +267,17 @@
               <el-input v-model="row.unit" placeholder="pcs" />
             </template>
           </el-table-column>
+          <el-table-column label="单位用量" width="150">
+            <template #default="{ row }">
+              <el-input-number
+                v-model="row.quantityPerUnit"
+                :min="0.0001"
+                :precision="4"
+                :step="1"
+                controls-position="right"
+              />
+            </template>
+          </el-table-column>
           <el-table-column label="关键物料" width="110" align="center">
             <template #default="{ row }">
               <el-switch v-model="row.isKeyMaterial" />
@@ -318,6 +330,7 @@ type SpecFormRow = {
 type MaterialFormRow = {
   id?: string;
   materialProductId: string;
+  quantityPerUnit: number;
   unit: string;
   isKeyMaterial: boolean;
   needBatchRecord: boolean;
@@ -490,6 +503,7 @@ const removeSpecRow = (index: number) => {
 const addMaterialRow = () => {
   materialRows.value.push({
     materialProductId: '',
+    quantityPerUnit: 1,
     unit: materialProduct.value?.unit ?? 'pcs',
     isKeyMaterial: true,
     needBatchRecord: true,
@@ -563,6 +577,7 @@ const submitProduct = async () => {
       await refreshMaterialOptions();
       materialRows.value.push({
         materialProductId: savedProduct.id,
+        quantityPerUnit: 1,
         unit: savedProduct.unit,
         isKeyMaterial: true,
         needBatchRecord: true,
@@ -595,6 +610,12 @@ const submitMaterials = async () => {
     return;
   }
 
+  const invalidQuantity = materialRows.value.some((item) => Number(item.quantityPerUnit) <= 0);
+  if (invalidQuantity) {
+    ElMessage.warning('请填写大于 0 的单位用量');
+    return;
+  }
+
   const materialIds = materialRows.value.map((item) => item.materialProductId);
   if (new Set(materialIds).size !== materialIds.length) {
     ElMessage.warning('同一个物料不能重复配置');
@@ -607,6 +628,7 @@ const submitMaterials = async () => {
       materials: materialRows.value.map((item) => ({
         id: item.id,
         materialProductId: item.materialProductId,
+        quantityPerUnit: item.quantityPerUnit,
         unit: item.unit || null,
         isKeyMaterial: item.isKeyMaterial,
         needBatchRecord: item.needBatchRecord,
@@ -652,6 +674,7 @@ const showRoutes = async (row: ProductListItem) => {
 const toMaterialFormRow = (item: ProductMaterialItem): MaterialFormRow => ({
   id: item.id,
   materialProductId: item.materialProductId,
+  quantityPerUnit: Number(item.quantityPerUnit),
   unit: item.unit ?? item.materialUnit,
   isKeyMaterial: item.isKeyMaterial,
   needBatchRecord: item.needBatchRecord,

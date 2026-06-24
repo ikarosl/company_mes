@@ -14,7 +14,8 @@ export interface WorkOrderListRow extends RowDataPacket {
   route_name: string | null;
   planned_quantity: string | number;
   assigned_quantity: string | number | null;
-  unit: string;
+  customer_order_no: string | null;
+  customer_name: string | null;
   owner_id: number | null;
   owner_name: string | null;
   status: string;
@@ -31,7 +32,8 @@ export interface WorkOrderRow extends RowDataPacket {
   product_id: number;
   route_id: number | null;
   planned_quantity: string | number;
-  unit: string;
+  customer_order_no: string | null;
+  customer_name: string | null;
   owner_id: number | null;
   status: string;
   plan_start_date: Date | null;
@@ -50,10 +52,6 @@ export interface ProductionBatchListRow extends RowDataPacket {
   route_name: string | null;
   planned_quantity: string | number;
   status: string;
-  material_status: string;
-  dispatch_status: string;
-  production_status: string;
-  inspection_status: string;
   owner_id: number | null;
   owner_name: string | null;
   plan_start_date: Date | null;
@@ -72,7 +70,7 @@ export interface ProductionTaskListRow extends ProductionBatchListRow {
 export interface BatchStepRecordListRow extends RowDataPacket {
   id: number;
   batch_id: number;
-  route_step_id: number;
+  process_route_steps_id: number;
   step_order: number;
   step_name: string;
   sop_file_id: number | null;
@@ -91,7 +89,7 @@ export interface BatchStepRecordListRow extends RowDataPacket {
 
 export interface WorkerTaskListRow extends ProductionTaskListRow {
   step_record_id: number;
-  route_step_id: number;
+  process_route_steps_id: number;
   step_order: number;
   step_name: string;
   step_status: string;
@@ -105,15 +103,15 @@ export interface WorkerTaskListRow extends ProductionTaskListRow {
 }
 
 export interface TaskMaterialRequirementRow extends RowDataPacket {
-  id: number;
-  route_step_id: number;
-  route_step_name: string;
+  id: number | string;
+  usage_id: number | null;
   product_material_id: number;
   material_product_id: number;
   material_model: string;
   material_name: string;
   quantity_per_unit: string | number;
-  planned_quantity: string | number;
+  plan_quantity: string | number;
+  used_quantity: string | number;
   unit: string | null;
   is_key_material: number;
   need_batch_record: number;

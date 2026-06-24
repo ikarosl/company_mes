@@ -1,15 +1,36 @@
 import { PERMISSIONS } from '@company/constants';
-import { Body, Controller, Get, Inject, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Inject,
+  Param,
+  Post,
+  Put,
+  Query,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import type {
   CreateProductionTaskPayload,
   DispatchTaskPayload,
   UpdateBatchStepRecordPayload,
   UpdateProductionBatchPayload,
 } from '@company/api-contract';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { PermissionGuard } from '../../auth/permission.guard.js';
 import { RequirePermission } from '../../auth/require-permission.decorator.js';
 import { readId, readPagination } from '../../shared/request-utils.js';
 import { ProductionTaskRepository } from './production-task.repository.js';
+
+interface UploadedSopFile {
+  originalname: string;
+  buffer: Buffer;
+}
 
 @UseGuards(PermissionGuard)
 @Controller('tasks')
@@ -96,4 +117,37 @@ export class ProductionTaskController {
   ) {
     return this.tasks.updateStepRecord(readId(id), readId(recordId), body);
   }
+
+  @RequirePermission(PERMISSIONS.production.tasks.dispatch)
+  @Post(':id/steps/:recordId/sop')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadStepSop(
+    @Param('id') id: string,
+    @Param('recordId') recordId: string,
+    @UploadedFile() file: UploadedSopFile,
+  ) {
+    if (!file?.buffer) {
+      throw new BadRequestException('Missing upload file');
+    }
+
+    const uploadsDir = join(process.cwd(), 'uploads', 'batch-steps');
+    await mkdir(uploadsDir, { recursive: true });
+    const originalName = decodeUploadFileName(file.originalname);
+    const fileName = `${Date.now()}-${sanitizeFileName(originalName)}`;
+    const filePath = join(uploadsDir, fileName);
+    await writeFile(filePath, file.buffer);
+
+    return this.tasks.uploadStepSop(readId(id), readId(recordId), {
+      sopFileName: originalName,
+      sopFileUrl: `/uploads/batch-steps/${fileName}`,
+    });
+  }
 }
+
+const decodeUploadFileName = (fileName: string) => {
+  const decoded = Buffer.from(fileName, 'latin1').toString('utf8');
+  return decoded.includes('锟?') ? fileName : decoded;
+};
+
+const sanitizeFileName = (fileName: string) =>
+  fileName.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_');

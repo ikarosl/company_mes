@@ -63,13 +63,12 @@ export class ProcessRouteRepository {
         r.status,
         r.remark,
         COUNT(DISTINCT s.id) AS step_count,
-        GROUP_CONCAT(DISTINCT COALESCE(ps.step_name, p.process_name, s.process_name) ORDER BY s.step_order SEPARATOR ' -> ') AS process_summary,
+        GROUP_CONCAT(DISTINCT ps.step_name ORDER BY s.step_order SEPARATOR ' -> ') AS process_summary,
         r.created_at,
         r.updated_at
       FROM process_routes r
       LEFT JOIN process_route_steps s ON s.route_id = r.id AND s.is_deleted = 0
       LEFT JOIN process_steps ps ON ps.id = s.process_step_id AND ps.is_deleted = 0
-      LEFT JOIN processes p ON p.id = s.process_id AND p.is_deleted = 0
       LEFT JOIN product_categories c ON c.id = r.product_category_id AND c.is_deleted = 0
       WHERE ${where}
       GROUP BY r.id, r.route_code, r.route_name, r.product_category_id, c.product_attribute, c.product_type, r.version, r.status, r.remark, r.created_at, r.updated_at
@@ -216,24 +215,19 @@ export class ProcessRouteRepository {
           connection,
           `
           INSERT INTO process_route_steps (
-            route_id, process_step_id, process_id, step_order, process_code, process_name, description,
-            default_owner_id, sop_file_id, sop_file_name, sop_file_url,
+            route_id, process_step_id, step_order, default_owner_id, need_inspection, need_record, sop_file_id,
             status, remark, created_at, updated_at
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
         `,
           [
             id,
             step.processId,
-            step.processId,
             step.stepOrder,
-            process.process_code,
-            process.process_name,
-            process.description,
             step.defaultOwnerId,
+            step.needInspection ? 1 : 0,
+            step.needRecord ? 1 : 0,
             process.sop_file_id,
-            process.sop_file_name,
-            process.sop_file_url,
             step.status,
             normalizeOptionalString(step.remark),
           ],
@@ -303,6 +297,8 @@ export class ProcessRouteRepository {
         stepOrder,
         processId,
         defaultOwnerId: nullableId(step.defaultOwnerId),
+        needInspection: Boolean(step.needInspection),
+        needRecord: step.needRecord === undefined ? true : Boolean(step.needRecord),
         status: readTinyStatus(step.status ?? 1),
         remark: step.remark,
       };
@@ -315,26 +311,26 @@ export class ProcessRouteRepository {
       SELECT
         s.id,
         s.route_id,
-        COALESCE(s.process_step_id, ps.id, s.process_id, p.id) AS process_id,
-        COALESCE(s.process_step_id, ps.id) AS process_step_id,
+        s.process_step_id,
         s.step_order,
-        COALESCE(ps.step_code, p.process_code, s.process_code) AS process_code,
-        COALESCE(ps.step_name, p.process_name, s.process_name) AS process_name,
-        COALESCE(p.description, s.description) AS description,
+        ps.step_code AS process_code,
+        ps.step_name AS process_name,
+        NULL AS description,
         s.default_owner_id,
         u.display_name AS default_owner_name,
-        COALESCE(ps.sop_file_id, p.sop_file_id, s.sop_file_id) AS sop_file_id,
-        COALESCE(f.file_name, p.sop_file_name, s.sop_file_name) AS sop_file_name,
-        COALESCE(f.file_url, p.sop_file_url, s.sop_file_url) AS sop_file_url,
+        s.need_inspection,
+        s.need_record,
+        COALESCE(s.sop_file_id, ps.sop_file_id) AS sop_file_id,
+        f.file_name AS sop_file_name,
+        f.file_url AS sop_file_url,
         s.status,
         s.remark,
         s.created_at,
         s.updated_at
       FROM process_route_steps s
       LEFT JOIN process_steps ps ON ps.id = s.process_step_id AND ps.is_deleted = 0
-      LEFT JOIN processes p ON p.id = s.process_id AND p.is_deleted = 0
       LEFT JOIN users u ON u.id = s.default_owner_id AND u.deleted_at IS NULL
-      LEFT JOIN technical_files f ON f.id = COALESCE(ps.sop_file_id, p.sop_file_id, s.sop_file_id) AND f.is_deleted = 0
+      LEFT JOIN technical_files f ON f.id = COALESCE(s.sop_file_id, ps.sop_file_id) AND f.is_deleted = 0
       WHERE s.route_id = ? AND s.is_deleted = 0
       ORDER BY s.step_order ASC, s.id ASC
     `,
@@ -376,13 +372,12 @@ export class ProcessRouteRepository {
         r.status,
         r.remark,
         COUNT(DISTINCT s.id) AS step_count,
-        GROUP_CONCAT(DISTINCT COALESCE(ps.step_name, p.process_name, s.process_name) ORDER BY s.step_order SEPARATOR ' -> ') AS process_summary,
+        GROUP_CONCAT(DISTINCT ps.step_name ORDER BY s.step_order SEPARATOR ' -> ') AS process_summary,
         r.created_at,
         r.updated_at
       FROM process_routes r
       LEFT JOIN process_route_steps s ON s.route_id = r.id AND s.is_deleted = 0
       LEFT JOIN process_steps ps ON ps.id = s.process_step_id AND ps.is_deleted = 0
-      LEFT JOIN processes p ON p.id = s.process_id AND p.is_deleted = 0
       LEFT JOIN product_categories c ON c.id = r.product_category_id AND c.is_deleted = 0
       WHERE r.id = ? AND r.is_deleted = 0
       GROUP BY r.id, r.route_code, r.route_name, r.product_category_id, c.product_attribute, c.product_type, r.version, r.status, r.remark, r.created_at, r.updated_at
@@ -413,16 +408,15 @@ export class ProcessRouteRepository {
       `
       SELECT
         p.id,
-        COALESCE(ps.step_code, p.process_code) AS process_code,
-        COALESCE(ps.step_name, p.process_name) AS process_name,
-        p.description,
-        COALESCE(ps.sop_file_id, p.sop_file_id) AS sop_file_id,
-        COALESCE(f.file_name, p.sop_file_name) AS sop_file_name,
-        COALESCE(f.file_url, p.sop_file_url) AS sop_file_url
+        ps.step_code AS process_code,
+        ps.step_name AS process_name,
+        NULL AS description,
+        ps.sop_file_id,
+        f.file_name AS sop_file_name,
+        f.file_url AS sop_file_url
       FROM process_steps ps
-      LEFT JOIN processes p ON p.id = ps.id AND p.is_deleted = 0
-      LEFT JOIN technical_files f ON f.id = COALESCE(ps.sop_file_id, p.sop_file_id) AND f.is_deleted = 0
-      WHERE ps.id = ? AND ps.is_deleted = 0
+      LEFT JOIN technical_files f ON f.id = ps.sop_file_id AND f.is_deleted = 0
+      WHERE ps.id = ? AND ps.is_deleted = 0 AND ps.status = 1
       LIMIT 1
     `,
       [processId],

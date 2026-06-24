@@ -10,6 +10,10 @@ export const setupRouterGuards = (router: Router) => {
         return { name: 'dashboard' };
       }
 
+      if (!authStore.canAutoRestoreSession()) {
+        return true;
+      }
+
       try {
         await authStore.restoreSession();
         return { name: 'dashboard' };
@@ -29,7 +33,7 @@ export const setupRouterGuards = (router: Router) => {
     try {
       await authStore.validateToken();
     } catch {
-      authStore.logout();
+      authStore.clearSession();
       return { name: 'login', query: { redirect: to.fullPath } };
     }
 

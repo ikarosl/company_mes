@@ -24,6 +24,7 @@ import {
   normalizeSpecValues,
   nullableId,
   readAcquireMethod,
+  readPositiveDecimal,
   readPositiveId,
   readRequiredString,
   readTinyStatus,
@@ -226,6 +227,7 @@ export class ProductRepository {
         mp.product_model AS material_model,
         mp.product_name AS material_name,
         mp.unit AS material_unit,
+        pm.quantity_per_unit,
         pm.unit,
         pm.is_key_material,
         pm.need_batch_record,
@@ -268,6 +270,7 @@ export class ProductRepository {
         const activeRow = activeByMaterialId.get(item.materialProductId);
         const historicalRow = anyByMaterialId.get(item.materialProductId);
         const params = [
+          item.quantityPerUnit,
           item.unit,
           item.isKeyMaterial,
           item.needBatchRecord,
@@ -279,7 +282,8 @@ export class ProductRepository {
             connection,
             `
             UPDATE product_materials
-            SET unit = ?,
+            SET quantity_per_unit = ?,
+              unit = ?,
               is_key_material = ?,
               need_batch_record = ?,
               remark = ?,
@@ -296,7 +300,8 @@ export class ProductRepository {
             connection,
             `
             UPDATE product_materials
-            SET unit = ?,
+            SET quantity_per_unit = ?,
+              unit = ?,
               is_key_material = ?,
               need_batch_record = ?,
               remark = ?,
@@ -315,14 +320,15 @@ export class ProductRepository {
           connection,
           `
           INSERT INTO product_materials (
-            product_id, material_product_id, unit,
+            product_id, material_product_id, quantity_per_unit, unit,
             is_key_material, need_batch_record, remark, created_at, updated_at
           )
-          VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
+          VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
         `,
           [
             productId,
             item.materialProductId,
+            item.quantityPerUnit,
             item.unit,
             item.isKeyMaterial,
             item.needBatchRecord,
@@ -498,6 +504,7 @@ export class ProductRepository {
 
         return {
           materialProductId,
+          quantityPerUnit: readPositiveDecimal(item.quantityPerUnit ?? 1, `Invalid material quantity at row ${index + 1}`),
           unit: normalizeOptionalString(item.unit) ?? material.unit,
           isKeyMaterial: item.isKeyMaterial === undefined ? true : Boolean(item.isKeyMaterial),
           needBatchRecord: item.needBatchRecord === undefined ? true : Boolean(item.needBatchRecord),

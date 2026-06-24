@@ -5,6 +5,7 @@ import type { AuthSession } from '@company/auth-client';
 import { createAuthClient } from '../api/auth';
 
 const STORAGE_KEY = 'company.admin.auth.session';
+const LOGOUT_INTENT_KEY = 'company.admin.auth.logout_intent';
 
 export const useAuthStore = defineStore('auth', () => {
   const session = ref<AuthSession | null>(readStoredSession());
@@ -22,17 +23,32 @@ export const useAuthStore = defineStore('auth', () => {
     },
   });
 
-  const login = (payload: LoginRequest) => authClient.login(payload);
+  const login = async (payload: LoginRequest) => {
+    const nextSession = await authClient.login(payload);
+    clearLogoutIntent();
+    return nextSession;
+  };
 
   const logout = () => {
-    authClient.logout();
+    markLogoutIntent();
+    return authClient.logout();
   };
+
+  const clearSession = () => authClient.clearSession();
 
   const getCurrentUser = () => authClient.getCurrentUser();
 
   const validateToken = () => authClient.validateToken();
 
-  const restoreSession = () => authClient.restoreSession();
+  const restoreSession = () => {
+    if (hasLogoutIntent()) {
+      return Promise.reject(new Error('Auto restore is disabled after logout'));
+    }
+
+    return authClient.restoreSession();
+  };
+
+  const canAutoRestoreSession = () => !hasLogoutIntent();
 
   const hasPermission = (permission?: string) => {
     if (!permission) {
@@ -46,12 +62,24 @@ export const useAuthStore = defineStore('auth', () => {
     session,
     login,
     logout,
+    clearSession,
     getCurrentUser,
     validateToken,
     restoreSession,
+    canAutoRestoreSession,
     hasPermission,
   };
 });
+
+const markLogoutIntent = () => {
+  window.localStorage.setItem(LOGOUT_INTENT_KEY, String(Date.now()));
+};
+
+const clearLogoutIntent = () => {
+  window.localStorage.removeItem(LOGOUT_INTENT_KEY);
+};
+
+const hasLogoutIntent = () => window.localStorage.getItem(LOGOUT_INTENT_KEY) !== null;
 
 const readStoredSession = (): AuthSession | null => {
   const raw = window.localStorage.getItem(STORAGE_KEY);

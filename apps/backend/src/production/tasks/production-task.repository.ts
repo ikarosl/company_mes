@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
+import type { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type {
   BatchStepStatus,
   CreateProductionTaskPayload,
@@ -8,7 +8,7 @@ import type {
   UpdateProductionBatchPayload,
 } from '@company/api-contract';
 import { DatabaseService, type QueryParam } from '../../database/database.service.js';
-import { execute } from '../../shared/repository.helpers.js';
+import { execute, query } from '../../shared/repository.helpers.js';
 import { type PaginationOptions, toPageResult } from '../../shared/request-utils.js';
 import type {
   BatchStepRecordListRow,
@@ -60,7 +60,7 @@ export class ProductionTaskRepository {
       SELECT COUNT(*) AS total
       FROM production_batches b
       INNER JOIN work_orders wo ON wo.id = b.work_order_id AND wo.is_deleted = 0
-      INNER JOIN products p ON p.id = b.product_id AND p.is_deleted = 0
+      INNER JOIN products p ON p.id = wo.product_id AND p.is_deleted = 0
       WHERE ${where}
     `,
       params,
@@ -72,17 +72,13 @@ export class ProductionTaskRepository {
         b.work_order_id,
         wo.order_no,
         b.batch_no,
-        b.product_id,
+        wo.product_id,
         p.product_model,
         p.product_name,
         b.route_id,
         r.route_name,
         b.planned_quantity,
         b.status,
-        b.material_status,
-        b.dispatch_status,
-        b.production_status,
-        b.inspection_status,
         b.owner_id,
         u.display_name AS owner_name,
         b.plan_start_date,
@@ -94,14 +90,13 @@ export class ProductionTaskRepository {
         SUM(CASE WHEN sr.status = 'completed' THEN 1 ELSE 0 END) AS finished_step_count
       FROM production_batches b
       INNER JOIN work_orders wo ON wo.id = b.work_order_id AND wo.is_deleted = 0
-      INNER JOIN products p ON p.id = b.product_id AND p.is_deleted = 0
+      INNER JOIN products p ON p.id = wo.product_id AND p.is_deleted = 0
       LEFT JOIN process_routes r ON r.id = b.route_id AND r.is_deleted = 0
       LEFT JOIN users u ON u.id = b.owner_id
       LEFT JOIN batch_step_records sr ON sr.batch_id = b.id AND sr.is_deleted = 0
       WHERE ${where}
-      GROUP BY b.id, b.work_order_id, wo.order_no, b.batch_no, b.product_id, p.product_model, p.product_name,
-        b.route_id, r.route_name, b.planned_quantity, b.status, b.material_status, b.dispatch_status,
-        b.production_status, b.inspection_status, b.owner_id, u.display_name, b.plan_start_date,
+      GROUP BY b.id, b.work_order_id, wo.order_no, b.batch_no, wo.product_id, p.product_model, p.product_name,
+        b.route_id, r.route_name, b.planned_quantity, b.status, b.owner_id, u.display_name, b.plan_start_date,
         b.plan_end_date, b.remark, b.created_at, b.updated_at
       ORDER BY b.id DESC
       LIMIT ? OFFSET ?
@@ -131,7 +126,7 @@ export class ProductionTaskRepository {
       SELECT COUNT(*) AS total
       FROM production_batches b
       INNER JOIN work_orders wo ON wo.id = b.work_order_id AND wo.is_deleted = 0
-      INNER JOIN products p ON p.id = b.product_id AND p.is_deleted = 0
+      INNER JOIN products p ON p.id = wo.product_id AND p.is_deleted = 0
       INNER JOIN batch_step_records sr ON sr.batch_id = b.id AND sr.is_deleted = 0
       WHERE ${where}
         AND b.status = 'doing'
@@ -148,17 +143,13 @@ export class ProductionTaskRepository {
         b.work_order_id,
         wo.order_no,
         b.batch_no,
-        b.product_id,
+        wo.product_id,
         p.product_model,
         p.product_name,
         b.route_id,
         r.route_name,
         b.planned_quantity,
         b.status,
-        b.material_status,
-        b.dispatch_status,
-        b.production_status,
-        b.inspection_status,
         b.owner_id,
         u.display_name AS owner_name,
         b.plan_start_date,
@@ -169,9 +160,9 @@ export class ProductionTaskRepository {
         COUNT(DISTINCT all_sr.id) AS step_count,
         SUM(CASE WHEN all_sr.status = 'completed' THEN 1 ELSE 0 END) AS finished_step_count,
         sr.id AS step_record_id,
-        sr.route_step_id,
-        sr.step_order,
-        sr.step_name,
+        sr.process_route_steps_id,
+        prs.step_order,
+        ps.step_name,
         sr.status AS step_status,
         sr.started_at AS step_started_at,
         sr.completed_at AS step_completed_at,
@@ -182,8 +173,10 @@ export class ProductionTaskRepository {
         ru.display_name AS responsible_user_name
       FROM production_batches b
       INNER JOIN work_orders wo ON wo.id = b.work_order_id AND wo.is_deleted = 0
-      INNER JOIN products p ON p.id = b.product_id AND p.is_deleted = 0
+      INNER JOIN products p ON p.id = wo.product_id AND p.is_deleted = 0
       INNER JOIN batch_step_records sr ON sr.batch_id = b.id AND sr.is_deleted = 0
+      INNER JOIN process_route_steps prs ON prs.id = sr.process_route_steps_id AND prs.is_deleted = 0
+      INNER JOIN process_steps ps ON ps.id = prs.process_step_id AND ps.is_deleted = 0
       LEFT JOIN process_routes r ON r.id = b.route_id AND r.is_deleted = 0
       LEFT JOIN users u ON u.id = b.owner_id
       LEFT JOIN users ru ON ru.id = sr.responsible_user_id
@@ -192,13 +185,12 @@ export class ProductionTaskRepository {
         AND b.status = 'doing'
         AND sr.responsible_user_id = ?
         ${stepStatus ? 'AND sr.status = ?' : ''}
-      GROUP BY b.id, b.work_order_id, wo.order_no, b.batch_no, b.product_id, p.product_model, p.product_name,
-        b.route_id, r.route_name, b.planned_quantity, b.status, b.material_status, b.dispatch_status,
-        b.production_status, b.inspection_status, b.owner_id, u.display_name, b.plan_start_date,
-        b.plan_end_date, b.remark, b.created_at, b.updated_at, sr.id, sr.route_step_id, sr.step_order,
-        sr.step_name, sr.status, sr.started_at, sr.completed_at, sr.output_quantity, sr.return_quantity,
+      GROUP BY b.id, b.work_order_id, wo.order_no, b.batch_no, wo.product_id, p.product_model, p.product_name,
+        b.route_id, r.route_name, b.planned_quantity, b.status, b.owner_id, u.display_name, b.plan_start_date,
+        b.plan_end_date, b.remark, b.created_at, b.updated_at, sr.id, sr.process_route_steps_id, prs.step_order,
+        ps.step_name, sr.status, sr.started_at, sr.completed_at, sr.output_quantity, sr.return_quantity,
         sr.abnormal_quantity, sr.responsible_user_id, ru.display_name
-      ORDER BY b.id DESC, sr.step_order ASC
+      ORDER BY b.id DESC, prs.step_order ASC
       LIMIT ? OFFSET ?
     `,
       stepStatus
@@ -267,15 +259,14 @@ export class ProductionTaskRepository {
         connection,
         `
         INSERT INTO production_batches (
-          work_order_id, batch_no, product_id, route_id, planned_quantity, owner_id,
+          work_order_id, batch_no, route_id, planned_quantity, owner_id,
           plan_start_date, plan_end_date, remark, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
       `,
         [
           orderId,
           batchNo,
-          order.product_id,
           routeId,
           plannedQuantity,
           ownerId,
@@ -288,56 +279,53 @@ export class ProductionTaskRepository {
       if (routeId !== null) {
         const routeSteps = await this.listRouteSteps(routeId);
         const assignmentMap = new Map(
-          (payload.steps ?? []).map((step) => [Number(step.routeStepId), nullableId(step.responsibleUserId)]),
+          (payload.steps ?? []).map((step) => [
+            Number(step.processRouteStepsId),
+            {
+              responsibleUserId: nullableId(step.responsibleUserId),
+              sopFileId: nullableId(step.sopFileId),
+            },
+          ]),
         );
 
         for (const step of routeSteps) {
+          const assignment = assignmentMap.get(step.id);
           const responsibleUserId = assignmentMap.has(step.id)
-            ? assignmentMap.get(step.id) ?? null
+            ? assignment?.responsibleUserId ?? null
             : step.default_owner_id;
+          const sopFileId = assignmentMap.has(step.id) ? assignment?.sopFileId ?? null : step.sop_file_id;
           await this.assertUserAvailable(responsibleUserId);
+          await this.assertTechnicalFileAvailable(sopFileId);
           await execute(
             connection,
             `
             INSERT INTO batch_step_records (
-              batch_id, route_step_id, step_order, step_name, sop_file_id,
+              batch_id, process_route_steps_id,
               responsible_user_id, status, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW())
+            VALUES (?, ?, ?, 'pending', NOW(), NOW())
           `,
             [
               insertResult.insertId,
               step.id,
-              step.step_order,
-              step.process_name,
-              step.sop_file_id,
               responsibleUserId,
             ],
           );
         }
 
-        await execute(
-          connection,
-          `
-          UPDATE production_batches
-          SET dispatch_status = CASE WHEN ? > 0 THEN 'assigned' ELSE dispatch_status END,
-            status = CASE WHEN ? > 0 AND status = 'pending' THEN 'assigned' ELSE status END,
-            material_status = CASE
-              WHEN EXISTS (
-                SELECT 1
-                FROM route_step_materials rsm
-                INNER JOIN process_route_steps prs ON prs.id = rsm.route_step_id AND prs.is_deleted = 0
-                INNER JOIN product_materials pm ON pm.id = rsm.product_material_id AND pm.is_deleted = 0
-                WHERE prs.route_id = ? AND pm.product_id = ? AND rsm.is_deleted = 0
-              ) THEN 'unassigned'
-              ELSE material_status
-            END,
-            updated_at = NOW()
-          WHERE id = ? AND is_deleted = 0
-        `,
-          [routeSteps.length, routeSteps.length, routeId, order.product_id, insertResult.insertId],
-        );
       }
+
+      const materialCount = await this.syncBatchMaterialUsages(connection, insertResult.insertId, order.product_id);
+      await execute(
+        connection,
+        `
+        UPDATE production_batches
+        SET status = CASE WHEN ? > 0 THEN 'material_pending' ELSE status END,
+          updated_at = NOW()
+        WHERE id = ? AND is_deleted = 0
+      `,
+        [materialCount, insertResult.insertId],
+      );
 
       return insertResult;
     });
@@ -349,7 +337,7 @@ export class ProductionTaskRepository {
   async previewCreateTask(workOrderId: number, routeId: number | null, plannedQuantity: string | number | null | undefined) {
     const order = await this.getWorkOrderRow(workOrderId);
     const resolvedRouteId = routeId ?? order.route_id;
-    const quantity = readDecimal(plannedQuantity ?? order.planned_quantity, 'Invalid task quantity');
+    const previewQuantity = readDecimal(plannedQuantity ?? order.planned_quantity, 'Invalid task quantity');
 
     if (resolvedRouteId === null) {
       return {
@@ -364,7 +352,7 @@ export class ProductionTaskRepository {
       mapBatchStepRecord({
         id: step.id,
         batch_id: 0,
-        route_step_id: step.id,
+        process_route_steps_id: step.id,
         step_order: step.step_order,
         step_name: step.process_name,
         sop_file_id: step.sop_file_id,
@@ -384,11 +372,7 @@ export class ProductionTaskRepository {
 
     return {
       steps,
-      materialRequirements: await this.listMaterialRequirementsByRoute(
-        resolvedRouteId,
-        order.product_id,
-        quantity,
-      ),
+      materialRequirements: await this.listMaterialRequirementsByProduct(order.product_id, undefined, previewQuantity),
     };
   }
 
@@ -396,48 +380,113 @@ export class ProductionTaskRepository {
     const current = await this.getTaskRow(id);
     const routeId = payload.routeId === undefined ? current.route_id : nullableId(payload.routeId);
     const ownerId = payload.ownerId === undefined ? current.owner_id : nullableId(payload.ownerId);
+    const plannedQuantity =
+      payload.plannedQuantity === undefined
+        ? decimalString(current.planned_quantity)
+        : readDecimal(payload.plannedQuantity, 'Invalid planned quantity');
 
     await this.assertRouteAvailable(routeId, current.product_id);
     await this.assertUserAvailable(ownerId);
 
-    await this.database.execute(
-      `
-      UPDATE production_batches
-      SET route_id = ?,
-        owner_id = ?,
-        planned_quantity = ?,
-        plan_start_date = ?,
-        plan_end_date = ?,
-        remark = ?,
-        updated_at = NOW()
-      WHERE id = ? AND is_deleted = 0
-    `,
-      [
-        routeId,
-        ownerId,
-        payload.plannedQuantity === undefined
-          ? decimalString(current.planned_quantity)
-          : readDecimal(payload.plannedQuantity, 'Invalid planned quantity'),
-        payload.planStartDate === undefined ? formatDate(current.plan_start_date) : normalizeDate(payload.planStartDate),
-        payload.planEndDate === undefined ? formatDate(current.plan_end_date) : normalizeDate(payload.planEndDate),
-        payload.remark === undefined ? current.remark : normalizeOptionalString(payload.remark),
-        id,
-      ],
-    );
+    await this.database.transaction(async (connection) => {
+      await execute(
+        connection,
+        `
+        UPDATE production_batches
+        SET route_id = ?,
+          owner_id = ?,
+          planned_quantity = ?,
+          plan_start_date = ?,
+          plan_end_date = ?,
+          remark = ?,
+          updated_at = NOW()
+        WHERE id = ? AND is_deleted = 0
+      `,
+        [
+          routeId,
+          ownerId,
+          plannedQuantity,
+          payload.planStartDate === undefined ? formatDate(current.plan_start_date) : normalizeDate(payload.planStartDate),
+          payload.planEndDate === undefined ? formatDate(current.plan_end_date) : normalizeDate(payload.planEndDate),
+          payload.remark === undefined ? current.remark : normalizeOptionalString(payload.remark),
+          id,
+        ],
+      );
+
+      if (routeId !== null && payload.steps !== undefined) {
+        const routeSteps = await this.listRouteSteps(routeId);
+        const assignmentMap = new Map(
+          payload.steps.map((step) => [
+            Number(step.processRouteStepsId),
+            {
+              responsibleUserId: nullableId(step.responsibleUserId),
+              sopFileId: nullableId(step.sopFileId),
+            },
+          ]),
+        );
+
+        await execute(
+          connection,
+          'UPDATE batch_step_records SET is_deleted = 1, deleted_at = NOW() WHERE batch_id = ? AND is_deleted = 0',
+          [id],
+        );
+
+        for (const step of routeSteps) {
+          const assignment = assignmentMap.get(step.id);
+          const responsibleUserId = assignmentMap.has(step.id)
+            ? assignment?.responsibleUserId ?? null
+            : step.default_owner_id;
+          const sopFileId = assignmentMap.has(step.id) ? assignment?.sopFileId ?? null : step.sop_file_id;
+          await this.assertUserAvailable(responsibleUserId);
+          await this.assertTechnicalFileAvailable(sopFileId);
+          await execute(
+            connection,
+            `
+            INSERT INTO batch_step_records (
+              batch_id, process_route_steps_id,
+              responsible_user_id, status, created_at, updated_at
+            )
+            VALUES (?, ?, ?, 'pending', NOW(), NOW())
+          `,
+            [id, step.id, responsibleUserId],
+          );
+        }
+      }
+
+      const materialCount = await this.syncBatchMaterialUsages(connection, id, current.product_id);
+      await execute(
+        connection,
+        `
+        UPDATE production_batches
+        SET status = CASE
+            WHEN status IN ('doing', 'completed', 'cancelled') THEN status
+            WHEN ? > 0 THEN 'material_pending'
+            ELSE 'pending'
+          END,
+          updated_at = NOW()
+        WHERE id = ? AND is_deleted = 0
+      `,
+        [materialCount, id],
+      );
+    });
 
     return this.getTask(id);
   }
 
   async generateMaterialDemand(id: number) {
-    const task = await this.assertTaskHasRoute(id);
+    const task = await this.getTaskRow(id);
     await this.assertProductMaterialsConfigured(task.product_id);
+    await this.database.transaction(async (connection) => {
+      await this.ensureBatchMaterialUsages(connection, id, task.product_id);
+    });
     const materials = await this.listMaterialRequirements(id);
-    const nextStatus = materials.length ? 'unassigned' : 'ungenerated';
+    const nextStatus = materials.length ? 'material_pending' : 'pending';
 
     await this.database.execute(
       `
       UPDATE production_batches
-      SET material_status = ?, updated_at = NOW()
+      SET status = CASE WHEN status NOT IN ('doing', 'completed', 'cancelled') THEN ? ELSE status END,
+        updated_at = NOW()
       WHERE id = ? AND is_deleted = 0
     `,
       [nextStatus, id],
@@ -463,7 +512,7 @@ export class ProductionTaskRepository {
       const row = {
         id: step.id,
         batch_id: id,
-        route_step_id: step.id,
+        process_route_steps_id: step.id,
         step_order: step.step_order,
         step_name: step.process_name,
         sop_file_id: step.sop_file_id,
@@ -488,7 +537,13 @@ export class ProductionTaskRepository {
     const task = await this.assertTaskHasRoute(id);
     const routeSteps = await this.listRouteSteps(task.route_id);
     const assignmentMap = new Map(
-      (payload.steps ?? []).map((step) => [Number(step.routeStepId), nullableId(step.responsibleUserId)]),
+      (payload.steps ?? []).map((step) => [
+        Number(step.processRouteStepsId),
+        {
+          responsibleUserId: nullableId(step.responsibleUserId),
+          sopFileId: nullableId(step.sopFileId),
+        },
+      ]),
     );
 
     await this.database.transaction(async (connection) => {
@@ -500,25 +555,25 @@ export class ProductionTaskRepository {
       );
 
       for (const step of routeSteps) {
+        const assignment = assignmentMap.get(step.id);
         const responsibleUserId = assignmentMap.has(step.id)
-          ? assignmentMap.get(step.id) ?? null
+          ? assignment?.responsibleUserId ?? null
           : step.default_owner_id;
+        const sopFileId = assignmentMap.has(step.id) ? assignment?.sopFileId ?? null : step.sop_file_id;
         await this.assertUserAvailable(responsibleUserId);
+        await this.assertTechnicalFileAvailable(sopFileId);
         await execute(
           connection,
           `
           INSERT INTO batch_step_records (
-            batch_id, route_step_id, step_order, step_name, sop_file_id,
+            batch_id, process_route_steps_id,
             responsible_user_id, status, created_at, updated_at
           )
-          VALUES (?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW())
+          VALUES (?, ?, ?, 'pending', NOW(), NOW())
         `,
           [
             id,
             step.id,
-            step.step_order,
-            step.process_name,
-            step.sop_file_id,
             responsibleUserId,
           ],
         );
@@ -528,8 +583,7 @@ export class ProductionTaskRepository {
         connection,
         `
         UPDATE production_batches
-        SET dispatch_status = 'assigned',
-          status = CASE WHEN status = 'pending' THEN 'assigned' ELSE status END,
+        SET status = CASE WHEN status IN ('pending', 'material_pending') THEN 'material_pending' ELSE status END,
           updated_at = NOW()
         WHERE id = ? AND is_deleted = 0
       `,
@@ -546,7 +600,6 @@ export class ProductionTaskRepository {
       `
       UPDATE production_batches
       SET status = 'doing',
-        production_status = 'doing',
         actual_start_at = COALESCE(actual_start_at, NOW()),
         updated_at = NOW()
       WHERE id = ? AND is_deleted = 0 AND status <> 'cancelled'
@@ -563,7 +616,6 @@ export class ProductionTaskRepository {
       `
       UPDATE production_batches
       SET status = 'completed',
-        production_status = 'completed',
         actual_end_at = NOW(),
         updated_at = NOW()
       WHERE id = ? AND is_deleted = 0 AND status <> 'cancelled'
@@ -579,10 +631,12 @@ export class ProductionTaskRepository {
     const current = await this.getStepRecordRow(taskId, recordId);
     const responsibleUserId =
       payload.responsibleUserId === undefined ? current.responsible_user_id : nullableId(payload.responsibleUserId);
+    const sopFileId = payload.sopFileId === undefined ? current.sop_file_id : nullableId(payload.sopFileId);
     const status = payload.status === undefined ? readStepStatus(current.status) : readStepStatus(payload.status);
 
     assertStepStatusTransition(current.status, status);
     await this.assertUserAvailable(responsibleUserId);
+    await this.assertTechnicalFileAvailable(sopFileId);
 
     await this.database.execute(
       `
@@ -612,6 +666,49 @@ export class ProductionTaskRepository {
       ],
     );
 
+    if (payload.sopFileId !== undefined && sopFileId !== current.sop_file_id) {
+      await this.database.execute(
+        `
+        UPDATE process_route_steps
+        SET sop_file_id = ?, updated_at = NOW()
+        WHERE id = ? AND is_deleted = 0
+      `,
+        [sopFileId, current.process_route_steps_id],
+      );
+    }
+
+    return this.getTask(taskId);
+  }
+
+  async uploadStepSop(taskId: number, recordId: number, payload: { sopFileName: string; sopFileUrl?: string | null }) {
+    await this.getStepRecordRow(taskId, recordId);
+    const sopFileName = normalizeOptionalString(payload.sopFileName);
+    const sopFileUrl = normalizeOptionalString(payload.sopFileUrl);
+
+    if (!sopFileName) {
+      throw new BadRequestException('Missing SOP file name');
+    }
+
+    const result = (await this.database.execute(
+      `
+      INSERT INTO technical_files (
+        file_code, file_name, file_url, file_type, version, status, remark, created_at, updated_at
+      )
+      VALUES (?, ?, ?, 'batch_step_sop', 'V1.0', 1, '生产批次工序实际使用文件', NOW(), NOW())
+    `,
+      [`STEP-SOP-${Date.now()}`, sopFileName, sopFileUrl],
+    )) as ResultSetHeader;
+
+    const current = await this.getStepRecordRow(taskId, recordId);
+    await this.database.execute(
+      `
+      UPDATE process_route_steps
+      SET sop_file_id = ?, updated_at = NOW()
+      WHERE id = ? AND is_deleted = 0
+    `,
+      [result.insertId, current.process_route_steps_id],
+    );
+
     return this.getTask(taskId);
   }
 
@@ -626,7 +723,7 @@ export class ProductionTaskRepository {
     }
 
     if (filters.productId?.trim()) {
-      clauses.push('b.product_id = ?');
+      clauses.push('wo.product_id = ?');
       params.push(Number(filters.productId));
     }
 
@@ -658,9 +755,11 @@ export class ProductionTaskRepository {
       })[]
     >(
       `
-      SELECT id, product_id, route_id, planned_quantity, owner_id, status, plan_start_date, plan_end_date, remark
-      FROM production_batches
-      WHERE id = ? AND is_deleted = 0
+      SELECT b.id, wo.product_id, b.route_id, b.planned_quantity, b.owner_id, b.status,
+        b.plan_start_date, b.plan_end_date, b.remark
+      FROM production_batches b
+      INNER JOIN work_orders wo ON wo.id = b.work_order_id AND wo.is_deleted = 0
+      WHERE b.id = ? AND b.is_deleted = 0
       LIMIT 1
     `,
       [id],
@@ -716,9 +815,11 @@ export class ProductionTaskRepository {
       })[]
     >(
       `
-      SELECT id, product_id, route_id, planned_quantity, owner_id, status, plan_start_date, plan_end_date
-      FROM work_orders
-      WHERE id = ? AND is_deleted = 0
+      SELECT wo.id, wo.product_id, p.default_route_id AS route_id, wo.planned_quantity, wo.owner_id,
+        wo.status, wo.plan_start_date, wo.plan_end_date
+      FROM work_orders wo
+      INNER JOIN products p ON p.id = wo.product_id AND p.is_deleted = 0
+      WHERE wo.id = ? AND wo.is_deleted = 0
       LIMIT 1
     `,
       [id],
@@ -739,17 +840,13 @@ export class ProductionTaskRepository {
         b.work_order_id,
         wo.order_no,
         b.batch_no,
-        b.product_id,
+        wo.product_id,
         p.product_model,
         p.product_name,
         b.route_id,
         r.route_name,
         b.planned_quantity,
         b.status,
-        b.material_status,
-        b.dispatch_status,
-        b.production_status,
-        b.inspection_status,
         b.owner_id,
         u.display_name AS owner_name,
         b.plan_start_date,
@@ -761,14 +858,13 @@ export class ProductionTaskRepository {
         SUM(CASE WHEN sr.status = 'completed' THEN 1 ELSE 0 END) AS finished_step_count
       FROM production_batches b
       INNER JOIN work_orders wo ON wo.id = b.work_order_id AND wo.is_deleted = 0
-      INNER JOIN products p ON p.id = b.product_id AND p.is_deleted = 0
+      INNER JOIN products p ON p.id = wo.product_id AND p.is_deleted = 0
       LEFT JOIN process_routes r ON r.id = b.route_id AND r.is_deleted = 0
       LEFT JOIN users u ON u.id = b.owner_id
       LEFT JOIN batch_step_records sr ON sr.batch_id = b.id AND sr.is_deleted = 0
       WHERE b.id = ? AND b.is_deleted = 0
-      GROUP BY b.id, b.work_order_id, wo.order_no, b.batch_no, b.product_id, p.product_model, p.product_name,
-        b.route_id, r.route_name, b.planned_quantity, b.status, b.material_status, b.dispatch_status,
-        b.production_status, b.inspection_status, b.owner_id, u.display_name, b.plan_start_date,
+      GROUP BY b.id, b.work_order_id, wo.order_no, b.batch_no, wo.product_id, p.product_model, p.product_name,
+        b.route_id, r.route_name, b.planned_quantity, b.status, b.owner_id, u.display_name, b.plan_start_date,
         b.plan_end_date, b.remark, b.created_at, b.updated_at
       LIMIT 1
     `,
@@ -788,10 +884,10 @@ export class ProductionTaskRepository {
       SELECT
         sr.id,
         sr.batch_id,
-        sr.route_step_id,
-        sr.step_order,
-        sr.step_name,
-        sr.sop_file_id,
+        sr.process_route_steps_id,
+        prs.step_order,
+        ps.step_name,
+        COALESCE(prs.sop_file_id, ps.sop_file_id) AS sop_file_id,
         sr.responsible_user_id,
         ru.display_name AS responsible_user_name,
         sr.status,
@@ -804,9 +900,11 @@ export class ProductionTaskRepository {
         sr.created_at,
         sr.updated_at
       FROM batch_step_records sr
+      INNER JOIN process_route_steps prs ON prs.id = sr.process_route_steps_id AND prs.is_deleted = 0
+      INNER JOIN process_steps ps ON ps.id = prs.process_step_id AND ps.is_deleted = 0
       LEFT JOIN users ru ON ru.id = sr.responsible_user_id
       WHERE sr.batch_id = ? AND sr.is_deleted = 0
-      ORDER BY sr.step_order ASC, sr.id ASC
+      ORDER BY prs.step_order ASC, sr.id ASC
     `,
       [batchId],
     );
@@ -816,46 +914,126 @@ export class ProductionTaskRepository {
 
   private async listMaterialRequirements(batchId: number) {
     const [task] = await this.database.query<
-      (RowDataPacket & { product_id: number; route_id: number | null; planned_quantity: string | number })[]
+      (RowDataPacket & { product_id: number })[]
     >(
-      'SELECT product_id, route_id, planned_quantity FROM production_batches WHERE id = ? AND is_deleted = 0 LIMIT 1',
+      `
+      SELECT wo.product_id, b.planned_quantity
+      FROM production_batches b
+      INNER JOIN work_orders wo ON wo.id = b.work_order_id AND wo.is_deleted = 0
+      WHERE b.id = ? AND b.is_deleted = 0
+      LIMIT 1
+      `,
       [batchId],
     );
 
-    if (!task?.route_id) {
+    if (!task) {
       return [];
     }
 
-    return this.listMaterialRequirementsByRoute(task.route_id, task.product_id, task.planned_quantity);
+    return this.listMaterialRequirementsByProduct(task.product_id, batchId, task.planned_quantity);
   }
 
-  private async listMaterialRequirementsByRoute(routeId: number, productId: number, plannedQuantity: string | number) {
+  private async listMaterialRequirementsByProduct(productId: number, batchId?: number, plannedQuantity?: string | number) {
+    const quantity = readNonNegativeDecimal(plannedQuantity ?? 0, 'Invalid planned quantity');
     const rows = await this.database.query<TaskMaterialRequirementRow[]>(
       `
       SELECT
-        rsm.id,
-        prs.id AS route_step_id,
-        prs.process_name AS route_step_name,
+        COALESCE(CAST(bmu.id AS CHAR), CAST(pm.id AS CHAR)) AS id,
+        bmu.id AS usage_id,
         pm.id AS product_material_id,
         pm.material_product_id,
         mp.product_model AS material_model,
         mp.product_name AS material_name,
-        rsm.quantity_per_unit,
-        ? AS planned_quantity,
+        pm.quantity_per_unit,
+        COALESCE(bmu.plan_quantity, pm.quantity_per_unit * ?) AS plan_quantity,
+        COALESCE(bmu.used_quantity, 0) AS used_quantity,
         pm.unit,
         pm.is_key_material,
         pm.need_batch_record
-      FROM route_step_materials rsm
-      INNER JOIN process_route_steps prs ON prs.id = rsm.route_step_id AND prs.is_deleted = 0
-      INNER JOIN product_materials pm ON pm.id = rsm.product_material_id AND pm.is_deleted = 0
+      FROM product_materials pm
       INNER JOIN products mp ON mp.id = pm.material_product_id AND mp.is_deleted = 0
-      WHERE prs.route_id = ? AND pm.product_id = ? AND rsm.is_deleted = 0
-      ORDER BY prs.step_order ASC, rsm.id ASC
+      LEFT JOIN batch_material_usages bmu ON bmu.product_materials_id = pm.id
+        AND bmu.batch_id = ?
+        AND bmu.material_batch_id IS NULL
+        AND bmu.is_deleted = 0
+      WHERE pm.product_id = ? AND pm.is_deleted = 0
+      ORDER BY pm.id ASC
     `,
-      [decimalString(plannedQuantity), routeId, productId],
+      [quantity, batchId ?? 0, productId],
     );
 
     return rows.map(mapTaskMaterialRequirement);
+  }
+
+  private async syncBatchMaterialUsages(
+    connection: PoolConnection,
+    batchId: number,
+    productId: number,
+  ) {
+    await execute(
+      connection,
+      `
+      UPDATE batch_material_usages
+      SET is_deleted = 1, deleted_at = NOW(), updated_at = NOW()
+      WHERE batch_id = ? AND material_batch_id IS NULL AND is_deleted = 0
+    `,
+      [batchId],
+    );
+
+    const result = (await execute(
+      connection,
+      `
+      INSERT INTO batch_material_usages (
+        batch_id, product_materials_id, material_batch_id, plan_quantity, used_quantity,
+        unit, recorded_at, created_at, updated_at
+      )
+      SELECT b.id, pm.id, NULL, pm.quantity_per_unit * b.planned_quantity, 0,
+        pm.unit, NOW(), NOW(), NOW()
+      FROM production_batches b
+      INNER JOIN product_materials pm ON pm.product_id = ? AND pm.is_deleted = 0
+      WHERE b.id = ? AND b.is_deleted = 0
+    `,
+      [productId, batchId],
+    )) as ResultSetHeader;
+
+    return result.affectedRows;
+  }
+
+  private async ensureBatchMaterialUsages(connection: PoolConnection, batchId: number, productId: number) {
+    const rows = await query<(RowDataPacket & { id: number })[]>(
+      connection,
+      `
+      SELECT pm.id
+      FROM production_batches b
+      INNER JOIN product_materials pm ON pm.product_id = ? AND pm.is_deleted = 0
+      LEFT JOIN batch_material_usages bmu ON bmu.product_materials_id = pm.id
+        AND bmu.batch_id = ?
+        AND bmu.material_batch_id IS NULL
+        AND bmu.is_deleted = 0
+      WHERE b.id = ? AND b.is_deleted = 0 AND bmu.id IS NULL
+    `,
+      [productId, batchId, batchId],
+    );
+
+    for (const row of rows) {
+      await execute(
+        connection,
+        `
+        INSERT INTO batch_material_usages (
+          batch_id, product_materials_id, material_batch_id, plan_quantity, used_quantity,
+          unit, recorded_at, created_at, updated_at
+        )
+        SELECT b.id, pm.id, NULL, pm.quantity_per_unit * b.planned_quantity, 0,
+          pm.unit, NOW(), NOW(), NOW()
+        FROM production_batches b
+        INNER JOIN product_materials pm ON pm.id = ? AND pm.product_id = ? AND pm.is_deleted = 0
+        WHERE b.id = ? AND b.is_deleted = 0
+      `,
+        [row.id, productId, batchId],
+      );
+    }
+
+    return rows.length;
   }
 
   private async assertTaskHasRoute(id: number) {
@@ -872,7 +1050,6 @@ export class ProductionTaskRepository {
       (RowDataPacket & {
         id: number;
         step_order: number;
-        process_id: number | null;
         process_code: string;
         process_name: string;
         sop_file_id: number | null;
@@ -884,14 +1061,13 @@ export class ProductionTaskRepository {
       SELECT
         prs.id,
         prs.step_order,
-        prs.process_id,
-        COALESCE(ps.step_code, prs.process_code) AS process_code,
-        COALESCE(ps.step_name, prs.process_name) AS process_name,
-        prs.sop_file_id,
+        ps.step_code AS process_code,
+        ps.step_name AS process_name,
+        COALESCE(prs.sop_file_id, ps.sop_file_id) AS sop_file_id,
         prs.default_owner_id,
         u.display_name AS default_owner_name
       FROM process_route_steps prs
-      LEFT JOIN process_steps ps ON ps.id = prs.process_step_id AND ps.is_deleted = 0
+      INNER JOIN process_steps ps ON ps.id = prs.process_step_id AND ps.is_deleted = 0
       LEFT JOIN users u ON u.id = prs.default_owner_id
       WHERE prs.route_id = ? AND prs.status = 1 AND prs.is_deleted = 0
       ORDER BY prs.step_order ASC, prs.id ASC
@@ -910,7 +1086,9 @@ export class ProductionTaskRepository {
     const [row] = await this.database.query<
       (RowDataPacket & {
         id: number;
+        process_route_steps_id: number;
         responsible_user_id: number | null;
+        sop_file_id: number | null;
         status: string;
         started_at: Date | null;
         completed_at: Date | null;
@@ -921,9 +1099,22 @@ export class ProductionTaskRepository {
       })[]
     >(
       `
-      SELECT id, responsible_user_id, status, started_at, completed_at, output_quantity, return_quantity, abnormal_quantity, remark
-      FROM batch_step_records
-      WHERE id = ? AND batch_id = ? AND is_deleted = 0
+      SELECT
+        sr.id,
+        sr.process_route_steps_id,
+        sr.responsible_user_id,
+        COALESCE(prs.sop_file_id, ps.sop_file_id) AS sop_file_id,
+        sr.status,
+        sr.started_at,
+        sr.completed_at,
+        sr.output_quantity,
+        sr.return_quantity,
+        sr.abnormal_quantity,
+        sr.remark
+      FROM batch_step_records sr
+      INNER JOIN process_route_steps prs ON prs.id = sr.process_route_steps_id AND prs.is_deleted = 0
+      INNER JOIN process_steps ps ON ps.id = prs.process_step_id AND ps.is_deleted = 0
+      WHERE sr.id = ? AND sr.batch_id = ? AND sr.is_deleted = 0
       LIMIT 1
     `,
       [recordId, batchId],
@@ -971,6 +1162,32 @@ export class ProductionTaskRepository {
 
     if (!row) {
       throw new BadRequestException('Owner not found or disabled');
+    }
+  }
+
+  private async assertTechnicalFileAvailable(fileId: number | null) {
+    if (fileId === null) {
+      return;
+    }
+
+    const [row] = await this.database.query<RowDataPacket[]>(
+      'SELECT id FROM technical_files WHERE id = ? AND status = 1 AND is_deleted = 0 LIMIT 1',
+      [fileId],
+    );
+
+    if (!row) {
+      throw new BadRequestException('Technical file not found or disabled');
+    }
+  }
+
+  private async assertProductMaterialAvailable(productMaterialId: number, productId: number) {
+    const [row] = await this.database.query<RowDataPacket[]>(
+      'SELECT id FROM product_materials WHERE id = ? AND product_id = ? AND is_deleted = 0 LIMIT 1',
+      [productMaterialId, productId],
+    );
+
+    if (!row) {
+      throw new BadRequestException('Material is not in current product BOM');
     }
   }
 
@@ -1091,4 +1308,13 @@ const assertStepStatusTransition = (current: string, next: BatchStepStatus) => {
   if (!STEP_STATUS_TRANSITIONS[currentStatus].includes(next)) {
     throw new BadRequestException('Invalid step status transition');
   }
+};
+
+const readNonNegativeDecimal = (value: string | number | null | undefined, message: string) => {
+  const amount = Number(value ?? 0);
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw new BadRequestException(message);
+  }
+
+  return amount.toFixed(4);
 };

@@ -95,6 +95,12 @@ apps/admin-web
       warehouse
       production
       quality
+   types
+      system
+      product
+      warehouse
+      production
+      quality
 ```
 
 管理端页面优先按以下模块组织：
@@ -113,7 +119,8 @@ product
 
 warehouse
   inventory
-  transactions
+  finished-transactions
+  material-transactions
 
 production
   orders
@@ -434,7 +441,8 @@ remark
 /product/routes
 
 /warehouse/inventory
-/warehouse/transactions
+/warehouse/finished-transactions
+/warehouse/material-transactions
 
 /production/orders
 /production/tasks

@@ -1,9 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
 import type {
-  BatchDispatchStatus,
-  BatchInspectionStatus,
-  BatchMaterialStatus,
-  BatchProductionStatus,
   BatchStepRecordItem,
   BatchStepStatus,
   ProductionBatchItem,
@@ -23,7 +19,7 @@ import type {
 
 const WORK_ORDER_STATUS_META: Record<WorkOrderStatus, { currentFlow: string; nextAction: string }> = {
   draft: { currentFlow: '草稿', nextAction: '下达工单' },
-  released: { currentFlow: '已下达，待分配生产任务', nextAction: '分配生产任务' },
+  released: { currentFlow: '已下达，待分配生产批次', nextAction: '分配生产批次' },
   doing: { currentFlow: '生产中', nextAction: '跟进生产批次' },
   completed: { currentFlow: '已完工', nextAction: '关闭工单' },
   closed: { currentFlow: '已关闭', nextAction: '无需处理' },
@@ -44,7 +40,8 @@ export const mapWorkOrder = (row: WorkOrderListRow): WorkOrderListItem => {
     routeName: row.route_name,
     plannedQuantity: decimalString(row.planned_quantity),
     assignedQuantity: decimalString(row.assigned_quantity),
-    unit: row.unit,
+    customerOrderNo: row.customer_order_no,
+    customerName: row.customer_name,
     ownerId: row.owner_id === null ? null : String(row.owner_id),
     ownerName: row.owner_name,
     status,
@@ -70,10 +67,6 @@ export const mapProductionBatch = (row: ProductionBatchListRow): ProductionBatch
   routeName: row.route_name,
   plannedQuantity: decimalString(row.planned_quantity),
   status: row.status as ProductionBatchStatus,
-  materialStatus: row.material_status as BatchMaterialStatus,
-  dispatchStatus: row.dispatch_status as BatchDispatchStatus,
-  productionStatus: row.production_status as BatchProductionStatus,
-  inspectionStatus: row.inspection_status as BatchInspectionStatus,
   ownerId: row.owner_id === null ? null : String(row.owner_id),
   ownerName: row.owner_name,
   planStartDate: formatDate(row.plan_start_date),
@@ -86,7 +79,7 @@ export const mapProductionBatch = (row: ProductionBatchListRow): ProductionBatch
 export const mapBatchStepRecord = (row: BatchStepRecordListRow): BatchStepRecordItem => ({
   id: String(row.id),
   batchId: String(row.batch_id),
-  routeStepId: String(row.route_step_id),
+  processRouteStepsId: String(row.process_route_steps_id),
   stepOrder: row.step_order,
   stepName: row.step_name,
   sopFileId: row.sop_file_id === null ? null : String(row.sop_file_id),
@@ -106,7 +99,7 @@ export const mapBatchStepRecord = (row: BatchStepRecordListRow): BatchStepRecord
 export const mapWorkerTask = (row: WorkerTaskListRow): WorkerTaskItem => ({
   ...mapProductionBatch(row),
   stepRecordId: String(row.step_record_id),
-  routeStepId: String(row.route_step_id),
+  processRouteStepsId: String(row.process_route_steps_id),
   stepOrder: row.step_order,
   stepName: row.step_name,
   stepStatus: row.step_status as BatchStepStatus,
@@ -121,14 +114,14 @@ export const mapWorkerTask = (row: WorkerTaskListRow): WorkerTaskItem => ({
 
 export const mapTaskMaterialRequirement = (row: TaskMaterialRequirementRow): TaskMaterialRequirementItem => ({
   id: String(row.id),
-  routeStepId: String(row.route_step_id),
-  routeStepName: row.route_step_name,
+  usageId: row.usage_id === null ? null : String(row.usage_id),
   productMaterialId: String(row.product_material_id),
   materialProductId: String(row.material_product_id),
   materialModel: row.material_model,
   materialName: row.material_name,
   quantityPerUnit: decimalString(row.quantity_per_unit),
-  requiredQuantity: (decimalNumber(row.quantity_per_unit) * decimalNumber(row.planned_quantity)).toFixed(4),
+  planQuantity: decimalString(row.plan_quantity),
+  usedQuantity: decimalString(row.used_quantity),
   unit: row.unit,
   isKeyMaterial: row.is_key_material === 1,
   needBatchRecord: row.need_batch_record === 1,

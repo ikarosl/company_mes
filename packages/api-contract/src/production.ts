@@ -1,9 +1,11 @@
 export type WorkOrderStatus = 'draft' | 'released' | 'doing' | 'completed' | 'closed' | 'cancelled';
-export type ProductionBatchStatus = 'pending' | 'assigned' | 'doing' | 'completed' | 'cancelled';
-export type BatchMaterialStatus = 'ungenerated' | 'unassigned' | 'partial_assigned' | 'assigned' | 'ready' | 'outbound' | 'shortage' | 'returned';
-export type BatchDispatchStatus = 'pending' | 'assigned';
-export type BatchProductionStatus = 'pending' | 'doing' | 'completed';
-export type BatchInspectionStatus = 'pending' | 'inspecting' | 'passed' | 'failed' | 'partial_pass';
+export type ProductionBatchStatus =
+  | 'pending'
+  | 'material_pending'
+  | 'material_assigned'
+  | 'doing'
+  | 'completed'
+  | 'cancelled';
 export type BatchStepStatus = 'pending' | 'doing' | 'completed' | 'abnormal' | 'skipped';
 
 export interface ProductionBatchItem {
@@ -18,10 +20,6 @@ export interface ProductionBatchItem {
   routeName: string | null;
   plannedQuantity: string;
   status: ProductionBatchStatus;
-  materialStatus: BatchMaterialStatus;
-  dispatchStatus: BatchDispatchStatus;
-  productionStatus: BatchProductionStatus;
-  inspectionStatus: BatchInspectionStatus;
   ownerId: string | null;
   ownerName: string | null;
   planStartDate: string | null;
@@ -34,7 +32,7 @@ export interface ProductionBatchItem {
 export interface BatchStepRecordItem {
   id: string;
   batchId: string;
-  routeStepId: string;
+  processRouteStepsId: string;
   stepOrder: number;
   stepName: string;
   sopFileId: string | null;
@@ -53,7 +51,7 @@ export interface BatchStepRecordItem {
 
 export interface WorkerTaskItem extends ProductionBatchItem {
   stepRecordId: string;
-  routeStepId: string;
+  processRouteStepsId: string;
   stepOrder: number;
   stepName: string;
   stepStatus: BatchStepStatus;
@@ -68,14 +66,14 @@ export interface WorkerTaskItem extends ProductionBatchItem {
 
 export interface TaskMaterialRequirementItem {
   id: string;
-  routeStepId: string;
-  routeStepName: string;
+  usageId: string | null;
   productMaterialId: string;
   materialProductId: string;
   materialModel: string;
   materialName: string;
   quantityPerUnit: string;
-  requiredQuantity: string;
+  planQuantity: string;
+  usedQuantity: string;
   unit: string | null;
   isKeyMaterial: boolean;
   needBatchRecord: boolean;
@@ -101,7 +99,8 @@ export interface WorkOrderListItem {
   routeName: string | null;
   plannedQuantity: string;
   assignedQuantity: string;
-  unit: string;
+  customerOrderNo: string | null;
+  customerName: string | null;
   ownerId: string | null;
   ownerName: string | null;
   status: WorkOrderStatus;
@@ -121,9 +120,9 @@ export interface WorkOrderDetail extends WorkOrderListItem {
 export interface CreateWorkOrderPayload {
   orderNo: string;
   productId: string;
-  routeId?: string | null;
   plannedQuantity: string | number;
-  unit?: string | null;
+  customerOrderNo?: string | null;
+  customerName?: string | null;
   ownerId?: string | null;
   planStartDate?: string | null;
   planEndDate?: string | null;
@@ -133,9 +132,9 @@ export interface CreateWorkOrderPayload {
 export interface UpdateWorkOrderPayload {
   orderNo?: string;
   productId?: string;
-  routeId?: string | null;
   plannedQuantity?: string | number;
-  unit?: string | null;
+  customerOrderNo?: string | null;
+  customerName?: string | null;
   ownerId?: string | null;
   planStartDate?: string | null;
   planEndDate?: string | null;
@@ -166,11 +165,13 @@ export interface UpdateProductionBatchPayload {
   planEndDate?: string | null;
   status?: ProductionBatchStatus;
   remark?: string | null;
+  steps?: DispatchTaskStepPayload[];
 }
 
 export interface DispatchTaskStepPayload {
-  routeStepId: string;
+  processRouteStepsId: string;
   responsibleUserId?: string | null;
+  sopFileId?: string | null;
 }
 
 export interface DispatchTaskPayload {
@@ -179,6 +180,7 @@ export interface DispatchTaskPayload {
 
 export interface UpdateBatchStepRecordPayload {
   responsibleUserId?: string | null;
+  sopFileId?: string | null;
   status?: BatchStepStatus;
   startedAt?: string | null;
   completedAt?: string | null;

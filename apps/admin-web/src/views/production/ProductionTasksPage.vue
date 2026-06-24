@@ -58,16 +58,7 @@
         <el-table-column label="工艺路线" min-width="160">
           <template #default="{ row }">{{ row.routeName || '未选择' }}</template>
         </el-table-column>
-        <el-table-column label="物料状态" width="130">
-          <template #default="{ row }">{{ materialStatusLabels[row.materialStatus] ?? row.materialStatus }}</template>
-        </el-table-column>
-        <el-table-column label="派工状态" width="110">
-          <template #default="{ row }">{{ dispatchStatusLabels[row.dispatchStatus] ?? row.dispatchStatus }}</template>
-        </el-table-column>
-        <el-table-column label="生产状态" width="110">
-          <template #default="{ row }">{{ productionStatusLabels[row.productionStatus] ?? row.productionStatus }}</template>
-        </el-table-column>
-        <el-table-column label="任务状态" width="110">
+        <el-table-column label="任务状态" width="130">
           <template #default="{ row }">
             <el-tag :type="getTaskStatusMeta(row.status).type" effect="light">
               {{ getTaskStatusMeta(row.status).label }}
@@ -96,11 +87,11 @@
           <el-option label="20条/页" :value="20" />
           <el-option label="50条/页" :value="50" />
         </el-select>
-        <el-pagination v-model:current-page="currentPage" :page-size="pageSize" :total="total" layout="prev, pager, next, jumper" @current-change="loadTasks" />
+        <el-pagination :current-page="currentPage" :page-size="pageSize" :total="total" layout="prev, pager, next, jumper" @current-change="loadTasks" />
       </div>
     </section>
 
-    <el-dialog v-model="taskDialogVisible" :title="editingTaskId ? '编辑任务' : '新增任务'" width="720px">
+    <el-dialog v-model="taskDialogVisible" :title="editingTaskId ? '编辑任务' : '新增任务'" width="980px">
       <el-form class="dialog-form" label-width="108px" :model="taskForm">
         <el-form-item v-if="!editingTaskId" label="选择工单" required>
           <el-select v-model="taskForm.workOrderId" filterable placeholder="请选择下达的工单" @change="handleTaskOrderChange">
@@ -132,7 +123,7 @@
           <el-input-number
             v-model="taskForm.plannedQuantity"
             :min="0"
-            :max="selectedWorkOrderRemaining ?? undefined"
+            :max="taskQuantityMax ?? undefined"
             :precision="4"
             :step="1"
             @change="refreshCreatePreview"
@@ -148,11 +139,27 @@
           <el-input v-model="taskForm.remark" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
-      <el-tabs v-if="!editingTaskId" class="detail-tabs">
+      <el-tabs class="detail-tabs">
         <el-tab-pane label="工序执行">
           <el-table :data="createPreviewSteps" class="detail-table">
             <el-table-column prop="stepOrder" label="顺序" width="70" />
             <el-table-column prop="stepName" label="工序" min-width="160" />
+            <el-table-column label="实际参考文件" min-width="220">
+              <template #default="{ row }">
+                <div class="file-cell">
+                  <el-select v-model="row.sopFileId" clearable filterable placeholder="请选择参考文件">
+                    <el-option v-for="file in sopFileOptions" :key="file.id" :label="file.name" :value="file.id" />
+                  </el-select>
+                  <el-upload
+                    v-if="canUploadStepFile(row)"
+                    :show-file-list="false"
+                    :before-upload="createStepSopUploadHandler(row)"
+                  >
+                    <el-button>上传</el-button>
+                  </el-upload>
+                </div>
+              </template>
+            </el-table-column>
             <el-table-column label="负责人" min-width="180">
               <template #default="{ row }">
                 <el-select v-model="row.responsibleUserId" clearable filterable placeholder="请选择负责人">
@@ -164,14 +171,18 @@
         </el-tab-pane>
         <el-tab-pane label="物料需求">
           <el-table :data="createPreviewMaterials" class="detail-table">
-            <el-table-column prop="routeStepName" label="工序" min-width="150" />
             <el-table-column prop="materialModel" label="物料型号" min-width="160" />
             <el-table-column prop="materialName" label="物料名称" min-width="160" />
-            <el-table-column label="单位用量" width="110" align="right">
+            <el-table-column label="单位用量" width="120" align="right">
               <template #default="{ row }">{{ formatQuantity(row.quantityPerUnit) }}</template>
             </el-table-column>
-            <el-table-column label="需求数量" width="120" align="right">
-              <template #default="{ row }">{{ formatQuantity(row.requiredQuantity) }}</template>
+            <el-table-column label="需求数量" width="170" align="right">
+              <template #default="{ row }">
+                {{ formatQuantity(row.planQuantity) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="单位" width="90">
+              <template #default="{ row }">{{ row.unit || '-' }}</template>
             </el-table-column>
             <el-table-column label="批次记录" width="100">
               <template #default="{ row }">{{ row.needBatchRecord ? '需要' : '不需要' }}</template>
@@ -206,6 +217,9 @@
               <el-table-column label="现场负责人" width="130">
                 <template #default="{ row }">{{ row.responsibleUserName || '-' }}</template>
               </el-table-column>
+              <el-table-column label="实际参考文件" width="160">
+                <template #default="{ row }">{{ getSopFileName(row.sopFileId) }}</template>
+              </el-table-column>
               <el-table-column label="状态" width="110">
                 <template #default="{ row }">{{ stepStatusLabels[row.status] ?? row.status }}</template>
               </el-table-column>
@@ -221,14 +235,19 @@
           </el-tab-pane>
           <el-tab-pane label="物料需求">
             <el-table :data="activeTask.materialRequirements" class="detail-table">
-              <el-table-column prop="routeStepName" label="工序" min-width="150" />
               <el-table-column prop="materialModel" label="物料编码" min-width="160" />
               <el-table-column prop="materialName" label="物料名称" min-width="160" />
-              <el-table-column label="单位用量" width="110" align="right">
+              <el-table-column label="单位用量" width="120" align="right">
                 <template #default="{ row }">{{ formatQuantity(row.quantityPerUnit) }}</template>
               </el-table-column>
               <el-table-column label="需求数量" width="120" align="right">
-                <template #default="{ row }">{{ formatQuantity(row.requiredQuantity) }}</template>
+                <template #default="{ row }">{{ formatQuantity(row.planQuantity) }}</template>
+              </el-table-column>
+              <el-table-column label="已用数量" width="120" align="right">
+                <template #default="{ row }">{{ formatQuantity(row.usedQuantity) }}</template>
+              </el-table-column>
+              <el-table-column label="单位" width="80">
+                <template #default="{ row }">{{ row.unit || '-' }}</template>
               </el-table-column>
               <el-table-column label="是否批次记录" width="100">
                 <template #default="{ row }">{{ row.needBatchRecord ? '是' : '否' }}</template>
@@ -243,6 +262,13 @@
       <el-table :data="dispatchRows" class="detail-table">
         <el-table-column prop="stepOrder" label="序号" width="70" />
         <el-table-column prop="stepName" label="工序" min-width="180" />
+        <el-table-column label="实际参考文件" min-width="220">
+          <template #default="{ row }">
+            <el-select v-model="row.sopFileId" clearable filterable placeholder="请选择参考文件">
+              <el-option v-for="file in sopFileOptions" :key="file.id" :label="file.name" :value="file.id" />
+            </el-select>
+          </template>
+        </el-table-column>
         <el-table-column label="负责人" min-width="180">
           <template #default="{ row }">
             <el-select v-model="row.responsibleUserId" clearable filterable placeholder="指定现场负责人">
@@ -263,6 +289,20 @@
           <el-select v-model="stepForm.responsibleUserId" clearable filterable placeholder="请选择负责人">
             <el-option v-for="user in userOptions" :key="user.id" :label="user.displayName" :value="user.id" />
           </el-select>
+        </el-form-item>
+        <el-form-item label="参考文件">
+          <div class="file-cell">
+            <el-select v-model="stepForm.sopFileId" clearable filterable placeholder="请选择参考文件">
+              <el-option v-for="file in sopFileOptions" :key="file.id" :label="file.name" :value="file.id" />
+            </el-select>
+            <el-upload
+              v-if="editingTaskId && editingStepId"
+              :show-file-list="false"
+              :before-upload="uploadEditingStepSopFile"
+            >
+              <el-button>上传</el-button>
+            </el-upload>
+          </div>
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="stepForm.status">
@@ -292,16 +332,18 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessage, ElMessageBox, type UploadRawFile } from 'element-plus';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type {
   BatchStepRecordItem,
   BatchStepStatus,
+  ProcessOption,
   ProcessRouteListItem,
   ProductListItem,
   ProductionBatchItem,
   ProductionBatchStatus,
   ProductionTaskDetail,
+  TaskMaterialRequirementItem,
   SystemUserListItem,
   WorkOrderListItem,
 } from '@company/api-contract';
@@ -310,9 +352,10 @@ import { productionApi } from '../../api/production';
 import { systemApi } from '../../api/system';
 
 const taskStatusOptions: Array<{ value: ProductionBatchStatus; label: string; type: 'info' | 'primary' | 'success' | 'danger' }> = [
-  { value: 'pending', label: '待处理', type: 'info' },
-  { value: 'assigned', label: '已派工', type: 'primary' },
-  { value: 'doing', label: '生产中', type: 'primary' },
+  { value: 'pending', label: '已生成批次', type: 'info' },
+  { value: 'material_pending', label: '已生成物料需求', type: 'primary' },
+  { value: 'material_assigned', label: '已分配物料批次', type: 'primary' },
+  { value: 'doing', label: '执行中', type: 'primary' },
   { value: 'completed', label: '已完成', type: 'success' },
   { value: 'cancelled', label: '已取消', type: 'danger' },
 ];
@@ -323,29 +366,22 @@ const stepStatusOptions: Array<{ value: BatchStepStatus; label: string }> = [
   { value: 'abnormal', label: '异常' },
   { value: 'skipped', label: '已跳过' },
 ];
-const materialStatusLabels: Record<string, string> = {
-  ungenerated: '未生成需求',
-  unassigned: '未分配',
-  partial_assigned: '部分分配',
-  assigned: '已分配',
-  ready: '已齐套',
-  outbound: '已出库',
-  shortage: '缺料',
-  returned: '已退料',
-};
-const dispatchStatusLabels: Record<string, string> = { pending: '待派工', assigned: '已派工' };
-const productionStatusLabels: Record<string, string> = { pending: '待开始', doing: '生产中', completed: '已完成' };
 const stepStatusLabels = Object.fromEntries(stepStatusOptions.map((item) => [item.value, item.label]));
+type MaterialDemandFormRow = Omit<TaskMaterialRequirementItem, 'planQuantity'> & {
+  planQuantity: string | number;
+};
 
 const tasks = ref<ProductionBatchItem[]>([]);
 const productOptions = ref<ProductListItem[]>([]);
 const routeOptions = ref<ProcessRouteListItem[]>([]);
 const userOptions = ref<SystemUserListItem[]>([]);
 const workOrderOptions = ref<WorkOrderListItem[]>([]);
+const processOptions = ref<ProcessOption[]>([]);
 const activeTask = ref<ProductionTaskDetail | null>(null);
-const createPreviewSteps = ref<Array<BatchStepRecordItem & { responsibleUserId: string | null }>>([]);
-const createPreviewMaterials = ref<ProductionTaskDetail['materialRequirements']>([]);
+const createPreviewSteps = ref<Array<BatchStepRecordItem & { responsibleUserId: string | null; sopFileId: string | null }>>([]);
+const createPreviewMaterials = ref<MaterialDemandFormRow[]>([]);
 const editingTaskId = ref<string | null>(null);
+const editingTaskOriginalQuantity = ref(0);
 const dispatchTaskId = ref<string | null>(null);
 const editingStepId = ref<string | null>(null);
 const loading = ref(false);
@@ -357,7 +393,7 @@ const taskDialogVisible = ref(false);
 const detailDialogVisible = ref(false);
 const dispatchDialogVisible = ref(false);
 const stepDialogVisible = ref(false);
-const dispatchRows = ref<Array<BatchStepRecordItem & { responsibleUserId: string | null }>>([]);
+const dispatchRows = ref<Array<BatchStepRecordItem & { responsibleUserId: string | null; sopFileId: string | null }>>([]);
 
 const query = reactive({ keyword: '', productId: '', ownerId: '', status: '' });
 const taskForm = reactive({
@@ -372,6 +408,7 @@ const taskForm = reactive({
 });
 const stepForm = reactive({
   responsibleUserId: '',
+  sopFileId: '',
   status: 'pending' as BatchStepStatus,
   returnQuantity: 0,
   outputQuantity: 0,
@@ -380,16 +417,18 @@ const stepForm = reactive({
 });
 
 const loadOptions = async () => {
-  const [products, routes, users, releasedOrders, doingOrders] = await Promise.all([
+  const [products, routes, users, processes, releasedOrders, doingOrders] = await Promise.all([
     productApi.listProducts({ page: 1, pageSize: 100, status: 'enabled' }),
     productApi.listRoutes({ page: 1, pageSize: 100, status: 'enabled' }),
     systemApi.listUsers({ status: 'enabled' }),
+    productApi.listProcessOptions(),
     productionApi.listOrders({ page: 1, pageSize: 100, status: 'released' }),
     productionApi.listOrders({ page: 1, pageSize: 100, status: 'doing' }),
   ]);
   productOptions.value = products.items;
   routeOptions.value = routes.items;
   userOptions.value = users;
+  processOptions.value = processes;
   workOrderOptions.value = [...releasedOrders.items, ...doingOrders.items];
 };
 
@@ -432,12 +471,32 @@ const selectedWorkOrderRemaining = computed(() => {
 
   return getWorkOrderRemaining(selectedWorkOrder.value);
 });
+const taskQuantityMax = computed(() => {
+  if (selectedWorkOrderRemaining.value === null) {
+    return null;
+  }
+
+  return editingTaskId.value
+    ? selectedWorkOrderRemaining.value + editingTaskOriginalQuantity.value
+    : selectedWorkOrderRemaining.value;
+});
 const availableRouteOptions = computed(() => {
   if (!selectedWorkOrder.value || selectedProduct.value?.categoryId === null || selectedProduct.value?.categoryId === undefined) {
     return routeOptions.value;
   }
 
   return routeOptions.value.filter((route) => route.productCategoryId === null || route.productCategoryId === selectedProduct.value?.categoryId);
+});
+const sopFileOptions = computed(() => {
+  const map = new Map<string, { id: string; name: string }>();
+
+  for (const process of processOptions.value) {
+    if (process.sopFileId && process.sopFileName) {
+      map.set(process.sopFileId, { id: process.sopFileId, name: process.sopFileName });
+    }
+  }
+
+  return [...map.values()];
 });
 
 const searchTasks = async () => {
@@ -473,12 +532,18 @@ const resetTaskForm = () => {
 
 const openCreate = () => {
   editingTaskId.value = null;
+  editingTaskOriginalQuantity.value = 0;
   resetTaskForm();
   taskDialogVisible.value = true;
 };
 
 const openEdit = (row: ProductionBatchItem) => {
+  void openEditTask(row);
+};
+
+const openEditTask = async (row: ProductionBatchItem) => {
   editingTaskId.value = row.id;
+  editingTaskOriginalQuantity.value = Number(row.plannedQuantity);
   Object.assign(taskForm, {
     workOrderId: row.workOrderId,
     batchNo: row.batchNo,
@@ -490,6 +555,18 @@ const openEdit = (row: ProductionBatchItem) => {
     remark: row.remark ?? '',
   });
   taskDialogVisible.value = true;
+  const detail = await productionApi.getTask(row.id);
+  activeTask.value = detail;
+  createPreviewSteps.value = detail.steps.map((step) => ({
+    ...step,
+    responsibleUserId: step.responsibleUserId,
+    sopFileId: step.sopFileId,
+  }));
+  await refreshCreatePreview({ keepSteps: true, keepMaterials: true });
+  createPreviewMaterials.value = detail.materialRequirements.map((row) => ({
+    ...row,
+    planQuantity: row.planQuantity,
+  }));
 };
 
 const handleTaskOrderChange = (workOrderId: string) => {
@@ -514,10 +591,14 @@ const handleTaskOrderChange = (workOrderId: string) => {
   void refreshCreatePreview();
 };
 
-const refreshCreatePreview = async () => {
-  if (editingTaskId.value || !taskForm.workOrderId || !taskForm.routeId || taskForm.plannedQuantity <= 0) {
-    createPreviewSteps.value = [];
-    createPreviewMaterials.value = [];
+const refreshCreatePreview = async (options: { keepSteps?: boolean; keepMaterials?: boolean } = {}) => {
+  if (!taskForm.workOrderId || !taskForm.routeId || taskForm.plannedQuantity <= 0) {
+    if (!options.keepSteps) {
+      createPreviewSteps.value = [];
+    }
+    if (!options.keepMaterials) {
+      createPreviewMaterials.value = [];
+    }
     return true;
   }
 
@@ -527,12 +608,27 @@ const refreshCreatePreview = async () => {
       routeId: taskForm.routeId,
       plannedQuantity: taskForm.plannedQuantity,
     });
-    createPreviewSteps.value = preview.steps.map((step) => ({ ...step, responsibleUserId: step.responsibleUserId }));
-    createPreviewMaterials.value = preview.materialRequirements;
+    if (!options.keepSteps) {
+      createPreviewSteps.value = preview.steps.map((step) => ({
+        ...step,
+        responsibleUserId: step.responsibleUserId,
+        sopFileId: step.sopFileId,
+      }));
+    }
+    if (!options.keepMaterials) {
+      createPreviewMaterials.value = preview.materialRequirements.map((row) => ({
+        ...row,
+        planQuantity: row.planQuantity,
+      }));
+    }
     return true;
   } catch (error) {
-    createPreviewSteps.value = [];
-    createPreviewMaterials.value = [];
+    if (!options.keepSteps) {
+      createPreviewSteps.value = [];
+    }
+    if (!options.keepMaterials) {
+      createPreviewMaterials.value = [];
+    }
     ElMessage.error(error instanceof Error ? error.message : '任务预览失败');
     return false;
   }
@@ -544,7 +640,7 @@ const submitTask = async () => {
     return;
   }
 
-  if (!editingTaskId.value && selectedWorkOrderRemaining.value !== null && taskForm.plannedQuantity > selectedWorkOrderRemaining.value) {
+  if (taskQuantityMax.value !== null && taskForm.plannedQuantity > taskQuantityMax.value) {
     ElMessage.warning('计划数量不能超过工单剩余数量');
     return;
   }
@@ -558,6 +654,11 @@ const submitTask = async () => {
       planStartDate: taskForm.planStartDate || null,
       planEndDate: taskForm.planEndDate || null,
       remark: taskForm.remark,
+      steps: createPreviewSteps.value.map((row) => ({
+        processRouteStepsId: row.processRouteStepsId,
+        responsibleUserId: row.responsibleUserId,
+        sopFileId: row.sopFileId,
+      })),
     };
 
     if (editingTaskId.value) {
@@ -573,7 +674,6 @@ const submitTask = async () => {
         ...payload,
         workOrderId: taskForm.workOrderId,
         batchNo: taskForm.batchNo || null,
-        steps: createPreviewSteps.value.map((row) => ({ routeStepId: row.routeStepId, responsibleUserId: row.responsibleUserId })),
       });
       ElMessage.success('任务已新增');
     }
@@ -613,7 +713,11 @@ const submitDispatch = async () => {
   submitting.value = true;
   try {
     await productionApi.dispatchTask(dispatchTaskId.value, {
-      steps: dispatchRows.value.map((row) => ({ routeStepId: row.routeStepId, responsibleUserId: row.responsibleUserId })),
+      steps: dispatchRows.value.map((row) => ({
+        processRouteStepsId: row.processRouteStepsId,
+        responsibleUserId: row.responsibleUserId,
+        sopFileId: row.sopFileId,
+      })),
     });
     ElMessage.success('派工已保存');
     dispatchDialogVisible.value = false;
@@ -654,6 +758,7 @@ const openStepEdit = (row: BatchStepRecordItem) => {
   editingStepId.value = row.id;
   Object.assign(stepForm, {
     responsibleUserId: row.responsibleUserId ?? '',
+    sopFileId: row.sopFileId ?? '',
     status: row.status,
     returnQuantity: Number(row.returnQuantity ?? 0),
     outputQuantity: Number(row.outputQuantity ?? 0),
@@ -672,6 +777,7 @@ const submitStep = async () => {
   try {
     activeTask.value = await productionApi.updateTaskStep(editingTaskId.value, editingStepId.value, {
       responsibleUserId: stepForm.responsibleUserId || null,
+      sopFileId: stepForm.sopFileId || null,
       status: stepForm.status,
       returnQuantity: stepForm.returnQuantity,
       outputQuantity: stepForm.outputQuantity,
@@ -697,6 +803,54 @@ const formatQuantity = (value: string | number | null) => {
   return Number.isFinite(amount)
     ? amount.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 4 })
     : '-';
+};
+
+const canUploadStepFile = (row: BatchStepRecordItem) => Boolean(editingTaskId.value && row.batchId !== '0');
+const createStepSopUploadHandler = (row: BatchStepRecordItem & { sopFileId: string | null }) =>
+  (file: UploadRawFile) => uploadStepSopFile(file, row);
+const uploadStepSopFile = (file: UploadRawFile, row: BatchStepRecordItem & { sopFileId: string | null }) => {
+  if (!editingTaskId.value || !canUploadStepFile(row)) {
+    return false;
+  }
+
+  void (async () => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const task = await productionApi.uploadTaskStepSop(editingTaskId.value!, row.id, formData);
+    const updated = task.steps.find((step) => step.id === row.id);
+
+    if (updated) {
+      row.sopFileId = updated.sopFileId;
+    }
+
+    activeTask.value = task;
+    ElMessage.success('实际参考文件已上传');
+  })();
+
+  return false;
+};
+const uploadEditingStepSopFile = (file: UploadRawFile) => {
+  if (!editingTaskId.value || !editingStepId.value) {
+    return false;
+  }
+
+  void (async () => {
+    const formData = new FormData();
+    formData.append('file', file);
+    activeTask.value = await productionApi.uploadTaskStepSop(editingTaskId.value!, editingStepId.value!, formData);
+    const updated = activeTask.value.steps.find((step) => step.id === editingStepId.value);
+    stepForm.sopFileId = updated?.sopFileId ?? '';
+    ElMessage.success('实际参考文件已上传');
+  })();
+
+  return false;
+};
+const getSopFileName = (fileId: string | null) => {
+  if (!fileId) {
+    return '-';
+  }
+
+  return sopFileOptions.value.find((file) => file.id === fileId)?.name ?? `文件 #${fileId}`;
 };
 
 onMounted(loadPageData);
@@ -813,6 +967,16 @@ onMounted(loadPageData);
 
 .detail-tabs {
   margin-top: 18px;
+}
+
+.file-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.file-cell :deep(.el-select) {
+  flex: 1;
 }
 
 @media (max-width: 1120px) {

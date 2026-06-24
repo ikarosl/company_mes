@@ -69,11 +69,17 @@ export class AuthController {
     @Req() request: CookieRequest,
     @Res({ passthrough: true }) response: CookieResponse,
   ) {
-    const refreshToken = readOptionalRefreshTokenCookie(request);
-    if (refreshToken) {
-      await this.authService.revokeRefreshToken(refreshToken);
+    try {
+      const refreshToken = readOptionalRefreshTokenCookie(request);
+      if (refreshToken) {
+        await this.authService.revokeRefreshToken(refreshToken);
+      }
+    } catch {
+      // Logout must still clear the browser cookie even when token revocation fails.
+    } finally {
+      clearRefreshTokenCookie(response);
     }
-    clearRefreshTokenCookie(response);
+
     return { success: true };
   }
 
