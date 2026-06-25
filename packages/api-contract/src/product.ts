@@ -392,8 +392,6 @@ export interface MaterialTransactionDemandOption {
   unit: string | null;
 }
 
-export interface MaterialInboundPayload extends CreateMaterialBatchPayload {}
-
 /** 生产领料出库请求。 */
 export interface MaterialOutboundPayload {
   usageId: string;
