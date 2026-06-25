@@ -8,6 +8,7 @@ import type {
   UpdateProductionBatchPayload,
 } from '@company/api-contract';
 import { DatabaseService, type QueryParam } from '../../database/database.service.js';
+import { AuditContextService } from '../../operation-log/audit-context.service.js';
 import { execute, query } from '../../shared/repository.helpers.js';
 import { type PaginationOptions, toPageResult } from '../../shared/request-utils.js';
 import type {
@@ -51,7 +52,10 @@ const STEP_STATUSES = new Set<BatchStepStatus>([
 
 @Injectable()
 export class ProductionTaskRepository {
-  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
+  constructor(
+    @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(AuditContextService) private readonly auditContext: AuditContextService,
+  ) {}
 
   async listTasks(filters: ProductionTaskFilters, pagination: PaginationOptions) {
     const { where, params } = this.buildListFilters(filters);
@@ -130,7 +134,11 @@ export class ProductionTaskRepository {
     };
   }
 
-  async listTasksForWorker(userId: string, filters: ProductionTaskFilters, pagination: PaginationOptions) {
+  async listTasksForWorker(
+    userId: string,
+    filters: ProductionTaskFilters,
+    pagination: PaginationOptions,
+  ) {
     const { where, params } = this.buildListFilters({ ...filters, status: undefined });
     const userIdNumber = Number(userId);
     const stepStatus = filters.status?.trim();
@@ -178,6 +186,23 @@ export class ProductionTaskRepository {
         prs.step_order,
         ps.step_name,
         sr.status AS step_status,
+        CASE
+          WHEN sr.status <> 'pending' THEN 0
+          WHEN prs.step_order = 1 THEN 1
+          WHEN (
+            SELECT previous_sr.status
+            FROM batch_step_records previous_sr
+            INNER JOIN process_route_steps previous_prs
+              ON previous_prs.id = previous_sr.process_route_steps_id
+              AND previous_prs.is_deleted = 0
+            WHERE previous_sr.batch_id = b.id
+              AND previous_sr.is_deleted = 0
+              AND previous_prs.step_order < prs.step_order
+            ORDER BY previous_prs.step_order DESC, previous_sr.id DESC
+            LIMIT 1
+          ) = 'completed' THEN 1
+          ELSE 0
+        END AS can_start,
         sr.started_at AS step_started_at,
         sr.completed_at AS step_completed_at,
         sr.output_quantity,
@@ -305,9 +330,11 @@ export class ProductionTaskRepository {
         for (const step of routeSteps) {
           const assignment = assignmentMap.get(step.id);
           const responsibleUserId = assignmentMap.has(step.id)
-            ? assignment?.responsibleUserId ?? null
+            ? (assignment?.responsibleUserId ?? null)
             : step.default_owner_id;
-          const sopFileId = assignmentMap.has(step.id) ? assignment?.sopFileId ?? null : step.sop_file_id;
+          const sopFileId = assignmentMap.has(step.id)
+            ? (assignment?.sopFileId ?? null)
+            : step.sop_file_id;
           await this.assertUserAvailable(responsibleUserId);
           await this.assertTechnicalFileAvailable(sopFileId);
           await execute(
@@ -319,14 +346,9 @@ export class ProductionTaskRepository {
             )
             VALUES (?, ?, ?, 'pending', NOW(), NOW())
           `,
-            [
-              insertResult.insertId,
-              step.id,
-              responsibleUserId,
-            ],
+            [insertResult.insertId, step.id, responsibleUserId],
           );
         }
-
       }
 
       return insertResult;
@@ -336,10 +358,17 @@ export class ProductionTaskRepository {
     return this.getTask(result.insertId);
   }
 
-  async previewCreateTask(workOrderId: number, routeId: number | null, plannedQuantity: string | number | null | undefined) {
+  async previewCreateTask(
+    workOrderId: number,
+    routeId: number | null,
+    plannedQuantity: string | number | null | undefined,
+  ) {
     const order = await this.getWorkOrderRow(workOrderId);
     const resolvedRouteId = routeId ?? order.route_id;
-    const previewQuantity = readDecimal(plannedQuantity ?? order.planned_quantity, 'Invalid task quantity');
+    const previewQuantity = readDecimal(
+      plannedQuantity ?? order.planned_quantity,
+      'Invalid task quantity',
+    );
 
     if (resolvedRouteId === null) {
       return {
@@ -374,12 +403,17 @@ export class ProductionTaskRepository {
 
     return {
       steps,
-      materialRequirements: await this.listMaterialRequirementsByProduct(order.product_id, undefined, previewQuantity),
+      materialRequirements: await this.listMaterialRequirementsByProduct(
+        order.product_id,
+        undefined,
+        previewQuantity,
+      ),
     };
   }
 
   async updateTask(id: number, payload: UpdateProductionBatchPayload) {
     const current = await this.getTaskRow(id);
+    this.auditContext.setBeforeData(current);
     this.assertTaskConfigurable(current.status);
     const routeId = payload.routeId === undefined ? current.route_id : nullableId(payload.routeId);
     const ownerId = payload.ownerId === undefined ? current.owner_id : nullableId(payload.ownerId);
@@ -409,8 +443,12 @@ export class ProductionTaskRepository {
           routeId,
           ownerId,
           plannedQuantity,
-          payload.planStartDate === undefined ? formatDate(current.plan_start_date) : normalizeDate(payload.planStartDate),
-          payload.planEndDate === undefined ? formatDate(current.plan_end_date) : normalizeDate(payload.planEndDate),
+          payload.planStartDate === undefined
+            ? formatDate(current.plan_start_date)
+            : normalizeDate(payload.planStartDate),
+          payload.planEndDate === undefined
+            ? formatDate(current.plan_end_date)
+            : normalizeDate(payload.planEndDate),
           payload.remark === undefined ? current.remark : normalizeOptionalString(payload.remark),
           id,
         ],
@@ -437,9 +475,11 @@ export class ProductionTaskRepository {
         for (const step of routeSteps) {
           const assignment = assignmentMap.get(step.id);
           const responsibleUserId = assignmentMap.has(step.id)
-            ? assignment?.responsibleUserId ?? null
+            ? (assignment?.responsibleUserId ?? null)
             : step.default_owner_id;
-          const sopFileId = assignmentMap.has(step.id) ? assignment?.sopFileId ?? null : step.sop_file_id;
+          const sopFileId = assignmentMap.has(step.id)
+            ? (assignment?.sopFileId ?? null)
+            : step.sop_file_id;
           await this.assertUserAvailable(responsibleUserId);
           await this.assertTechnicalFileAvailable(sopFileId);
           await execute(
@@ -476,7 +516,9 @@ export class ProductionTaskRepository {
       );
     });
 
-    return this.getTask(id);
+    const updated = await this.getTask(id);
+    this.auditContext.setAfterData(updated);
+    return updated;
   }
 
   async generateMaterialDemand(id: number) {
@@ -509,7 +551,11 @@ export class ProductionTaskRepository {
   async previewMaterialDemand(id: number) {
     const task = await this.getTaskRow(id);
     await this.assertProductMaterialsConfigured(task.product_id);
-    return this.listMaterialRequirementsByProduct(task.product_id, undefined, task.planned_quantity);
+    return this.listMaterialRequirementsByProduct(
+      task.product_id,
+      undefined,
+      task.planned_quantity,
+    );
   }
 
   async previewDispatch(id: number) {
@@ -549,6 +595,7 @@ export class ProductionTaskRepository {
 
   async dispatchTask(id: number, payload: DispatchTaskPayload) {
     const task = await this.assertTaskHasRoute(id);
+    this.auditContext.setBeforeData(await this.getTask(id));
     this.assertTaskConfigurable(task.status);
     const routeSteps = await this.listRouteSteps(task.route_id);
     const assignmentMap = new Map(
@@ -573,9 +620,11 @@ export class ProductionTaskRepository {
       for (const step of routeSteps) {
         const assignment = assignmentMap.get(step.id);
         const responsibleUserId = assignmentMap.has(step.id)
-          ? assignment?.responsibleUserId ?? null
+          ? (assignment?.responsibleUserId ?? null)
           : step.default_owner_id;
-        const sopFileId = assignmentMap.has(step.id) ? assignment?.sopFileId ?? null : step.sop_file_id;
+        const sopFileId = assignmentMap.has(step.id)
+          ? (assignment?.sopFileId ?? null)
+          : step.sop_file_id;
         await this.assertUserAvailable(responsibleUserId);
         await this.assertTechnicalFileAvailable(sopFileId);
         await execute(
@@ -587,21 +636,24 @@ export class ProductionTaskRepository {
           )
           VALUES (?, ?, ?, 'pending', NOW(), NOW())
         `,
-          [
-            id,
-            step.id,
-            responsibleUserId,
-          ],
+          [id, step.id, responsibleUserId],
         );
       }
 
-      await execute(connection, 'UPDATE production_batches SET updated_at = NOW() WHERE id = ? AND is_deleted = 0', [id]);
+      await execute(
+        connection,
+        'UPDATE production_batches SET updated_at = NOW() WHERE id = ? AND is_deleted = 0',
+        [id],
+      );
     });
 
-    return this.getTask(id);
+    const updated = await this.getTask(id);
+    this.auditContext.setAfterData(updated);
+    return updated;
   }
 
   async startTask(id: number) {
+    this.auditContext.setBeforeData(await this.getTask(id));
     const check = await this.previewStartTask(id);
     if (!check.canStart) {
       throw new BadRequestException(check.blockers.join('；'));
@@ -617,20 +669,24 @@ export class ProductionTaskRepository {
       [id],
     );
 
-    return this.getTask(id);
+    const updated = await this.getTask(id);
+    this.auditContext.setAfterData(updated);
+    return updated;
   }
 
   async previewStartTask(id: number) {
     const task = await this.getTaskRow(id);
     // 开始生产的硬条件是“已生成需求 + 所有工序已派工”；物料未分配仅作为警告。
-    const [summary] = await this.database.query<(RowDataPacket & {
-      material_requirement_count: number;
-      unallocated_material_count: number;
-      partial_material_count: number;
-      critical_unallocated_count: number;
-      step_count: number;
-      unassigned_step_count: number;
-    })[]>(
+    const [summary] = await this.database.query<
+      (RowDataPacket & {
+        material_requirement_count: number;
+        unallocated_material_count: number;
+        partial_material_count: number;
+        critical_unallocated_count: number;
+        step_count: number;
+        unassigned_step_count: number;
+      })[]
+    >(
       `
       SELECT
         (SELECT COUNT(*) FROM batch_material_usages bmu
@@ -696,7 +752,7 @@ export class ProductionTaskRepository {
   }
 
   async finishTask(id: number) {
-    await this.getTaskRow(id);
+    this.auditContext.setBeforeData(await this.getTask(id));
     await this.database.execute(
       `
       UPDATE production_batches
@@ -708,18 +764,30 @@ export class ProductionTaskRepository {
       [id],
     );
 
-    return this.getTask(id);
+    const updated = await this.getTask(id);
+    this.auditContext.setAfterData(updated);
+    return updated;
   }
 
   async updateStepRecord(taskId: number, recordId: number, payload: UpdateBatchStepRecordPayload) {
     await this.getTaskRow(taskId);
     const current = await this.getStepRecordRow(taskId, recordId);
+    this.auditContext.setBeforeData(current);
     const responsibleUserId =
-      payload.responsibleUserId === undefined ? current.responsible_user_id : nullableId(payload.responsibleUserId);
-    const sopFileId = payload.sopFileId === undefined ? current.sop_file_id : nullableId(payload.sopFileId);
-    const status = payload.status === undefined ? readStepStatus(current.status) : readStepStatus(payload.status);
+      payload.responsibleUserId === undefined
+        ? current.responsible_user_id
+        : nullableId(payload.responsibleUserId);
+    const sopFileId =
+      payload.sopFileId === undefined ? current.sop_file_id : nullableId(payload.sopFileId);
+    const status =
+      payload.status === undefined
+        ? readStepStatus(current.status)
+        : readStepStatus(payload.status);
 
     assertStepStatusTransition(current.status, status);
+    if (current.status === 'pending' && status === 'doing') {
+      await this.assertPreviousStepCompleted(taskId, current.step_order);
+    }
     await this.assertUserAvailable(responsibleUserId);
     await this.assertTechnicalFileAvailable(sopFileId);
 
@@ -741,10 +809,18 @@ export class ProductionTaskRepository {
         responsibleUserId,
         status,
         payload.startedAt === undefined ? current.started_at : normalizeDateTime(payload.startedAt),
-        payload.completedAt === undefined ? current.completed_at : normalizeDateTime(payload.completedAt),
-        payload.outputQuantity === undefined ? current.output_quantity : readNullableDecimal(payload.outputQuantity, 'Invalid output quantity'),
-        payload.returnQuantity === undefined ? current.return_quantity : readNullableDecimal(payload.returnQuantity, 'Invalid return quantity'),
-        payload.abnormalQuantity === undefined ? current.abnormal_quantity : readNullableDecimal(payload.abnormalQuantity, 'Invalid abnormal quantity'),
+        payload.completedAt === undefined
+          ? current.completed_at
+          : normalizeDateTime(payload.completedAt),
+        payload.outputQuantity === undefined
+          ? current.output_quantity
+          : readNullableDecimal(payload.outputQuantity, 'Invalid output quantity'),
+        payload.returnQuantity === undefined
+          ? current.return_quantity
+          : readNullableDecimal(payload.returnQuantity, 'Invalid return quantity'),
+        payload.abnormalQuantity === undefined
+          ? current.abnormal_quantity
+          : readNullableDecimal(payload.abnormalQuantity, 'Invalid abnormal quantity'),
         payload.remark === undefined ? current.remark : normalizeOptionalString(payload.remark),
         recordId,
         taskId,
@@ -762,10 +838,16 @@ export class ProductionTaskRepository {
       );
     }
 
+    const updatedStep = await this.getStepRecordRow(taskId, recordId);
+    this.auditContext.setAfterData(updatedStep);
     return this.getTask(taskId);
   }
 
-  async uploadStepSop(taskId: number, recordId: number, payload: { sopFileName: string; sopFileUrl?: string | null }) {
+  async uploadStepSop(
+    taskId: number,
+    recordId: number,
+    payload: { sopFileName: string; sopFileUrl?: string | null },
+  ) {
     await this.getStepRecordRow(taskId, recordId);
     const sopFileName = normalizeOptionalString(payload.sopFileName);
     const sopFileUrl = normalizeOptionalString(payload.sopFileUrl);
@@ -1031,9 +1113,7 @@ export class ProductionTaskRepository {
   }
 
   private async listMaterialRequirements(batchId: number) {
-    const [task] = await this.database.query<
-      (RowDataPacket & { product_id: number })[]
-    >(
+    const [task] = await this.database.query<(RowDataPacket & { product_id: number })[]>(
       `
       SELECT wo.product_id, b.planned_quantity
       FROM production_batches b
@@ -1051,7 +1131,11 @@ export class ProductionTaskRepository {
     return this.listMaterialRequirementsByProduct(task.product_id, batchId, task.planned_quantity);
   }
 
-  private async listMaterialRequirementsByProduct(productId: number, batchId?: number, plannedQuantity?: string | number) {
+  private async listMaterialRequirementsByProduct(
+    productId: number,
+    batchId?: number,
+    plannedQuantity?: string | number,
+  ) {
     const quantity = readNonNegativeDecimal(plannedQuantity ?? 0, 'Invalid planned quantity');
     const rows = await this.database.query<TaskMaterialRequirementRow[]>(
       `
@@ -1270,6 +1354,7 @@ export class ProductionTaskRepository {
       (RowDataPacket & {
         id: number;
         process_route_steps_id: number;
+        step_order: number;
         responsible_user_id: number | null;
         sop_file_id: number | null;
         status: string;
@@ -1285,6 +1370,7 @@ export class ProductionTaskRepository {
       SELECT
         sr.id,
         sr.process_route_steps_id,
+        prs.step_order,
         sr.responsible_user_id,
         COALESCE(prs.sop_file_id, ps.sop_file_id) AS sop_file_id,
         sr.status,
@@ -1310,6 +1396,32 @@ export class ProductionTaskRepository {
     return row;
   }
 
+  private async assertPreviousStepCompleted(batchId: number, stepOrder: number) {
+    if (stepOrder === 1) {
+      return;
+    }
+
+    const [previousStep] = await this.database.query<(RowDataPacket & { status: string })[]>(
+      `
+      SELECT previous_sr.status
+      FROM batch_step_records previous_sr
+      INNER JOIN process_route_steps previous_prs
+        ON previous_prs.id = previous_sr.process_route_steps_id
+        AND previous_prs.is_deleted = 0
+      WHERE previous_sr.batch_id = ?
+        AND previous_sr.is_deleted = 0
+        AND previous_prs.step_order < ?
+      ORDER BY previous_prs.step_order DESC, previous_sr.id DESC
+      LIMIT 1
+    `,
+      [batchId, stepOrder],
+    );
+
+    if (previousStep?.status !== 'completed') {
+      throw new BadRequestException('前一道工序尚未完成，当前工序不能开始');
+    }
+  }
+
   private async assertRouteAvailable(routeId: number | null, productId: number) {
     if (routeId === null) {
       return;
@@ -1319,7 +1431,9 @@ export class ProductionTaskRepository {
       'SELECT category_id FROM products WHERE id = ? AND is_deleted = 0 LIMIT 1',
       [productId],
     );
-    const [route] = await this.database.query<(RowDataPacket & { product_category_id: number | null })[]>(
+    const [route] = await this.database.query<
+      (RowDataPacket & { product_category_id: number | null })[]
+    >(
       'SELECT product_category_id FROM process_routes WHERE id = ? AND status = 1 AND is_deleted = 0 LIMIT 1',
       [routeId],
     );
@@ -1328,7 +1442,11 @@ export class ProductionTaskRepository {
       throw new BadRequestException('Route not found or disabled');
     }
 
-    if (route.product_category_id !== null && product?.category_id !== null && route.product_category_id !== product?.category_id) {
+    if (
+      route.product_category_id !== null &&
+      product?.category_id !== null &&
+      route.product_category_id !== product?.category_id
+    ) {
       throw new BadRequestException('Route product type does not match task product');
     }
   }
@@ -1407,7 +1525,11 @@ export class ProductionTaskRepository {
     }
   }
 
-  private async assertTaskQuantityWithinOrder(orderId: number, newQuantity: number, ignoredTaskId?: number) {
+  private async assertTaskQuantityWithinOrder(
+    orderId: number,
+    newQuantity: number,
+    ignoredTaskId?: number,
+  ) {
     const order = await this.getWorkOrderRow(orderId);
     const params: QueryParam[] = [orderId];
     const ignoredClause = ignoredTaskId ? ' AND id <> ?' : '';
@@ -1416,7 +1538,9 @@ export class ProductionTaskRepository {
       params.push(ignoredTaskId);
     }
 
-    const [row] = await this.database.query<(RowDataPacket & { assigned_quantity: string | number | null })[]>(
+    const [row] = await this.database.query<
+      (RowDataPacket & { assigned_quantity: string | number | null })[]
+    >(
       `
       SELECT COALESCE(SUM(planned_quantity), 0) AS assigned_quantity
       FROM production_batches
@@ -1425,7 +1549,10 @@ export class ProductionTaskRepository {
       params,
     );
 
-    if (decimalNumber(row?.assigned_quantity) + newQuantity > decimalNumber(order.planned_quantity)) {
+    if (
+      decimalNumber(row?.assigned_quantity) + newQuantity >
+      decimalNumber(order.planned_quantity)
+    ) {
       throw new BadRequestException('Task quantity exceeds work order planned quantity');
     }
   }
@@ -1436,7 +1563,9 @@ export class ProductionTaskRepository {
       return;
     }
 
-    const [row] = await this.database.query<(RowDataPacket & { doing_count: number; completed_count: number })[]>(
+    const [row] = await this.database.query<
+      (RowDataPacket & { doing_count: number; completed_count: number })[]
+    >(
       `
       SELECT
         SUM(CASE WHEN status = 'doing' THEN 1 ELSE 0 END) AS doing_count,
@@ -1446,12 +1575,15 @@ export class ProductionTaskRepository {
     `,
       [orderId],
     );
-    const nextStatus = Number(row?.doing_count ?? 0) > 0 || Number(row?.completed_count ?? 0) > 0 ? 'doing' : 'released';
+    const nextStatus =
+      Number(row?.doing_count ?? 0) > 0 || Number(row?.completed_count ?? 0) > 0
+        ? 'doing'
+        : 'released';
 
-    await this.database.execute('UPDATE work_orders SET status = ?, updated_at = NOW() WHERE id = ? AND is_deleted = 0', [
-      nextStatus,
-      orderId,
-    ]);
+    await this.database.execute(
+      'UPDATE work_orders SET status = ?, updated_at = NOW() WHERE id = ? AND is_deleted = 0',
+      [nextStatus, orderId],
+    );
   }
 
   private async generateBatchNo() {

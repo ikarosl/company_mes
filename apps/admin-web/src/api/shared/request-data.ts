@@ -23,6 +23,12 @@ export type QueryParams = PageQuery & {
   logType?: string;
   module?: string;
   userId?: string;
+  action?: string;
+  targetType?: string;
+  targetId?: string;
+  requestId?: string;
+  startedAt?: string;
+  endedAt?: string;
   ownerId?: string;
   productId?: string;
   customerOrderNo?: string;

@@ -7,6 +7,7 @@ import type {
 } from '@company/api-contract';
 import { PermissionGuard } from '../../auth/permission.guard.js';
 import { RequirePermission } from '../../auth/require-permission.decorator.js';
+import { Audit } from '../../operation-log/audit.decorator.js';
 import { readId } from '../../shared/request-utils.js';
 import { SystemRoleRepository } from './system-role.repository.js';
 
@@ -22,18 +23,36 @@ export class SystemRoleController {
   }
 
   @RequirePermission(PERMISSIONS.system.roles.create)
+  @Audit({
+    module: 'system',
+    action: '创建系统角色',
+    targetType: 'role',
+    businessKeyBodyField: 'code',
+  })
   @Post('roles')
   createRole(@Body() body: CreateSystemRolePayload) {
     return this.roles.createRole(body);
   }
 
   @RequirePermission(PERMISSIONS.system.roles.update)
+  @Audit({
+    module: 'system',
+    action: '修改系统角色',
+    targetType: 'role',
+    targetParams: { roleId: 'id' },
+  })
   @Put('roles/:id')
   updateRole(@Param('id') id: string, @Body() body: UpdateSystemRolePayload) {
     return this.roles.updateRole(readId(id), body);
   }
 
   @RequirePermission(PERMISSIONS.system.roles.delete)
+  @Audit({
+    module: 'system',
+    action: '删除系统角色',
+    targetType: 'role',
+    targetParams: { roleId: 'id' },
+  })
   @Delete('roles/:id')
   deleteRole(@Param('id') id: string) {
     return this.roles.deleteRole(readId(id));
@@ -46,18 +65,36 @@ export class SystemRoleController {
   }
 
   @RequirePermission(PERMISSIONS.system.roles.enable)
+  @Audit({
+    module: 'system',
+    action: '启用系统角色',
+    targetType: 'role',
+    targetParams: { roleId: 'id' },
+  })
   @Put('roles/:id/enable')
   enableRole(@Param('id') id: string) {
     return this.roles.updateRole(readId(id), { status: 1 });
   }
 
   @RequirePermission(PERMISSIONS.system.roles.disable)
+  @Audit({
+    module: 'system',
+    action: '停用系统角色',
+    targetType: 'role',
+    targetParams: { roleId: 'id' },
+  })
   @Put('roles/:id/disable')
   disableRole(@Param('id') id: string) {
     return this.roles.updateRole(readId(id), { status: 0 });
   }
 
   @RequirePermission(PERMISSIONS.system.roles.assignPermissions)
+  @Audit({
+    module: 'system',
+    action: '分配角色权限',
+    targetType: 'role',
+    targetParams: { roleId: 'id' },
+  })
   @Put('roles/:id/permissions')
   assignRolePermissions(@Param('id') id: string, @Body() body: AssignSystemRolePermissionsPayload) {
     return this.roles.assignRolePermissions(readId(id), body);

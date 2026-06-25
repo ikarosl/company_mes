@@ -63,6 +63,7 @@ export interface WorkerTaskItem extends ProductionBatchItem {
   stepOrder: number;
   stepName: string;
   stepStatus: BatchStepStatus;
+  canStart: boolean;
   startedAt: string | null;
   completedAt: string | null;
   outputQuantity: string | null;

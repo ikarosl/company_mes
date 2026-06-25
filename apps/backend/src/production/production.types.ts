@@ -96,6 +96,7 @@ export interface WorkerTaskListRow extends ProductionTaskListRow {
   step_order: number;
   step_name: string;
   step_status: string;
+  can_start: number;
   step_started_at: Date | null;
   step_completed_at: Date | null;
   output_quantity: string | number | null;

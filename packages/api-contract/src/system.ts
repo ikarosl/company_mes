@@ -59,10 +59,20 @@ export interface OperationLogListItem {
   username: string | null;
   targetId: string | null;
   targetType: string | null;
+  targetIds: unknown;
+  businessKey: string | null;
   result: string;
+  requestId: string | null;
+  httpMethod: string | null;
+  route: string | null;
+  httpStatus: number | null;
+  durationMs: number | null;
+  requestData: unknown;
   beforeData: unknown;
   afterData: unknown;
   ip: string | null;
+  userAgent: string | null;
+  errorCode: string | null;
   remark: string | null;
   createdAt: string;
 }

@@ -8,6 +8,7 @@ import type {
 import { CurrentUser } from '../../auth/current-user.decorator.js';
 import { PermissionGuard } from '../../auth/permission.guard.js';
 import { RequirePermission } from '../../auth/require-permission.decorator.js';
+import { Audit } from '../../operation-log/audit.decorator.js';
 import { readPagination } from '../../shared/request-utils.js';
 import { MaterialTransactionRepository } from './material-transaction.repository.js';
 
@@ -43,18 +44,34 @@ export class MaterialTransactionController {
   }
 
   @RequirePermission(PERMISSIONS.warehouse.materialTransactions.inbound)
+  @Audit({
+    module: 'warehouse',
+    action: '物料入库',
+    targetType: 'material_transaction',
+    businessKeyBodyField: 'materialBatchNo',
+  })
   @Post('inbound')
   inbound(@Body() body: MaterialInboundPayload, @CurrentUser('id') userId: string) {
     return this.transactions.inbound(body, Number(userId));
   }
 
   @RequirePermission(PERMISSIONS.warehouse.materialTransactions.outbound)
+  @Audit({
+    module: 'warehouse',
+    action: '生产领料出库',
+    targetType: 'material_transaction',
+  })
   @Post('outbound')
   outbound(@Body() body: MaterialOutboundPayload, @CurrentUser('id') userId: string) {
     return this.transactions.outbound(body, Number(userId));
   }
 
   @RequirePermission(PERMISSIONS.warehouse.materialTransactions.return)
+  @Audit({
+    module: 'warehouse',
+    action: '生产退料',
+    targetType: 'material_transaction',
+  })
   @Post('return')
   returnMaterial(@Body() body: MaterialReturnPayload, @CurrentUser('id') userId: string) {
     return this.transactions.returnMaterial(body, Number(userId));

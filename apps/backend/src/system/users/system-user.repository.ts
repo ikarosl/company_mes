@@ -16,6 +16,7 @@ import type {
   UpdateSystemUserStatusPayload,
 } from '@company/api-contract';
 import { DatabaseService, type QueryParam } from '../../database/database.service.js';
+import { AuditContextService } from '../../operation-log/audit-context.service.js';
 import { type PaginationOptions, toPageResult } from '../../shared/request-utils.js';
 import type { CountRow, UserListRow, UserRow } from '../system.types.js';
 import {
@@ -31,7 +32,10 @@ import {
 
 @Injectable()
 export class SystemUserRepository {
-  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
+  constructor(
+    @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(AuditContextService) private readonly auditContext: AuditContextService,
+  ) {}
 
   async listUsers(pagination: PaginationOptions) {
     const [totalRow] = await this.database.query<CountRow[]>(`
@@ -112,6 +116,7 @@ export class SystemUserRepository {
 
   async updateUser(id: number, payload: UpdateSystemUserPayload) {
     const current = await this.getUserRow(id);
+    this.auditContext.setBeforeData(current);
     const username =
       payload.username === undefined
         ? current.username
@@ -147,11 +152,13 @@ export class SystemUserRepository {
       ],
     );
 
-    return this.getUserListItem(id);
+    const updated = await this.getUserListItem(id);
+    this.auditContext.setAfterData(updated);
+    return updated;
   }
 
   async changeUserStatus(id: number, payload: UpdateSystemUserStatusPayload) {
-    await this.getUserRow(id);
+    this.auditContext.setBeforeData(await this.getUserRow(id));
     const status = readTinyStatus(payload.status);
 
     await this.database.execute(
@@ -163,11 +170,18 @@ export class SystemUserRepository {
       [status, id],
     );
 
-    return this.getUserListItem(id);
+    const updated = await this.getUserListItem(id);
+    this.auditContext.setAfterData(updated);
+    return updated;
   }
 
   async resetUserPassword(id: number, payload: ResetSystemUserPasswordPayload) {
-    await this.getUserRow(id);
+    const user = await this.getUserRow(id);
+    this.auditContext.setBeforeData({
+      userId: String(user.id),
+      username: user.username,
+      passwordChanged: false,
+    });
     const passwordHash = await bcrypt.hash(readPassword(payload.password), 10);
 
     await this.database.execute(
@@ -179,11 +193,17 @@ export class SystemUserRepository {
       [passwordHash, id],
     );
 
+    this.auditContext.setAfterData({
+      userId: String(user.id),
+      username: user.username,
+      passwordChanged: true,
+    });
     return { success: true };
   }
 
   async assignUserRoles(id: number, payload: AssignSystemUserRolesPayload) {
     await this.getUserRow(id);
+    this.auditContext.setBeforeData(await this.getUserListItem(id));
     const roleIds = readRoleIds(payload.roleIds);
     await this.assertRolesAvailable(roleIds);
 
@@ -191,7 +211,9 @@ export class SystemUserRepository {
       await replaceUserRoles(connection, id, roleIds);
     });
 
-    return this.getUserListItem(id);
+    const updated = await this.getUserListItem(id);
+    this.auditContext.setAfterData(updated);
+    return updated;
   }
 
   private async getUserRow(id: number) {
