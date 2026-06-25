@@ -3,7 +3,7 @@
     <section class="query-panel">
       <el-form :inline="true" :model="query">
         <el-form-item label="物料">
-          <el-input v-model="query.keyword" clearable placeholder="名称或型号" />
+          <el-input v-model="query.keyword" clearable placeholder="物料、批次、供应商、协议、生产批次或工单" />
         </el-form-item>
         <el-form-item label="物料批次">
           <el-input v-model="query.materialBatchNo" clearable placeholder="批次号" />
@@ -212,7 +212,10 @@ import { warehouseApi } from "../../api/warehouse";
 import { DialogWidth } from "../../utils/dialog";
 import { EMessage } from "../../utils/message";
 
-/** 统一整合 material_batches 入库记录与 batch_material_usages 累计出库记录。 */
+/**
+ * 统一整合物料批次入库记录与生产批次累计出库记录。
+ * 入库行展示原始入库总量，不随当前库存扣减而改变。
+ */
 const rows = ref<MaterialTransactionListItem[]>([]);
 const products = ref<ProductListItem[]>([]);
 const demands = ref<MaterialTransactionDemandOption[]>([]);

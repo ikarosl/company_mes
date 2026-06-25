@@ -3,7 +3,7 @@
     <section class="query-panel">
       <el-form class="query-form" :inline="true" :model="query">
         <el-form-item label="关键字">
-          <el-input v-model="query.keyword" clearable placeholder="批次号/工单号/产品" />
+          <el-input v-model="query.keyword" clearable placeholder="批次、工单、产品、路线、负责人或物料" />
         </el-form-item>
         <el-form-item label="产品">
           <el-select v-model="query.productId" clearable filterable placeholder="全部">

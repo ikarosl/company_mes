@@ -250,9 +250,18 @@ export class MaterialInventoryRepository {
     const params: QueryParam[] = [];
 
     if (filters.keyword?.trim()) {
-      clauses.push('(p.product_model LIKE ? OR p.product_name LIKE ?)');
+      clauses.push(`(
+        p.product_model LIKE ?
+        OR p.product_name LIKE ?
+        OR c.product_attribute LIKE ?
+        OR c.product_type LIKE ?
+        OR mb.material_batch_no LIKE ?
+        OR mb.supplier_name LIKE ?
+        OR mb.protocol_code LIKE ?
+        OR mb.remark LIKE ?
+      )`);
       const keyword = `%${filters.keyword.trim()}%`;
-      params.push(keyword, keyword);
+      params.push(keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword);
     }
 
     if (filters.materialBatchNo?.trim()) {

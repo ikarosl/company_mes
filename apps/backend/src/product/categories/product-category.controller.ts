@@ -19,6 +19,7 @@ export class ProductCategoryController {
   @RequirePermission(PERMISSIONS.product.categories.view)
   @Get('product-categories')
   listCategories(
+    @Query('keyword') keyword?: string,
     @Query('productAttribute') productAttribute?: string,
     @Query('productType') productType?: string,
     @Query('status') status?: string,
@@ -26,7 +27,7 @@ export class ProductCategoryController {
     @Query('pageSize') pageSize?: string,
   ) {
     return this.categories.listCategories(
-      { productAttribute, productType, status },
+      { keyword, productAttribute, productType, status },
       readPagination(page, pageSize),
     );
   }

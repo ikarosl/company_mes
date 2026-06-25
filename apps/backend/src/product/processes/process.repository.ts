@@ -210,9 +210,19 @@ export class ProcessRepository {
     const params: QueryParam[] = [];
 
     if (filters.keyword?.trim()) {
-      clauses.push('(ps.step_code LIKE ? OR ps.step_name LIKE ?)');
+      clauses.push(`(
+        ps.step_code LIKE ?
+        OR ps.step_name LIKE ?
+        OR ps.remark LIKE ?
+        OR EXISTS (
+          SELECT 1 FROM technical_files keyword_file
+          WHERE keyword_file.id = ps.sop_file_id
+            AND keyword_file.is_deleted = 0
+            AND (keyword_file.file_code LIKE ? OR keyword_file.file_name LIKE ?)
+        )
+      )`);
       const keyword = `%${filters.keyword.trim()}%`;
-      params.push(keyword, keyword);
+      params.push(keyword, keyword, keyword, keyword, keyword);
     }
 
     if (filters.status === 'enabled') {

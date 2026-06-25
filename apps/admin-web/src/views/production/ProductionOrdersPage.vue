@@ -3,17 +3,26 @@
     <section class="query-panel">
       <el-form class="query-form" :inline="true" :model="query">
         <el-form-item label="关键字">
-          <el-input v-model="query.keyword" clearable placeholder="工单号/产品" />
+          <el-input v-model="query.keyword" clearable placeholder="工单、客户、产品或负责人" />
+        </el-form-item>
+        <el-form-item label="客户订单号">
+          <el-input
+            v-model="query.customerOrderNo"
+            clearable
+            placeholder="客户订单号"
+            @keyup.enter="searchOrders"
+          />
+        </el-form-item>
+        <el-form-item label="客户名称">
+          <el-input
+            v-model="query.customerName"
+            clearable
+            placeholder="客户名称"
+            @keyup.enter="searchOrders"
+          />
         </el-form-item>
         <el-form-item label="产品">
-          <el-select v-model="query.productId" clearable filterable placeholder="全部">
-            <el-option
-              v-for="product in productOptions"
-              :key="product.id"
-              :label="formatProduct(product)"
-              :value="product.id"
-            />
-          </el-select>
+          <OrderProductSelect v-model="query.productId" placeholder="输入型号或名称筛选" />
         </el-form-item>
         <el-form-item label="负责人">
           <el-select v-model="query.ownerId" clearable filterable placeholder="全部">
@@ -120,14 +129,11 @@
             <el-input v-model="orderForm.orderNo" placeholder="请输入工单号" />
           </el-form-item>
           <el-form-item label="产品" required>
-            <el-select v-model="orderForm.productId" filterable placeholder="请选择产品" @change="handleOrderProductChange">
-              <el-option
-                v-for="product in productOptions"
-                :key="product.id"
-                :label="formatProduct(product)"
-                :value="product.id"
-              />
-            </el-select>
+            <OrderProductSelect
+              v-model="orderForm.productId"
+              placeholder="请输入产品型号或名称"
+              @change="handleOrderProductChange"
+            />
           </el-form-item>
           <el-form-item label="计划数量" required>
             <el-input-number v-model="orderForm.plannedQuantity" :min="0.0001" :precision="4" :step="1" />
@@ -166,7 +172,6 @@
           <el-descriptions-item label="工单号">{{ activeOrder.orderNo }}</el-descriptions-item>
           <el-descriptions-item label="产品">{{ activeOrder.productName }}</el-descriptions-item>
           <el-descriptions-item label="型号">{{ activeOrder.productModel }}</el-descriptions-item>
-          <el-descriptions-item label="工艺路线">{{ activeOrder.routeName || '-' }}</el-descriptions-item>
           <el-descriptions-item label="计划数量">{{ formatQuantity(activeOrder.plannedQuantity) }}</el-descriptions-item>
           <el-descriptions-item label="已分配">{{ formatQuantity(activeOrder.assignedQuantity) }}</el-descriptions-item>
           <el-descriptions-item label="客户订单号">{{ activeOrder.customerOrderNo || '-' }}</el-descriptions-item>
@@ -247,8 +252,13 @@
           />
         </el-form-item>
         <el-form-item label="工艺路线">
-          <el-select v-model="batchForm.routeId" clearable filterable placeholder="默认沿用工单路线">
-            <el-option v-for="route in routeOptions" :key="route.id" :label="route.routeName" :value="route.id" />
+          <el-select v-model="batchForm.routeId" clearable filterable placeholder="不选择则使用产品默认路线">
+            <el-option
+              v-for="route in routeOptions"
+              :key="route.id"
+              :label="formatRoute(route)"
+              :value="route.id"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="负责人">
@@ -285,7 +295,6 @@ import { ElMessageBox } from 'element-plus';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type {
   ProcessRouteListItem,
-  ProductListItem,
   ProductionBatchItem,
   ProductionBatchStatus,
   SystemUserListItem,
@@ -296,6 +305,7 @@ import type {
 import { productApi } from '../../api/product';
 import { productionApi } from '../../api/production';
 import { systemApi } from '../../api/system';
+import OrderProductSelect from '../../components/business/OrderProductSelect.vue';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
 
@@ -318,12 +328,13 @@ const batchStatusOptions: Array<{ value: ProductionBatchStatus; label: string; t
 ];
 
 const orders = ref<WorkOrderListItem[]>([]);
-const productOptions = ref<ProductListItem[]>([]);
 const routeOptions = ref<ProcessRouteListItem[]>([]);
 const userOptions = ref<SystemUserListItem[]>([]);
 const activeOrder = ref<WorkOrderDetail | null>(null);
 const taskOrder = ref<WorkOrderListItem | null>(null);
 const taskBatches = ref<ProductionBatchItem[]>([]);
+/** 当前工单产品的默认路线，仅用于新建批次时带出建议值。 */
+const productDefaultRouteId = ref<string | null>(null);
 const loading = ref(false);
 const submitting = ref(false);
 const total = ref(0);
@@ -336,7 +347,15 @@ const batchFormDialogVisible = ref(false);
 const editingOrderId = ref<string | null>(null);
 const editingBatchId = ref<string | null>(null);
 
-const query = reactive({ keyword: '', productId: '', ownerId: '', status: '' });
+/** 工单查询条件，客户订单号和客户名称分别支持模糊匹配。 */
+const query = reactive({
+  keyword: '',
+  customerOrderNo: '',
+  customerName: '',
+  productId: '',
+  ownerId: '',
+  status: '',
+});
 const orderForm = reactive({
   orderNo: '',
   productId: '',
@@ -373,13 +392,7 @@ const batchQuantityMax = computed(() => {
 });
 
 const loadOptions = async () => {
-  const [products, routes, users] = await Promise.all([
-    productApi.listProducts({ page: 1, pageSize: 100, status: 'enabled' }),
-    productApi.listRoutes({ page: 1, pageSize: 100, status: 'enabled' }),
-    systemApi.listUsers({ status: 'enabled' }),
-  ]);
-  productOptions.value = products.items;
-  routeOptions.value = routes.items;
+  const [users] = await Promise.all([systemApi.listUsers({ status: 'enabled' })]);
   userOptions.value = users;
 };
 
@@ -390,6 +403,8 @@ const loadOrders = async () => {
       page: currentPage.value,
       pageSize: pageSize.value,
       keyword: query.keyword,
+      customerOrderNo: query.customerOrderNo,
+      customerName: query.customerName,
       productId: query.productId,
       ownerId: query.ownerId,
       status: query.status,
@@ -428,7 +443,14 @@ const searchOrders = async () => {
 };
 
 const resetQuery = async () => {
-  Object.assign(query, { keyword: '', productId: '', ownerId: '', status: '' });
+  Object.assign(query, {
+    keyword: '',
+    customerOrderNo: '',
+    customerName: '',
+    productId: '',
+    ownerId: '',
+    status: '',
+  });
   currentPage.value = 1;
   await loadOrders();
 };
@@ -518,7 +540,13 @@ const openDetail = async (row: WorkOrderListItem) => {
 
 const openTasks = async (row: WorkOrderListItem) => {
   taskOrder.value = row;
-  taskBatches.value = await productionApi.listOrderBatches(row.id);
+  const [batches, productRoutes] = await Promise.all([
+    productionApi.listOrderBatches(row.id),
+    productApi.getProductRoutes(row.productId),
+  ]);
+  taskBatches.value = batches;
+  routeOptions.value = productRoutes.routes;
+  productDefaultRouteId.value = productRoutes.defaultRouteId;
   taskDialogVisible.value = true;
 };
 
@@ -526,7 +554,7 @@ const resetBatchForm = () => {
   const maxQuantity = batchQuantityMax.value ?? 1;
   Object.assign(batchForm, {
     batchNo: '',
-    routeId: taskOrder.value?.routeId ?? '',
+    routeId: productDefaultRouteId.value ?? '',
     plannedQuantity: Math.min(1, Math.max(maxQuantity, 0.0001)),
     ownerId: taskOrder.value?.ownerId ?? '',
     status: 'pending' as ProductionBatchStatus,
@@ -629,7 +657,9 @@ const canCloseOrder = (row: WorkOrderListItem) => ['released', 'completed'].incl
 const canCancelOrder = (row: WorkOrderListItem) => ['draft', 'released', 'doing'].includes(row.status);
 const getOrderStatusMeta = (status: WorkOrderStatus) => orderStatusOptions.find((item) => item.value === status) ?? orderStatusOptions[0];
 const getBatchStatusMeta = (status: ProductionBatchStatus) => batchStatusOptions.find((item) => item.value === status) ?? batchStatusOptions[0];
-const formatProduct = (product: ProductListItem) => `${product.productModel} / ${product.productName}`;
+/** 路线名称附带版本号，避免同名不同版本在批次选择时无法区分。 */
+const formatRoute = (route: ProcessRouteListItem) =>
+  `${route.routeName}${route.version ? ` / ${route.version}` : ''}`;
 
 const formatQuantity = (value: string | number | null) => {
   const amount = Number(value ?? 0);

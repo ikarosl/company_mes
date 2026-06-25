@@ -10,18 +10,29 @@ import type { RowDataPacket } from 'mysql2/promise';
 import type {
   ConfigureProductMaterialsPayload,
   CreateProductPayload,
+  MaterialBatchListItem,
+  MaterialBatchStatus,
   ProductMaterialPayload,
   UpdateProductPayload,
 } from '@company/api-contract';
 import { DatabaseService, type QueryParam } from '../../database/database.service.js';
 import { execute } from '../../shared/repository.helpers.js';
 import { type PaginationOptions, toPageResult } from '../../shared/request-utils.js';
-import type { CountRow, ProductListRow, ProductMaterialListRow, ProductRow } from '../product.types.js';
+import type {
+  CountRow,
+  ProductInventoryBatchRow,
+  ProductListRow,
+  ProductMaterialListRow,
+  ProductRouteListRow,
+  ProductRow,
+} from '../product.types.js';
 import {
+  mapProcessRoute,
   mapProductMaterial,
   mapProduct,
   normalizeOptionalString,
   normalizeSpecValues,
+  parseSpecValues,
   nullableId,
   readAcquireMethod,
   readPositiveDecimal,
@@ -32,6 +43,9 @@ import {
 
 export interface ProductFilters {
   keyword?: string;
+  specKeyword?: string;
+  /** 产品属性集合，用于区分订单产品与原材料、辅料。 */
+  productAttributes?: string;
   categoryId?: string;
   acquireMethod?: string;
   status?: string;
@@ -146,7 +160,7 @@ export class ProductRepository {
         : readAcquireMethod(payload.acquireMethod);
     const specValues =
       payload.specValues === undefined
-        ? current.spec_values
+        ? JSON.stringify(parseSpecValues(current.spec_values))
         : JSON.stringify(normalizeSpecValues(payload.specValues));
     const status = payload.status === undefined ? current.status : readTinyStatus(payload.status);
     const remark =
@@ -202,17 +216,116 @@ export class ProductRepository {
 
   async getProductInventory(id: number) {
     await this.getProductRow(id);
+    const rows = await this.database.query<ProductInventoryBatchRow[]>(
+      `
+      SELECT
+        mb.id,
+        mb.product_id,
+        p.product_model,
+        p.product_name,
+        c.product_attribute,
+        c.product_type,
+        mb.material_batch_no,
+        mb.supplier_name,
+        mb.protocol_code,
+        mb.received_date,
+        mb.quantity,
+        COALESCE(u.reserved_quantity, 0) AS reserved_quantity,
+        COALESCE(u.used_quantity, 0) AS used_quantity,
+        mb.status,
+        mb.remark,
+        mb.created_at,
+        mb.updated_at
+      FROM material_batches mb
+      INNER JOIN products p ON p.id = mb.product_id AND p.is_deleted = 0
+      LEFT JOIN product_categories c ON c.id = p.category_id AND c.is_deleted = 0
+      LEFT JOIN (
+        SELECT
+          material_batch_id,
+          SUM(GREATEST(reserved_quantity - used_quantity, 0)) AS reserved_quantity,
+          SUM(used_quantity) AS used_quantity
+        FROM batch_material_usages
+        WHERE is_deleted = 0 AND material_batch_id IS NOT NULL
+        GROUP BY material_batch_id
+      ) u ON u.material_batch_id = mb.id
+      WHERE mb.product_id = ? AND mb.is_deleted = 0
+      ORDER BY mb.id DESC
+    `,
+      [id],
+    );
+    const batches = rows.map(mapProductInventoryBatch);
+
     return {
       productId: String(id),
-      batches: [],
+      totalQuantity: decimalTotal(batches.map((item) => item.quantity)),
+      reservedQuantity: decimalTotal(batches.map((item) => item.reservedQuantity)),
+      usedQuantity: decimalTotal(batches.map((item) => item.usedQuantity)),
+      availableQuantity: decimalTotal(batches.map((item) => item.availableQuantity)),
+      batches,
     };
   }
 
   async getProductRoutes(id: number) {
-    await this.getProductRow(id);
+    const [product] = await this.database.query<
+      (RowDataPacket & { category_id: number | null; default_route_id: number | null })[]
+    >(
+      `
+      SELECT category_id, default_route_id
+      FROM products
+      WHERE id = ? AND is_deleted = 0
+      LIMIT 1
+    `,
+      [id],
+    );
+
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    const rows = await this.database.query<ProductRouteListRow[]>(
+      `
+      SELECT
+        r.id,
+        r.route_code,
+        r.route_name,
+        r.product_category_id,
+        c.product_attribute,
+        c.product_type,
+        r.version,
+        r.status,
+        r.remark,
+        COUNT(DISTINCT s.id) AS step_count,
+        GROUP_CONCAT(DISTINCT ps.step_name ORDER BY s.step_order SEPARATOR ' -> ') AS process_summary,
+        r.created_at,
+        r.updated_at,
+        CASE WHEN r.id = ? THEN 1 ELSE 0 END AS is_default
+      FROM process_routes r
+      LEFT JOIN process_route_steps s ON s.route_id = r.id AND s.is_deleted = 0
+      LEFT JOIN process_steps ps ON ps.id = s.process_step_id AND ps.is_deleted = 0
+      LEFT JOIN product_categories c ON c.id = r.product_category_id AND c.is_deleted = 0
+      WHERE r.is_deleted = 0
+        AND (
+          r.id = ?
+          OR r.product_category_id = ?
+          OR r.product_category_id IS NULL
+        )
+      GROUP BY
+        r.id, r.route_code, r.route_name, r.product_category_id,
+        c.product_attribute, c.product_type, r.version, r.status,
+        r.remark, r.created_at, r.updated_at
+      ORDER BY is_default DESC, r.status DESC, r.id DESC
+    `,
+      [product.default_route_id, product.default_route_id, product.category_id],
+    );
+
     return {
       productId: String(id),
-      routes: [],
+      defaultRouteId:
+        product.default_route_id === null ? null : String(product.default_route_id),
+      routes: rows.map((row) => ({
+        ...mapProcessRoute(row),
+        isDefault: row.is_default === 1,
+      })),
     };
   }
 
@@ -501,9 +614,41 @@ export class ProductRepository {
     const params: QueryParam[] = [];
 
     if (filters.keyword?.trim()) {
-      clauses.push('(p.product_model LIKE ? OR p.product_name LIKE ?)');
+      clauses.push(`(
+        p.product_model LIKE ?
+        OR p.product_name LIKE ?
+        OR c.product_attribute LIKE ?
+        OR c.product_type LIKE ?
+        OR CONVERT(p.spec_values USING utf8mb4) LIKE ?
+        OR p.remark LIKE ?
+      )`);
       const keyword = `%${filters.keyword.trim()}%`;
-      params.push(keyword, keyword);
+      params.push(keyword, keyword, keyword, keyword, keyword, keyword);
+    }
+
+    if (filters.specKeyword?.trim()) {
+      // 规格参数存储为 JSON 数组，转为 utf8mb4 文本后可同时模糊匹配参数名、值和单位。
+      clauses.push('CONVERT(p.spec_values USING utf8mb4) LIKE ?');
+      params.push(`%${filters.specKeyword.trim()}%`);
+    }
+
+    if (filters.productAttributes?.trim()) {
+      /**
+       * 产品和物料共用 products 表，通过分类属性区分。
+       * 多属性筛选使用参数占位符，避免把前端传值直接拼接进 SQL。
+       */
+      const productAttributes = [
+        ...new Set(
+          filters.productAttributes
+            .split(',')
+            .map((item) => item.trim())
+            .filter(Boolean),
+        ),
+      ];
+      if (productAttributes.length > 0) {
+        clauses.push(`c.product_attribute IN (${productAttributes.map(() => '?').join(', ')})`);
+        params.push(...productAttributes);
+      }
     }
 
     if (filters.categoryId?.trim()) {
@@ -686,3 +831,68 @@ export class ProductRepository {
     );
   }
 }
+
+/** 产品库存接口沿用库存管理模块的数量及状态计算口径。 */
+const mapProductInventoryBatch = (row: ProductInventoryBatchRow): MaterialBatchListItem => {
+  const quantity = decimalNumber(row.quantity);
+  const reservedQuantity = decimalNumber(row.reserved_quantity);
+  const usedQuantity = decimalNumber(row.used_quantity);
+  const availableQuantity = quantity - reservedQuantity;
+
+  return {
+    id: String(row.id),
+    productId: String(row.product_id),
+    productModel: row.product_model,
+    productName: row.product_name,
+    productAttribute: row.product_attribute,
+    productType: row.product_type,
+    materialBatchNo: row.material_batch_no,
+    supplierName: row.supplier_name,
+    protocolCode: row.protocol_code,
+    receivedDate: row.received_date ? formatDate(row.received_date) : null,
+    quantity: formatDecimal(quantity),
+    reservedQuantity: formatDecimal(reservedQuantity),
+    usedQuantity: formatDecimal(usedQuantity),
+    availableQuantity: formatDecimal(availableQuantity),
+    status:
+      row.status === 'disabled'
+        ? 'disabled'
+        : deriveMaterialBatchStatus(quantity, reservedQuantity, usedQuantity),
+    remark: row.remark,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+  };
+};
+
+const deriveMaterialBatchStatus = (
+  quantity: number,
+  reservedQuantity: number,
+  usedQuantity: number,
+): MaterialBatchStatus => {
+  if (quantity - reservedQuantity <= 0) {
+    return 'used_up';
+  }
+
+  if (reservedQuantity > 0 || usedQuantity > 0) {
+    return 'partial_used';
+  }
+
+  return 'available';
+};
+
+const decimalNumber = (value: string | number | null | undefined) => {
+  const amount = Number(value ?? 0);
+  return Number.isFinite(amount) ? amount : 0;
+};
+
+const formatDecimal = (value: number) => value.toFixed(4);
+
+const decimalTotal = (values: string[]) =>
+  formatDecimal(values.reduce((total, value) => total + decimalNumber(value), 0));
+
+const formatDate = (value: Date) => {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};

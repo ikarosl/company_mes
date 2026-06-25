@@ -39,6 +39,8 @@ import {
 
 export interface WorkOrderFilters {
   keyword?: string;
+  customerOrderNo?: string;
+  customerName?: string;
   productId?: string;
   status?: string;
   ownerId?: string;
@@ -84,8 +86,6 @@ export class WorkOrderRepository {
         wo.product_id,
         p.product_model,
         p.product_name,
-        p.default_route_id AS route_id,
-        r.route_name,
         wo.planned_quantity,
         COALESCE(b.assigned_quantity, 0) AS assigned_quantity,
         wo.customer_order_no,
@@ -100,7 +100,6 @@ export class WorkOrderRepository {
         wo.updated_at
       FROM work_orders wo
       INNER JOIN products p ON p.id = wo.product_id AND p.is_deleted = 0
-      LEFT JOIN process_routes r ON r.id = p.default_route_id AND r.is_deleted = 0
       LEFT JOIN users u ON u.id = wo.owner_id
       LEFT JOIN (
         SELECT work_order_id, SUM(planned_quantity) AS assigned_quantity
@@ -276,7 +275,9 @@ export class WorkOrderRepository {
     const plannedQuantity = readDecimal(payload.plannedQuantity, 'Invalid batch quantity');
     const ownerId = payload.ownerId === undefined ? order.owner_id : nullableId(payload.ownerId);
     const batchNo = normalizeOptionalString(payload.batchNo) ?? (await this.generateBatchNo());
-    const routeId = payload.routeId === undefined ? order.route_id : nullableId(payload.routeId);
+    // 工单不绑定路线；批次未显式选择时，才使用产品资料中的默认路线。
+    const routeId =
+      payload.routeId === undefined ? order.product_default_route_id : nullableId(payload.routeId);
 
     await this.assertUserAvailable(ownerId);
     await this.assertRouteAvailable(routeId, order.product_id);
@@ -363,9 +364,32 @@ export class WorkOrderRepository {
     const params: QueryParam[] = [];
 
     if (filters.keyword?.trim()) {
-      clauses.push('(wo.order_no LIKE ? OR p.product_model LIKE ? OR p.product_name LIKE ?)');
+      clauses.push(`(
+        wo.order_no LIKE ?
+        OR wo.customer_order_no LIKE ?
+        OR wo.customer_name LIKE ?
+        OR p.product_model LIKE ?
+        OR p.product_name LIKE ?
+        OR wo.remark LIKE ?
+        OR EXISTS (
+          SELECT 1 FROM users keyword_owner
+          WHERE keyword_owner.id = wo.owner_id
+            AND keyword_owner.deleted_at IS NULL
+            AND (keyword_owner.username LIKE ? OR keyword_owner.display_name LIKE ?)
+        )
+      )`);
       const keyword = `%${filters.keyword.trim()}%`;
-      params.push(keyword, keyword, keyword);
+      params.push(keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword);
+    }
+
+    if (filters.customerOrderNo?.trim()) {
+      clauses.push('wo.customer_order_no LIKE ?');
+      params.push(`%${filters.customerOrderNo.trim()}%`);
+    }
+
+    if (filters.customerName?.trim()) {
+      clauses.push('wo.customer_name LIKE ?');
+      params.push(`%${filters.customerName.trim()}%`);
     }
 
     if (filters.productId?.trim()) {
@@ -389,7 +413,8 @@ export class WorkOrderRepository {
   private async getOrderRow(id: number) {
     const [row] = await this.database.query<WorkOrderRow[]>(
       `
-      SELECT wo.id, wo.order_no, wo.product_id, p.default_route_id AS route_id, wo.planned_quantity,
+      SELECT wo.id, wo.order_no, wo.product_id,
+        p.default_route_id AS product_default_route_id, wo.planned_quantity,
         wo.customer_order_no, wo.customer_name, wo.owner_id, wo.status, wo.plan_start_date, wo.plan_end_date, wo.remark
       FROM work_orders wo
       INNER JOIN products p ON p.id = wo.product_id AND p.is_deleted = 0
@@ -415,8 +440,6 @@ export class WorkOrderRepository {
         wo.product_id,
         p.product_model,
         p.product_name,
-        p.default_route_id AS route_id,
-        r.route_name,
         wo.planned_quantity,
         COALESCE(b.assigned_quantity, 0) AS assigned_quantity,
         wo.customer_order_no,
@@ -431,7 +454,6 @@ export class WorkOrderRepository {
         wo.updated_at
       FROM work_orders wo
       INNER JOIN products p ON p.id = wo.product_id AND p.is_deleted = 0
-      LEFT JOIN process_routes r ON r.id = p.default_route_id AND r.is_deleted = 0
       LEFT JOIN users u ON u.id = wo.owner_id
       LEFT JOIN (
         SELECT work_order_id, SUM(planned_quantity) AS assigned_quantity

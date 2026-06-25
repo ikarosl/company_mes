@@ -12,8 +12,10 @@ import {
   type ProcessRouteDetail,
   type ProcessRouteListItem,
   type ProductCategoryListItem,
+  type ProductInventoryDetail,
   type ProductListItem,
   type ProductMaterialItem,
+  type ProductRouteDetail,
   type UpdateProductCategoryPayload,
   type UpdateProductPayload,
   type UpdateProcessPayload,
@@ -52,12 +54,12 @@ export const productApi = {
       method: 'PUT',
     }),
   getProductInventory: (id: string) =>
-    requestData<{ productId: string; batches: unknown[] }>({
+    requestData<ProductInventoryDetail>({
       url: `${BUSINESS_API.products}/${id}/inventory`,
       method: 'GET',
     }),
   getProductRoutes: (id: string) =>
-    requestData<{ productId: string; routes: unknown[] }>({
+    requestData<ProductRouteDetail>({
       url: `${BUSINESS_API.products}/${id}/routes`,
       method: 'GET',
     }),

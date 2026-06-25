@@ -74,6 +74,7 @@ export class OperationLogService {
 
   async list(
     filters: {
+      keyword?: string;
       logType?: string;
       module?: string;
       result?: string;
@@ -83,6 +84,21 @@ export class OperationLogService {
   ) {
     const clauses = ['1 = 1'];
     const params: QueryParam[] = [];
+
+    if (filters.keyword?.trim()) {
+      clauses.push(`(
+        ol.module LIKE ?
+        OR ol.action LIKE ?
+        OR u.username LIKE ?
+        OR u.display_name LIKE ?
+        OR ol.target_type LIKE ?
+        OR CAST(ol.target_id AS CHAR) LIKE ?
+        OR ol.ip LIKE ?
+        OR ol.remark LIKE ?
+      )`);
+      const keyword = `%${filters.keyword.trim()}%`;
+      params.push(keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword);
+    }
 
     if (filters.logType) {
       clauses.push('ol.log_type = ?');

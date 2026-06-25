@@ -64,6 +64,7 @@ export class MaterialTransactionRepository {
   async list(filters: TransactionFilters, pagination: PaginationOptions) {
     const { where, params } = this.buildFilters(filters);
     // 入库来自 material_batches，生产出库来自 batch_material_usages，后端统一成同一列表口径。
+    // material_batches.quantity 是当前剩余库存，入库历史数量需要加回累计净出库后展示。
     const source = this.transactionSource();
     const [count] = await this.database.query<(RowDataPacket & { total: number })[]>(
       `SELECT COUNT(*) AS total FROM (${source}) tx WHERE ${where}`,
@@ -303,9 +304,19 @@ export class MaterialTransactionRepository {
     const clauses = ['1 = 1'];
     const params: QueryParam[] = [];
     if (filters.keyword?.trim()) {
-      clauses.push('(tx.material_model LIKE ? OR tx.material_name LIKE ?)');
+      clauses.push(`(
+        tx.material_model LIKE ?
+        OR tx.material_name LIKE ?
+        OR tx.material_batch_no LIKE ?
+        OR tx.supplier_name LIKE ?
+        OR tx.protocol_code LIKE ?
+        OR tx.production_batch_no LIKE ?
+        OR tx.order_no LIKE ?
+        OR tx.recorded_by_name LIKE ?
+        OR tx.remark LIKE ?
+      )`);
       const keyword = `%${filters.keyword.trim()}%`;
-      params.push(keyword, keyword);
+      params.push(keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword);
     }
     if (filters.transactionType === 'inbound' || filters.transactionType === 'outbound') {
       clauses.push('tx.transaction_type = ?');
@@ -327,7 +338,8 @@ export class MaterialTransactionRepository {
   }
 
   private transactionSource() {
-    // 轻量系统不新增流水表：该 UNION 只用于整合当前入库批次与累计生产出库记录。
+    // 轻量系统不新增流水表：该 UNION 用于整合入库批次与累计生产出库记录。
+    // 当前库存会随出库扣减，因此入库数量按“当前库存 + 累计已用”还原，避免历史入库行被改小。
     return `
       SELECT
         CONCAT('inbound-', mb.id) AS id,
@@ -339,7 +351,7 @@ export class MaterialTransactionRepository {
         p.product_name AS material_name,
         mb.supplier_name,
         mb.protocol_code,
-        mb.quantity,
+        mb.quantity + COALESCE(batch_usage.used_quantity, 0) AS quantity,
         p.unit,
         NULL AS production_batch_id,
         NULL AS production_batch_no,
@@ -350,6 +362,12 @@ export class MaterialTransactionRepository {
       FROM material_batches mb
       INNER JOIN products p ON p.id = mb.product_id AND p.is_deleted = 0
       LEFT JOIN users creator ON creator.id = mb.created_by
+      LEFT JOIN (
+        SELECT material_batch_id, SUM(used_quantity) AS used_quantity
+        FROM batch_material_usages
+        WHERE is_deleted = 0 AND material_batch_id IS NOT NULL
+        GROUP BY material_batch_id
+      ) batch_usage ON batch_usage.material_batch_id = mb.id
       WHERE mb.is_deleted = 0
       UNION ALL
       SELECT

@@ -11,6 +11,7 @@ export class SystemLogRepository {
 
   async listOperationLogs(
     filters: {
+      keyword?: string;
       logType?: string;
       module?: string;
       result?: string;

@@ -2,6 +2,9 @@
   <div class="product-categories-page">
     <section class="query-panel">
       <el-form class="query-form" :inline="true" :model="query">
+        <el-form-item label="关键字">
+          <el-input v-model="query.keyword" clearable placeholder="属性、类型或备注" @keyup.enter="searchCategories" />
+        </el-form-item>
         <el-form-item label="产品属性">
           <el-input v-model="query.productAttribute" clearable placeholder="请输入产品属性" />
         </el-form-item>
@@ -139,6 +142,7 @@ const detailDialogVisible = ref(false);
 const editingCategoryId = ref<string | null>(null);
 const detailRow = ref<ProductCategoryListItem | null>(null);
 const query = reactive({
+  keyword: '',
   productAttribute: '',
   productType: '',
   status: '',
@@ -156,6 +160,7 @@ const loadCategories = async () => {
     const page = await productApi.listCategories({
       page: currentPage.value,
       pageSize: pageSize.value,
+      keyword: query.keyword,
       productAttribute: query.productAttribute,
       productType: query.productType,
       status: query.status,
@@ -173,6 +178,7 @@ const searchCategories = async () => {
 };
 
 const resetQuery = async () => {
+  query.keyword = '';
   query.productAttribute = '';
   query.productType = '';
   query.status = '';

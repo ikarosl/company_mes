@@ -36,8 +36,6 @@ export const mapWorkOrder = (row: WorkOrderListRow): WorkOrderListItem => {
     productId: String(row.product_id),
     productModel: row.product_model,
     productName: row.product_name,
-    routeId: row.route_id === null ? null : String(row.route_id),
-    routeName: row.route_name,
     plannedQuantity: decimalString(row.planned_quantity),
     assignedQuantity: decimalString(row.assigned_quantity),
     customerOrderNo: row.customer_order_no,

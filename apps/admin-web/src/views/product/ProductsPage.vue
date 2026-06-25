@@ -3,7 +3,15 @@
     <section class="query-panel">
       <el-form class="query-form" :inline="true" :model="query">
         <el-form-item label="关键字">
-          <el-input v-model="query.keyword" clearable placeholder="型号或名称" />
+          <el-input v-model="query.keyword" clearable placeholder="型号、名称、分类、规格或备注" />
+        </el-form-item>
+        <el-form-item label="规格参数">
+          <el-input
+            v-model="query.specKeyword"
+            clearable
+            placeholder="参数名、参数值或单位"
+            @keyup.enter="searchProducts"
+          />
         </el-form-item>
         <el-form-item label="产品分类">
           <el-select v-model="query.categoryId" clearable placeholder="全部">
@@ -305,6 +313,92 @@
         <el-button type="primary" :loading="submitting" @click="submitMaterials">保存物料清单</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="inventoryDialogVisible" title="产品库存" :width="DialogWidth.xl">
+      <template v-if="inventoryProduct">
+        <div class="related-dialog-header">
+          <div>
+            <span class="product-model">{{ inventoryProduct.productModel }}</span>
+            <span class="sub-text">{{ inventoryProduct.productName }}</span>
+          </div>
+        </div>
+        <el-descriptions v-if="inventoryDetail" :column="4" border class="summary-descriptions">
+          <el-descriptions-item label="库存总量">{{ inventoryDetail.totalQuantity }}</el-descriptions-item>
+          <el-descriptions-item label="预留数量">{{ inventoryDetail.reservedQuantity }}</el-descriptions-item>
+          <el-descriptions-item label="已用数量">{{ inventoryDetail.usedQuantity }}</el-descriptions-item>
+          <el-descriptions-item label="可用数量">{{ inventoryDetail.availableQuantity }}</el-descriptions-item>
+        </el-descriptions>
+        <el-table
+          v-loading="relatedLoading"
+          :data="inventoryDetail?.batches ?? []"
+          empty-text="暂无库存批次"
+        >
+          <el-table-column prop="materialBatchNo" label="批次号" min-width="150" />
+          <el-table-column prop="supplierName" label="供应商" min-width="140">
+            <template #default="{ row }">{{ row.supplierName || '-' }}</template>
+          </el-table-column>
+          <el-table-column prop="protocolCode" label="技术协议编码" min-width="140">
+            <template #default="{ row }">{{ row.protocolCode || '-' }}</template>
+          </el-table-column>
+          <el-table-column prop="receivedDate" label="入库日期" width="120">
+            <template #default="{ row }">{{ row.receivedDate || '-' }}</template>
+          </el-table-column>
+          <el-table-column prop="quantity" label="库存量" width="110" />
+          <el-table-column prop="reservedQuantity" label="预留" width="110" />
+          <el-table-column prop="usedQuantity" label="已用" width="110" />
+          <el-table-column prop="availableQuantity" label="可用" width="110" />
+          <el-table-column label="状态" width="110">
+            <template #default="{ row }">
+              <el-tag :type="getInventoryStatusType(row.status)" effect="light">
+                {{ getInventoryStatusLabel(row.status) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="routeDialogVisible" title="产品工艺路线" :width="DialogWidth.xl">
+      <template v-if="routeProduct">
+        <div class="related-dialog-header">
+          <div>
+            <span class="product-model">{{ routeProduct.productModel }}</span>
+            <span class="sub-text">{{ routeProduct.productName }}</span>
+          </div>
+          <span class="sub-text">
+            {{ routeProduct.productAttribute || '-' }} / {{ routeProduct.productType || '-' }}
+          </span>
+        </div>
+        <el-table
+          v-loading="relatedLoading"
+          :data="routeDetail?.routes ?? []"
+          empty-text="当前产品分类暂无可用工艺路线"
+        >
+          <el-table-column label="默认" width="90" align="center">
+            <template #default="{ row }">
+              <el-tag v-if="row.isDefault" type="primary" effect="light">默认</el-tag>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="routeCode" label="路线编号" min-width="150" />
+          <el-table-column prop="routeName" label="路线名称" min-width="180" />
+          <el-table-column prop="version" label="版本" width="110">
+            <template #default="{ row }">{{ row.version || '-' }}</template>
+          </el-table-column>
+          <el-table-column prop="stepCount" label="工序数" width="100" />
+          <el-table-column prop="processSummary" label="工序摘要" min-width="280">
+            <template #default="{ row }">{{ row.processSummary || '未配置工序' }}</template>
+          </el-table-column>
+          <el-table-column label="状态" width="100">
+            <template #default="{ row }">
+              <el-tag :type="row.status === 1 ? 'success' : 'info'" effect="light">
+                {{ row.status === 1 ? '启用' : '停用' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -313,10 +407,13 @@ import { onMounted, reactive, ref } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type {
+  MaterialBatchStatus,
   ProductAcquireMethod,
   ProductCategoryListItem,
+  ProductInventoryDetail,
   ProductListItem,
   ProductMaterialItem,
+  ProductRouteDetail,
   ProductSpecValue,
 } from '@company/api-contract';
 import { productApi } from '../../api/product';
@@ -356,13 +453,21 @@ const pageSize = ref(10);
 const productDialogVisible = ref(false);
 const detailDialogVisible = ref(false);
 const materialDialogVisible = ref(false);
+const inventoryDialogVisible = ref(false);
+const routeDialogVisible = ref(false);
 const editingProductId = ref<string | null>(null);
 const detailRow = ref<ProductListItem | null>(null);
 const materialProduct = ref<ProductListItem | null>(null);
 const materialRows = ref<MaterialFormRow[]>([]);
+const inventoryProduct = ref<ProductListItem | null>(null);
+const routeProduct = ref<ProductListItem | null>(null);
+const inventoryDetail = ref<ProductInventoryDetail | null>(null);
+const routeDetail = ref<ProductRouteDetail | null>(null);
+const relatedLoading = ref(false);
 const creatingMaterialFromBom = ref(false);
 const query = reactive({
   keyword: '',
+  specKeyword: '',
   categoryId: '',
   acquireMethod: '',
   status: '',
@@ -390,6 +495,7 @@ const loadProducts = async () => {
       page: currentPage.value,
       pageSize: pageSize.value,
       keyword: query.keyword,
+      specKeyword: query.specKeyword,
       categoryId: query.categoryId,
       acquireMethod: query.acquireMethod,
       status: query.status,
@@ -418,6 +524,7 @@ const searchProducts = async () => {
 
 const resetQuery = async () => {
   query.keyword = '';
+  query.specKeyword = '';
   query.categoryId = '';
   query.acquireMethod = '';
   query.status = '';
@@ -664,13 +771,48 @@ const toggleStatus = async (row: ProductListItem) => {
 };
 
 const showInventory = async (row: ProductListItem) => {
-  await productApi.getProductInventory(row.id);
-  EMessage.info('库存接口已接入，库存管理模块完成后将显示明细');
+  inventoryProduct.value = row;
+  inventoryDetail.value = null;
+  inventoryDialogVisible.value = true;
+  relatedLoading.value = true;
+  try {
+    inventoryDetail.value = await productApi.getProductInventory(row.id);
+  } catch (error) {
+    EMessage.error(error, '产品库存加载失败');
+  } finally {
+    relatedLoading.value = false;
+  }
 };
 
 const showRoutes = async (row: ProductListItem) => {
-  await productApi.getProductRoutes(row.id);
-  EMessage.info('工艺路线接口已接入，工艺路线模块完成后将显示明细');
+  routeProduct.value = row;
+  routeDetail.value = null;
+  routeDialogVisible.value = true;
+  relatedLoading.value = true;
+  try {
+    routeDetail.value = await productApi.getProductRoutes(row.id);
+  } catch (error) {
+    EMessage.error(error, '产品工艺路线加载失败');
+  } finally {
+    relatedLoading.value = false;
+  }
+};
+
+const inventoryStatusLabels: Record<MaterialBatchStatus, string> = {
+  available: '可用',
+  partial_used: '部分使用',
+  used_up: '已用尽',
+  disabled: '停用',
+};
+
+const getInventoryStatusLabel = (status: MaterialBatchStatus) =>
+  inventoryStatusLabels[status] ?? status;
+
+const getInventoryStatusType = (status: MaterialBatchStatus) => {
+  if (status === 'available') return 'success';
+  if (status === 'partial_used') return 'warning';
+  if (status === 'used_up') return 'info';
+  return 'danger';
 };
 
 const toMaterialFormRow = (item: ProductMaterialItem): MaterialFormRow => ({
@@ -849,6 +991,17 @@ onMounted(loadPageData);
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
+}
+
+.related-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.summary-descriptions {
+  margin-bottom: 16px;
 }
 
 .bom-actions {

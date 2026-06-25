@@ -2,6 +2,9 @@
   <div class="system-roles-page">
     <section class="query-panel">
       <el-form class="query-form" :inline="true" :model="query">
+        <el-form-item label="关键字：">
+          <el-input v-model="query.keyword" clearable placeholder="角色名称、编码或描述" />
+        </el-form-item>
         <el-form-item label="角色名称：">
           <el-input v-model="query.name" clearable placeholder="请输入角色名称" />
         </el-form-item>
@@ -349,6 +352,7 @@ const activeScopeCheckedCount = computed(() => {
 const currentPage = ref(1);
 const pageSize = ref(10);
 const query = reactive({
+  keyword: '',
   name: '',
   code: '',
   status: '',
@@ -374,16 +378,22 @@ const roleUserCounts = computed(() => {
 
 const filteredRoles = computed(() =>
   roles.value.filter((role) => {
+    const keyword = query.keyword.trim().toLowerCase();
     const nameKeyword = query.name.trim().toLowerCase();
     const codeKeyword = query.code.trim().toLowerCase();
     const matchesName = !nameKeyword || role.name.toLowerCase().includes(nameKeyword);
     const matchesCode = !codeKeyword || role.code.toLowerCase().includes(codeKeyword);
+    const matchesKeyword =
+      !keyword ||
+      [role.name, role.code, role.description ?? ''].some((value) =>
+        value.toLowerCase().includes(keyword),
+      );
     const matchesStatus =
       !query.status ||
       (query.status === 'enabled' && role.status === 1) ||
       (query.status === 'disabled' && role.status !== 1);
 
-    return matchesName && matchesCode && matchesStatus;
+    return matchesKeyword && matchesName && matchesCode && matchesStatus;
   }),
 );
 
@@ -411,7 +421,10 @@ const resetRoleForm = () => {
 const loadPageData = async () => {
   loading.value = true;
   try {
-    const [roleRows, userRows] = await Promise.all([systemApi.listRoles(), systemApi.listUsers()]);
+    const [roleRows, userRows] = await Promise.all([
+      systemApi.listRoles(),
+      systemApi.listUsers({ page: 1, pageSize: 100 }),
+    ]);
     roles.value = roleRows;
     users.value = userRows;
     currentPage.value = 1;
@@ -425,6 +438,7 @@ const handleSearch = () => {
 };
 
 const resetQuery = () => {
+  query.keyword = '';
   query.name = '';
   query.code = '';
   query.status = '';

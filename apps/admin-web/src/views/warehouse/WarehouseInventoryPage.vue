@@ -3,7 +3,7 @@
     <section class="query-panel">
       <el-form class="query-form" :inline="true" :model="query">
         <el-form-item label="物料">
-          <el-input v-model="query.keyword" clearable placeholder="名称或型号" />
+          <el-input v-model="query.keyword" clearable placeholder="物料、分类、批次、供应商或协议编码" />
         </el-form-item>
         <el-form-item label="批次号">
           <el-input v-model="query.materialBatchNo" clearable placeholder="物料批次号" />

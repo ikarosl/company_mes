@@ -4,6 +4,7 @@ import { httpClient } from './http-client';
 
 export type QueryParams = PageQuery & {
   keyword?: string;
+  specKeyword?: string;
   status?: string;
   batchId?: string;
   result?: string;
@@ -24,9 +25,13 @@ export type QueryParams = PageQuery & {
   userId?: string;
   ownerId?: string;
   productId?: string;
+  customerOrderNo?: string;
+  customerName?: string;
   workOrderId?: string;
   plannedQuantity?: string | number;
   productAttribute?: string;
+  /** 产品属性集合，使用英文逗号分隔，供成品/半成品等多属性筛选。 */
+  productAttributes?: string;
   productType?: string;
   categoryId?: string;
   acquireMethod?: string;

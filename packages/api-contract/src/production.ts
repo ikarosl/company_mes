@@ -140,8 +140,6 @@ export interface WorkOrderListItem {
   productId: string;
   productModel: string;
   productName: string;
-  routeId: string | null;
-  routeName: string | null;
   plannedQuantity: string;
   assignedQuantity: string;
   customerOrderNo: string | null;
@@ -160,6 +158,18 @@ export interface WorkOrderListItem {
 
 export interface WorkOrderDetail extends WorkOrderListItem {
   batches: ProductionBatchItem[];
+}
+
+/** 工单列表查询条件。 */
+export interface WorkOrderQuery {
+  keyword?: string;
+  customerOrderNo?: string;
+  customerName?: string;
+  productId?: string;
+  ownerId?: string;
+  status?: WorkOrderStatus;
+  page?: number;
+  pageSize?: number;
 }
 
 export interface CreateWorkOrderPayload {

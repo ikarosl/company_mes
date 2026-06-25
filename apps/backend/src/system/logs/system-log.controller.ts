@@ -13,6 +13,7 @@ export class SystemLogController {
   @RequirePermission(PERMISSIONS.system.logs.view)
   @Get('logs')
   operationLogs(
+    @Query('keyword') keyword?: string,
     @Query('logType') logType?: string,
     @Query('module') module?: string,
     @Query('result') result?: string,
@@ -21,7 +22,7 @@ export class SystemLogController {
     @Query('pageSize') pageSize?: string,
   ) {
     return this.logs.listOperationLogs(
-      { logType, module, result, userId },
+      { keyword, logType, module, result, userId },
       readPagination(page, pageSize),
     );
   }

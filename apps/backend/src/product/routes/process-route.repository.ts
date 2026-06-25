@@ -243,9 +243,30 @@ export class ProcessRouteRepository {
     const params: QueryParam[] = [];
 
     if (filters.keyword?.trim()) {
-      clauses.push('(r.route_code LIKE ? OR r.route_name LIKE ?)');
+      clauses.push(`(
+        r.route_code LIKE ?
+        OR r.route_name LIKE ?
+        OR r.version LIKE ?
+        OR r.remark LIKE ?
+        OR EXISTS (
+          SELECT 1 FROM product_categories keyword_category
+          WHERE keyword_category.id = r.product_category_id
+            AND keyword_category.is_deleted = 0
+            AND (keyword_category.product_attribute LIKE ? OR keyword_category.product_type LIKE ?)
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM process_route_steps keyword_step
+          INNER JOIN process_steps keyword_process
+            ON keyword_process.id = keyword_step.process_step_id
+            AND keyword_process.is_deleted = 0
+          WHERE keyword_step.route_id = r.id
+            AND keyword_step.is_deleted = 0
+            AND (keyword_process.step_code LIKE ? OR keyword_process.step_name LIKE ?)
+        )
+      )`);
       const keyword = `%${filters.keyword.trim()}%`;
-      params.push(keyword, keyword);
+      params.push(keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword);
     }
 
     if (filters.status === 'enabled') {

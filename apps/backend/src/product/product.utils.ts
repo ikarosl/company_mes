@@ -197,13 +197,17 @@ export const decimalString = (value: string | number | null | undefined) => {
   return Number.isFinite(amount) ? amount.toFixed(4) : '0.0000';
 };
 
-export const parseSpecValues = (value: string | null): ProductSpecValue[] => {
+/**
+ * mysql2 对 JSON 列通常直接返回数组，部分查询或驱动配置也可能返回 JSON 字符串。
+ * 这里同时兼容两种形态，避免有效规格参数被静默映射为空数组。
+ */
+export const parseSpecValues = (value: unknown): ProductSpecValue[] => {
   if (!value) {
     return [];
   }
 
   try {
-    const parsed = JSON.parse(value) as unknown;
+    const parsed = typeof value === 'string' ? (JSON.parse(value) as unknown) : value;
     return normalizeSpecValues(parsed);
   } catch {
     return [];

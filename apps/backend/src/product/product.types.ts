@@ -31,7 +31,7 @@ export interface ProductListRow extends RowDataPacket {
   product_type: string | null;
   unit: string;
   acquire_method: string;
-  spec_values: string | null;
+  spec_values: unknown;
   material_count: number;
   status: number;
   remark: string | null;
@@ -46,7 +46,7 @@ export interface ProductRow extends RowDataPacket {
   category_id: number | null;
   unit: string;
   acquire_method: string;
-  spec_values: string | null;
+  spec_values: unknown;
   status: number;
   remark: string | null;
 }
@@ -65,6 +65,30 @@ export interface ProductMaterialListRow extends RowDataPacket {
   remark: string | null;
   created_at: Date;
   updated_at: Date;
+}
+
+export interface ProductInventoryBatchRow extends RowDataPacket {
+  id: number;
+  product_id: number;
+  product_model: string;
+  product_name: string;
+  product_attribute: string | null;
+  product_type: string | null;
+  material_batch_no: string;
+  supplier_name: string | null;
+  protocol_code: string | null;
+  received_date: Date | null;
+  quantity: string | number | null;
+  reserved_quantity: string | number | null;
+  used_quantity: string | number | null;
+  status: string;
+  remark: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface ProductRouteListRow extends ProcessRouteListRow {
+  is_default: number;
 }
 
 export interface ProcessListRow extends RowDataPacket {

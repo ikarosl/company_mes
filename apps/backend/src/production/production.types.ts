@@ -10,8 +10,6 @@ export interface WorkOrderListRow extends RowDataPacket {
   product_id: number;
   product_model: string;
   product_name: string;
-  route_id: number | null;
-  route_name: string | null;
   planned_quantity: string | number;
   assigned_quantity: string | number | null;
   customer_order_no: string | null;
@@ -30,7 +28,8 @@ export interface WorkOrderRow extends RowDataPacket {
   id: number;
   order_no: string;
   product_id: number;
-  route_id: number | null;
+  /** 产品默认路线仅用于新建生产批次时提供默认值，不属于工单字段。 */
+  product_default_route_id: number | null;
   planned_quantity: string | number;
   customer_order_no: string | null;
   customer_name: string | null;

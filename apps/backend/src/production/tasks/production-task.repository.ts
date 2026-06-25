@@ -802,9 +802,29 @@ export class ProductionTaskRepository {
     const params: QueryParam[] = [];
 
     if (filters.keyword?.trim()) {
-      clauses.push('(b.batch_no LIKE ? OR wo.order_no LIKE ? OR p.product_model LIKE ? OR p.product_name LIKE ?)');
+      clauses.push(`(
+        b.batch_no LIKE ?
+        OR wo.order_no LIKE ?
+        OR wo.customer_order_no LIKE ?
+        OR wo.customer_name LIKE ?
+        OR p.product_model LIKE ?
+        OR p.product_name LIKE ?
+        OR b.remark LIKE ?
+        OR EXISTS (
+          SELECT 1 FROM users keyword_owner
+          WHERE keyword_owner.id = b.owner_id
+            AND keyword_owner.deleted_at IS NULL
+            AND (keyword_owner.username LIKE ? OR keyword_owner.display_name LIKE ?)
+        )
+        OR EXISTS (
+          SELECT 1 FROM process_routes keyword_route
+          WHERE keyword_route.id = b.route_id
+            AND keyword_route.is_deleted = 0
+            AND (keyword_route.route_code LIKE ? OR keyword_route.route_name LIKE ?)
+        )
+      )`);
       const keyword = `%${filters.keyword.trim()}%`;
-      params.push(keyword, keyword, keyword, keyword);
+      params.push(keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword);
     }
 
     if (filters.productId?.trim()) {

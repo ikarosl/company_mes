@@ -20,6 +20,7 @@ import {
 } from '../product.utils.js';
 
 export interface ProductCategoryFilters {
+  keyword?: string;
   productAttribute?: string;
   productType?: string;
   status?: string;
@@ -142,6 +143,12 @@ export class ProductCategoryRepository {
   private buildListFilters(filters: ProductCategoryFilters) {
     const clauses = ['is_deleted = 0'];
     const params: QueryParam[] = [];
+
+    if (filters.keyword?.trim()) {
+      clauses.push('(product_attribute LIKE ? OR product_type LIKE ? OR remark LIKE ?)');
+      const keyword = `%${filters.keyword.trim()}%`;
+      params.push(keyword, keyword, keyword);
+    }
 
     if (filters.productAttribute?.trim()) {
       clauses.push('product_attribute LIKE ?');

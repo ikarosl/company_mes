@@ -20,13 +20,18 @@ export class WorkOrderController {
   @Get()
   listOrders(
     @Query('keyword') keyword?: string,
+    @Query('customerOrderNo') customerOrderNo?: string,
+    @Query('customerName') customerName?: string,
     @Query('productId') productId?: string,
     @Query('status') status?: string,
     @Query('ownerId') ownerId?: string,
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
   ) {
-    return this.orders.listOrders({ keyword, productId, status, ownerId }, readPagination(page, pageSize));
+    return this.orders.listOrders(
+      { keyword, customerOrderNo, customerName, productId, status, ownerId },
+      readPagination(page, pageSize),
+    );
   }
 
   @RequirePermission(PERMISSIONS.production.orders.detail)

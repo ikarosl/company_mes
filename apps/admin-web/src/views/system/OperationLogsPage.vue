@@ -9,6 +9,9 @@
     </div>
 
     <el-form class="query-bar" :inline="true" :model="query">
+      <el-form-item label="关键字">
+        <el-input v-model="query.keyword" clearable placeholder="模块、动作、用户、对象、IP或备注" />
+      </el-form-item>
       <el-form-item label="类型">
         <el-select v-model="query.logType" clearable placeholder="全部" style="width: 130px">
           <el-option label="认证" value="auth" />
@@ -29,6 +32,7 @@
       </el-form-item>
       <el-form-item>
         <el-button type="primary" :loading="loading" @click="loadLogs">查询</el-button>
+        <el-button @click="resetQuery">重置</el-button>
       </el-form-item>
     </el-form>
 
@@ -94,6 +98,7 @@ const detailVisible = ref(false);
 const logs = ref<OperationLogListItem[]>([]);
 const activeLog = ref<OperationLogListItem | null>(null);
 const query = reactive({
+  keyword: '',
   logType: '',
   module: '',
   result: '',
@@ -104,6 +109,7 @@ const loadLogs = async () => {
   loading.value = true;
   try {
     logs.value = await systemApi.listOperationLogs({
+      keyword: query.keyword || undefined,
       logType: query.logType || undefined,
       module: query.module || undefined,
       result: query.result || undefined,
@@ -114,6 +120,17 @@ const loadLogs = async () => {
   } finally {
     loading.value = false;
   }
+};
+
+const resetQuery = async () => {
+  Object.assign(query, {
+    keyword: '',
+    logType: '',
+    module: '',
+    result: '',
+    userId: '',
+  });
+  await loadLogs();
 };
 
 const openDetail = (row: OperationLogListItem) => {

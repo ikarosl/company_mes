@@ -3,12 +3,10 @@
     <section class="query-panel">
       <el-form class="query-form" :inline="true" :model="query">
         <el-form-item label="关键字">
-          <el-input v-model="query.keyword" clearable placeholder="搜索关键字：工单/产品" />
+          <el-input v-model="query.keyword" clearable placeholder="批次、工单、客户、产品、路线或负责人" />
         </el-form-item>
         <el-form-item label="产品">
-          <el-select v-model="query.productId" clearable filterable placeholder="全部">
-            <el-option v-for="product in productOptions" :key="product.id" :label="formatProduct(product)" :value="product.id" />
-          </el-select>
+          <OrderProductSelect v-model="query.productId" placeholder="输入型号或名称筛选" />
         </el-form-item>
         <el-form-item label="负责人">
           <el-select v-model="query.ownerId" clearable filterable placeholder="全部">
@@ -116,7 +114,16 @@
     <el-dialog v-model="taskDialogVisible" :title="editingTaskId ? '编辑任务' : '新增任务'" :width="DialogWidth.xl" class="business-dialog">
       <el-form class="dialog-form" label-width="108px" :model="taskForm">
         <el-form-item v-if="!editingTaskId" label="选择工单" required>
-          <el-select v-model="taskForm.workOrderId" filterable placeholder="请选择下达的工单" @change="handleTaskOrderChange">
+          <el-select
+            v-model="taskForm.workOrderId"
+            filterable
+            remote
+            reserve-keyword
+            :loading="workOrderLoading"
+            :remote-method="searchWorkOrders"
+            placeholder="输入工单号、客户或产品"
+            @change="handleTaskOrderChange"
+          >
             <el-option
               v-for="order in availableWorkOrderOptions"
               :key="order.id"
@@ -432,7 +439,6 @@ import type {
   BatchStepStatus,
   ProcessOption,
   ProcessRouteListItem,
-  ProductListItem,
   ProductionBatchItem,
   ProductionBatchStatus,
   ProductionTaskDetail,
@@ -444,6 +450,7 @@ import type {
 import { productApi } from '../../api/product';
 import { productionApi } from '../../api/production';
 import { systemApi } from '../../api/system';
+import OrderProductSelect from '../../components/business/OrderProductSelect.vue';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
 
@@ -487,7 +494,6 @@ type MaterialDemandFormRow = Omit<TaskMaterialRequirementItem, 'planQuantity'> &
 /** 任务列表及页面路由：物料分配操作跳转到独立的分块列表页。 */
 const tasks = ref<ProductionBatchItem[]>([]);
 const router = useRouter();
-const productOptions = ref<ProductListItem[]>([]);
 const routeOptions = ref<ProcessRouteListItem[]>([]);
 const userOptions = ref<SystemUserListItem[]>([]);
 const workOrderOptions = ref<WorkOrderListItem[]>([]);
@@ -502,6 +508,8 @@ const editingTaskOriginalQuantity = ref(0);
 const dispatchTaskId = ref<string | null>(null);
 const editingStepId = ref<string | null>(null);
 const loading = ref(false);
+/** 工单远程检索加载状态，避免工单较多时一次性载入全部记录。 */
+const workOrderLoading = ref(false);
 const submitting = ref(false);
 const total = ref(0);
 const currentPage = ref(1);
@@ -540,20 +548,46 @@ const stepForm = reactive({
   remark: '',
 });
 
+/**
+ * 远程检索仍可分配生产数量的已下达/生产中工单。
+ * 两种状态分别分页查询后按工单 ID 合并，避免只加载固定前 100 条导致后续工单无法选择。
+ */
+const searchWorkOrders = async (keyword: string) => {
+  workOrderLoading.value = true;
+  try {
+    const normalizedKeyword = keyword.trim();
+    const [releasedOrders, doingOrders] = await Promise.all([
+      productionApi.listOrders({ page: 1, pageSize: 50, status: 'released', keyword: normalizedKeyword }),
+      productionApi.listOrders({ page: 1, pageSize: 50, status: 'doing', keyword: normalizedKeyword }),
+    ]);
+    const selectedOrder = selectedWorkOrder.value;
+    const orderMap = new Map<string, WorkOrderListItem>();
+
+    // 当前已选工单始终保留，防止重新输入关键字时选择值在下拉选项中丢失。
+    if (selectedOrder) {
+      orderMap.set(selectedOrder.id, selectedOrder);
+    }
+    for (const order of [...releasedOrders.items, ...doingOrders.items]) {
+      if (getWorkOrderRemaining(order) > 0) {
+        orderMap.set(order.id, order);
+      }
+    }
+    workOrderOptions.value = [...orderMap.values()];
+  } catch (error) {
+    EMessage.error(error instanceof Error ? error.message : '可选工单查询失败');
+  } finally {
+    workOrderLoading.value = false;
+  }
+};
+
 const loadOptions = async () => {
-  const [products, routes, users, processes, releasedOrders, doingOrders] = await Promise.all([
-    productApi.listProducts({ page: 1, pageSize: 100, status: 'enabled' }),
-    productApi.listRoutes({ page: 1, pageSize: 100, status: 'enabled' }),
+  const [users, processes] = await Promise.all([
     systemApi.listUsers({ status: 'enabled' }),
     productApi.listProcessOptions(),
-    productionApi.listOrders({ page: 1, pageSize: 100, status: 'released' }),
-    productionApi.listOrders({ page: 1, pageSize: 100, status: 'doing' }),
   ]);
-  productOptions.value = products.items;
-  routeOptions.value = routes.items;
   userOptions.value = users;
   processOptions.value = processes;
-  workOrderOptions.value = [...releasedOrders.items, ...doingOrders.items];
+  await searchWorkOrders('');
 };
 
 const loadTasks = async () => {
@@ -587,7 +621,6 @@ const selectedWorkOrder = computed(() => workOrderOptions.value.find((item) => i
 const availableWorkOrderOptions = computed(() =>
   workOrderOptions.value.filter((order) => getWorkOrderRemaining(order) > 0),
 );
-const selectedProduct = computed(() => productOptions.value.find((item) => item.id === selectedWorkOrder.value?.productId) ?? null);
 const selectedWorkOrderRemaining = computed(() => {
   if (!selectedWorkOrder.value) {
     return null;
@@ -604,13 +637,8 @@ const taskQuantityMax = computed(() => {
     ? selectedWorkOrderRemaining.value + editingTaskOriginalQuantity.value
     : selectedWorkOrderRemaining.value;
 });
-const availableRouteOptions = computed(() => {
-  if (!selectedWorkOrder.value || selectedProduct.value?.categoryId === null || selectedProduct.value?.categoryId === undefined) {
-    return routeOptions.value;
-  }
-
-  return routeOptions.value.filter((route) => route.productCategoryId === null || route.productCategoryId === selectedProduct.value?.categoryId);
-});
+/** 当前产品可用路线由产品路线接口返回，包含默认路线和同分类的其他版本。 */
+const availableRouteOptions = computed(() => routeOptions.value);
 const sopFileOptions = computed(() => {
   const map = new Map<string, { id: string; name: string }>();
 
@@ -658,6 +686,8 @@ const openCreate = () => {
   editingTaskId.value = null;
   editingTaskOriginalQuantity.value = 0;
   resetTaskForm();
+  // 每次打开新增弹窗都刷新可选工单，避免其他操作已分配数量后仍显示旧数据。
+  void searchWorkOrders('');
   taskDialogVisible.value = true;
 };
 
@@ -679,7 +709,11 @@ const openEditTask = async (row: ProductionBatchItem) => {
     remark: row.remark ?? '',
   });
   taskDialogVisible.value = true;
-  const detail = await productionApi.getTask(row.id);
+  const [detail, productRoutes] = await Promise.all([
+    productionApi.getTask(row.id),
+    productApi.getProductRoutes(row.productId),
+  ]);
+  routeOptions.value = productRoutes.routes;
   activeTask.value = detail;
   createPreviewSteps.value = detail.steps.map((step) => ({
     ...step,
@@ -693,13 +727,16 @@ const openEditTask = async (row: ProductionBatchItem) => {
   }));
 };
 
-const handleTaskOrderChange = (workOrderId: string) => {
+const handleTaskOrderChange = async (workOrderId: string) => {
   const order = workOrderOptions.value.find((item) => item.id === workOrderId);
   if (!order) {
     return;
   }
 
-  taskForm.routeId = order.routeId ?? '';
+  // 工单不绑定路线；选择工单后加载产品可用路线，并默认带出产品默认路线。
+  const productRoutes = await productApi.getProductRoutes(order.productId);
+  routeOptions.value = productRoutes.routes;
+  taskForm.routeId = productRoutes.defaultRouteId ?? '';
   taskForm.ownerId = order.ownerId ?? '';
   taskForm.planStartDate = order.planStartDate ?? '';
   taskForm.planEndDate = order.planEndDate ?? '';
@@ -959,9 +996,10 @@ const canConfigureTask = (row: ProductionBatchItem) =>
 const canStartTask = (row: ProductionBatchItem) =>
   ['pending', 'material_pending', 'material_assigned'].includes(row.status);
 const openMaterialAllocation = () => router.push('/production/material-allocation');
-const formatProduct = (product: ProductListItem) => `${product.productModel} / ${product.productName}`;
 const formatTaskProduct = (order: WorkOrderListItem) => `${order.productModel} / ${order.productName}`;
-const formatRoute = (route: ProcessRouteListItem) => `${route.routeName}${route.productType ? ` / ${route.productType}` : ''}`;
+/** 路线名称附带版本号，确保同产品的不同工艺版本可明确选择。 */
+const formatRoute = (route: ProcessRouteListItem) =>
+  `${route.routeName}${route.version ? ` / ${route.version}` : ''}`;
 const getWorkOrderRemaining = (order: WorkOrderListItem) => Math.max(Number(order.plannedQuantity) - Number(order.assignedQuantity), 0);
 const formatWorkOrder = (order: WorkOrderListItem) =>
   [order.orderNo, order.productModel, '剩余 ' + formatQuantity(getWorkOrderRemaining(order))].join(' / ');

@@ -5,7 +5,13 @@
       <el-button :loading="loading" @click="loadPermissions">刷新</el-button>
     </div>
 
-    <el-table v-loading="loading" :data="permissions" border>
+    <el-form class="query-bar" :inline="true">
+      <el-form-item label="关键字">
+        <el-input v-model="keyword" clearable placeholder="名称、编码、类型、路由或接口" />
+      </el-form-item>
+    </el-form>
+
+    <el-table v-loading="loading" :data="filteredPermissions" border>
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column prop="parentId" label="父级" width="90" />
       <el-table-column prop="name" label="权限名称" min-width="140" />
@@ -26,12 +32,32 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import type { SystemPermissionListItem } from '@company/api-contract';
 import { systemApi } from '../../api/system';
 
 const permissions = ref<SystemPermissionListItem[]>([]);
 const loading = ref(false);
+const keyword = ref('');
+
+/** 权限数据量较小，综合关键字在前端匹配可见业务字段。 */
+const filteredPermissions = computed(() => {
+  const value = keyword.value.trim().toLowerCase();
+  if (!value) {
+    return permissions.value;
+  }
+
+  return permissions.value.filter((item) =>
+    [
+      item.name,
+      item.code,
+      item.type,
+      item.routePath ?? '',
+      item.apiMethod ?? '',
+      item.apiPath ?? '',
+    ].some((field) => field.toLowerCase().includes(value)),
+  );
+});
 
 const loadPermissions = async () => {
   loading.value = true;
@@ -65,5 +91,9 @@ onMounted(loadPermissions);
   margin: 0;
   color: #1f2d3d;
   font-size: 22px;
+}
+
+.query-bar {
+  margin-bottom: 10px;
 }
 </style>

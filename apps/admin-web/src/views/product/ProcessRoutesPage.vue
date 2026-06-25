@@ -3,7 +3,7 @@
     <section class="query-panel">
       <el-form class="query-form" :inline="true" :model="query">
         <el-form-item label="关键字">
-          <el-input v-model="query.keyword" clearable placeholder="路线编号或名称" />
+          <el-input v-model="query.keyword" clearable placeholder="路线、版本、分类或工序" />
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="query.status" placeholder="全部">
@@ -75,7 +75,7 @@
           <el-option label="50条/页" :value="50" />
         </el-select>
         <el-pagination
-          v-model:current-page="currentPage"
+          :current-page="currentPage"
           :page-size="pageSize"
           :total="total"
           layout="prev, pager, next, jumper"

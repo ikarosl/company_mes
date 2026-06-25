@@ -2,6 +2,9 @@
   <div class="system-users-page">
     <section class="query-panel">
       <el-form class="query-form" :inline="true" :model="query">
+        <el-form-item label="关键字：">
+          <el-input v-model="query.keyword" clearable placeholder="账号、姓名、部门、角色、邮箱或手机号" />
+        </el-form-item>
         <el-form-item label="用户账号：">
           <el-input v-model="query.username" clearable placeholder="请输入用户账号" />
         </el-form-item>
@@ -236,6 +239,7 @@ const editingUserId = ref<string | null>(null);
 const currentPage = ref(1);
 const pageSize = ref(10);
 const query = reactive({
+  keyword: '',
   username: '',
   displayName: '',
   roleId: '',
@@ -281,19 +285,30 @@ const getPrimaryRoleName = (row: SystemUserListItem) => {
 
 const filteredUsers = computed(() =>
   users.value.filter((user) => {
+    const keyword = query.keyword.trim().toLowerCase();
     const usernameKeyword = query.username.trim().toLowerCase();
     const displayNameKeyword = query.displayName.trim().toLowerCase();
     const matchesUsername =
       !usernameKeyword || user.username.toLowerCase().includes(usernameKeyword);
     const matchesDisplayName =
       !displayNameKeyword || user.displayName.toLowerCase().includes(displayNameKeyword);
+    const matchesKeyword =
+      !keyword ||
+      [
+        user.username,
+        user.displayName,
+        user.departmentName ?? '',
+        user.email ?? '',
+        user.mobile ?? '',
+        formatUserRoles(user),
+      ].some((value) => value.toLowerCase().includes(keyword));
     const matchesRole = !query.roleId || user.roleIds.includes(query.roleId);
     const matchesStatus =
       !query.status ||
       (query.status === 'enabled' && user.status === 1) ||
       (query.status === 'disabled' && user.status !== 1);
 
-    return matchesUsername && matchesDisplayName && matchesRole && matchesStatus;
+    return matchesKeyword && matchesUsername && matchesDisplayName && matchesRole && matchesStatus;
   }),
 );
 
@@ -318,7 +333,7 @@ const resetUserForm = () => {
 const loadUsers = async () => {
   loading.value = true;
   try {
-    users.value = await systemApi.listUsers();
+    users.value = await systemApi.listUsers({ page: 1, pageSize: 100 });
     currentPage.value = 1;
   } finally {
     loading.value = false;
@@ -339,6 +354,7 @@ const handleSearch = () => {
 };
 
 const resetQuery = () => {
+  query.keyword = '';
   query.username = '';
   query.displayName = '';
   query.roleId = '';

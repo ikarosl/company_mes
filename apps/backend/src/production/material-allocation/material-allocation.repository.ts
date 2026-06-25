@@ -370,9 +370,26 @@ export class MaterialAllocationRepository {
     const params: QueryParam[] = [];
 
     if (filters.keyword?.trim()) {
-      clauses.push('(b.batch_no LIKE ? OR b.order_no LIKE ? OR b.product_model LIKE ? OR b.product_name LIKE ?)');
+      clauses.push(`(
+        b.batch_no LIKE ?
+        OR b.order_no LIKE ?
+        OR b.product_model LIKE ?
+        OR b.product_name LIKE ?
+        OR b.route_name LIKE ?
+        OR b.owner_name LIKE ?
+        OR b.remark LIKE ?
+        OR EXISTS (
+          SELECT 1 FROM v_batch_material_allocation keyword_allocation
+          WHERE keyword_allocation.batch_id = b.batch_id
+            AND (
+              keyword_allocation.material_model LIKE ?
+              OR keyword_allocation.material_name LIKE ?
+              OR keyword_allocation.material_batch_no LIKE ?
+            )
+        )
+      )`);
       const keyword = `%${filters.keyword.trim()}%`;
-      params.push(keyword, keyword, keyword, keyword);
+      params.push(keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword);
     }
 
     if (filters.productId?.trim()) {

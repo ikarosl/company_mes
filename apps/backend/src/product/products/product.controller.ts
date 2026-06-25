@@ -19,6 +19,8 @@ export class ProductController {
   @Get('products')
   listProducts(
     @Query('keyword') keyword?: string,
+    @Query('specKeyword') specKeyword?: string,
+    @Query('productAttributes') productAttributes?: string,
     @Query('categoryId') categoryId?: string,
     @Query('acquireMethod') acquireMethod?: string,
     @Query('status') status?: string,
@@ -26,7 +28,7 @@ export class ProductController {
     @Query('pageSize') pageSize?: string,
   ) {
     return this.products.listProducts(
-      { keyword, categoryId, acquireMethod, status },
+      { keyword, specKeyword, productAttributes, categoryId, acquireMethod, status },
       readPagination(page, pageSize),
     );
   }

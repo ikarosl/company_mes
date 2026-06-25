@@ -9,6 +9,7 @@ export interface ProductCategoryListItem {
 }
 
 export interface ProductCategoryQuery {
+  keyword?: string;
   productAttribute?: string;
   productType?: string;
   status?: string;
@@ -57,6 +58,10 @@ export interface ProductListItem {
 
 export interface ProductQuery {
   keyword?: string;
+  /** 模糊匹配规格参数的名称、值或单位。 */
+  specKeyword?: string;
+  /** 产品属性集合，使用英文逗号分隔，例如 finished,semi_finished。 */
+  productAttributes?: string;
   categoryId?: string;
   acquireMethod?: string;
   status?: string;
@@ -114,6 +119,16 @@ export interface ProductMaterialPayload {
 
 export interface ConfigureProductMaterialsPayload {
   materials: ProductMaterialPayload[];
+}
+
+/** 产品库存详情，数量汇总口径与物料库存管理保持一致。 */
+export interface ProductInventoryDetail {
+  productId: string;
+  totalQuantity: string;
+  reservedQuantity: string;
+  usedQuantity: string;
+  availableQuantity: string;
+  batches: MaterialBatchListItem[];
 }
 
 export interface ProcessListItem {
@@ -229,6 +244,17 @@ export interface ProcessRouteListItem {
 
 export interface ProcessRouteDetail extends ProcessRouteListItem {
   steps: ProcessRouteStepItem[];
+}
+
+/** 产品可用工艺路线，默认路线由 products.default_route_id 标识。 */
+export interface ProductRouteItem extends ProcessRouteListItem {
+  isDefault: boolean;
+}
+
+export interface ProductRouteDetail {
+  productId: string;
+  defaultRouteId: string | null;
+  routes: ProductRouteItem[];
 }
 
 export interface CreateProcessRoutePayload {
