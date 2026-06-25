@@ -16,6 +16,14 @@
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
 
 --
+-- Current Database: `company_test`
+--
+
+CREATE DATABASE /*!32312 IF NOT EXISTS*/ `company_test` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */ /*!80016 DEFAULT ENCRYPTION='N' */;
+
+USE `company_test`;
+
+--
 -- Table structure for table `batch_material_requirements`
 --
 
@@ -732,7 +740,7 @@ CREATE TABLE `refresh_tokens` (
   KEY `idx_refresh_tokens_user_id` (`user_id`),
   KEY `idx_refresh_tokens_expires_at` (`expires_at`),
   CONSTRAINT `fk_refresh_tokens_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=94 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=95 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -741,7 +749,7 @@ CREATE TABLE `refresh_tokens` (
 
 LOCK TABLES `refresh_tokens` WRITE;
 /*!40000 ALTER TABLE `refresh_tokens` DISABLE KEYS */;
-INSERT INTO `refresh_tokens` VALUES (93,1,'db0c691a-67bf-470f-93ac-6f68f8940ba8','2026-07-02 17:08:01','2026-06-25 17:08:01');
+INSERT INTO `refresh_tokens` VALUES (94,1,'c59131c1-99a5-4aac-afee-2b38483c4d9e','2026-07-02 17:18:16','2026-06-25 17:18:16');
 /*!40000 ALTER TABLE `refresh_tokens` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -1133,8 +1141,18 @@ INSERT INTO `work_orders` VALUES (1,'GD-001',1,100.0000,NULL,NULL,2,'released','
 UNLOCK TABLES;
 
 --
+-- Dumping events for database 'company_test'
+--
+
+--
 -- Dumping routines for database 'company_test'
 --
+
+--
+-- Current Database: `company_test`
+--
+
+USE `company_test`;
 
 --
 -- Final view structure for view `v_batch_material_allocation`
@@ -1199,4 +1217,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-06-25 17:17:47
+-- Dump completed on 2026-06-25 17:25:56
