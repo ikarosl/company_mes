@@ -15,6 +15,7 @@ import type {
   UpdateSystemRolePayload,
 } from '@company/api-contract';
 import { DatabaseService, type QueryParam } from '../../database/database.service.js';
+import { AuditContextService } from '../../operation-log/audit-context.service.js';
 import type { RoleListRow, RolePermissionRow, RoleRow } from '../system.types.js';
 import {
   mapSystemRole,
@@ -27,7 +28,10 @@ import {
 
 @Injectable()
 export class SystemRoleRepository {
-  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
+  constructor(
+    @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(AuditContextService) private readonly auditContext: AuditContextService,
+  ) {}
 
   async listRoles(): Promise<SystemRoleListItem[]> {
     const rows = await this.database.query<RoleListRow[]>(`
@@ -72,6 +76,7 @@ export class SystemRoleRepository {
 
   async updateRole(id: number, payload: UpdateSystemRolePayload) {
     const current = await this.getRoleRow(id);
+    this.auditContext.setBeforeData(current);
     const name =
       payload.name === undefined
         ? current.name
@@ -101,11 +106,17 @@ export class SystemRoleRepository {
       [name, code, description, status, id],
     );
 
-    return this.getRoleListItem(id);
+    const updated = await this.getRoleListItem(id);
+    this.auditContext.setAfterData(updated);
+    return updated;
   }
 
   async deleteRole(id: number) {
     const role = await this.getRoleRow(id);
+    this.auditContext.setBeforeData({
+      ...role,
+      permissions: await this.getRolePermissions(id),
+    });
 
     if (role.code === 'admin') {
       throw new BadRequestException('Built-in admin role cannot be deleted');
@@ -117,6 +128,7 @@ export class SystemRoleRepository {
       await connection.execute('UPDATE roles SET deleted_at = NOW() WHERE id = ?', [id]);
     });
 
+    this.auditContext.setAfterData({ id: String(id), deleted: true });
     return { success: true };
   }
 
@@ -140,6 +152,7 @@ export class SystemRoleRepository {
 
   async assignRolePermissions(id: number, payload: AssignSystemRolePermissionsPayload) {
     await this.getRoleRow(id);
+    this.auditContext.setBeforeData(await this.getRolePermissions(id));
     const permissionIds = readPermissionIds(payload.permissionIds);
     await this.assertPermissionsAvailable(permissionIds);
 
@@ -147,7 +160,9 @@ export class SystemRoleRepository {
       await replaceRolePermissions(connection, id, permissionIds);
     });
 
-    return this.getRolePermissions(id);
+    const updated = await this.getRolePermissions(id);
+    this.auditContext.setAfterData(updated);
+    return updated;
   }
 
   private async getRoleRow(id: number) {

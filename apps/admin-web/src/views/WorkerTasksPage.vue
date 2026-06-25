@@ -73,7 +73,17 @@
         <el-table-column label="操作" width="230" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">查看</el-button>
-            <el-button link type="primary" :disabled="row.stepStatus !== 'pending'" @click="startStep(row)">开始</el-button>
+            <el-tooltip
+              :content="row.stepStatus === 'pending' && !row.canStart ? '前一道工序完成后才可开始' : ''"
+              :disabled="row.stepStatus !== 'pending' || row.canStart"
+              placement="top"
+            >
+              <span>
+                <el-button link type="primary" :disabled="row.stepStatus !== 'pending' || !row.canStart" @click="startStep(row)">
+                  开始
+                </el-button>
+              </span>
+            </el-tooltip>
             <el-button link type="primary" :disabled="!canReport(row)" @click="openReport(row)">上报数量</el-button>
           </template>
         </el-table-column>

@@ -24,6 +24,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PermissionGuard } from '../../auth/permission.guard.js';
 import { RequirePermission } from '../../auth/require-permission.decorator.js';
+import { Audit } from '../../operation-log/audit.decorator.js';
 import { readId, readPagination } from '../../shared/request-utils.js';
 import { ProductionTaskRepository } from './production-task.repository.js';
 
@@ -47,7 +48,10 @@ export class ProductionTaskController {
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
   ) {
-    return this.tasks.listTasks({ keyword, productId, status, ownerId }, readPagination(page, pageSize));
+    return this.tasks.listTasks(
+      { keyword, productId, status, ownerId },
+      readPagination(page, pageSize),
+    );
   }
 
   @RequirePermission(PERMISSIONS.production.tasks.create)
@@ -57,10 +61,20 @@ export class ProductionTaskController {
     @Query('routeId') routeId?: string,
     @Query('plannedQuantity') plannedQuantity?: string,
   ) {
-    return this.tasks.previewCreateTask(readId(workOrderId ?? ''), routeId ? readId(routeId) : null, plannedQuantity);
+    return this.tasks.previewCreateTask(
+      readId(workOrderId ?? ''),
+      routeId ? readId(routeId) : null,
+      plannedQuantity,
+    );
   }
 
   @RequirePermission(PERMISSIONS.production.tasks.create)
+  @Audit({
+    module: 'production',
+    action: '创建生产任务',
+    targetType: 'production_batch',
+    businessKeyBodyField: 'batchNo',
+  })
   @Post()
   createTask(@Body() body: CreateProductionTaskPayload) {
     return this.tasks.createTask(body);
@@ -73,6 +87,12 @@ export class ProductionTaskController {
   }
 
   @RequirePermission(PERMISSIONS.production.tasks.update)
+  @Audit({
+    module: 'production',
+    action: '修改生产任务',
+    targetType: 'production_batch',
+    targetParams: { productionBatchId: 'id' },
+  })
   @Put(':id')
   updateTask(@Param('id') id: string, @Body() body: UpdateProductionBatchPayload) {
     return this.tasks.updateTask(readId(id), body);
@@ -85,6 +105,12 @@ export class ProductionTaskController {
   }
 
   @RequirePermission(PERMISSIONS.production.tasks.generateMaterialDemand)
+  @Audit({
+    module: 'production',
+    action: '生成物料需求',
+    targetType: 'production_batch',
+    targetParams: { productionBatchId: 'id' },
+  })
   @Post(':id/material-demand')
   generateMaterialDemand(@Param('id') id: string) {
     return this.tasks.generateMaterialDemand(readId(id));
@@ -97,6 +123,12 @@ export class ProductionTaskController {
   }
 
   @RequirePermission(PERMISSIONS.production.tasks.dispatch)
+  @Audit({
+    module: 'production',
+    action: '生产任务派工',
+    targetType: 'production_batch',
+    targetParams: { productionBatchId: 'id' },
+  })
   @Post(':id/dispatch')
   dispatchTask(@Param('id') id: string, @Body() body: DispatchTaskPayload) {
     return this.tasks.dispatchTask(readId(id), body);
@@ -109,18 +141,36 @@ export class ProductionTaskController {
   }
 
   @RequirePermission(PERMISSIONS.production.tasks.start)
+  @Audit({
+    module: 'production',
+    action: '开始生产任务',
+    targetType: 'production_batch',
+    targetParams: { productionBatchId: 'id' },
+  })
   @Put(':id/start')
   startTask(@Param('id') id: string) {
     return this.tasks.startTask(readId(id));
   }
 
   @RequirePermission(PERMISSIONS.production.tasks.finish)
+  @Audit({
+    module: 'production',
+    action: '完成生产任务',
+    targetType: 'production_batch',
+    targetParams: { productionBatchId: 'id' },
+  })
   @Put(':id/finish')
   finishTask(@Param('id') id: string) {
     return this.tasks.finishTask(readId(id));
   }
 
   @RequirePermission(PERMISSIONS.production.tasks.dispatch)
+  @Audit({
+    module: 'production',
+    action: '调整生产工序',
+    targetType: 'batch_step_record',
+    targetParams: { productionBatchId: 'id', stepRecordId: 'recordId' },
+  })
   @Put(':id/steps/:recordId')
   updateStepRecord(
     @Param('id') id: string,
@@ -131,6 +181,13 @@ export class ProductionTaskController {
   }
 
   @RequirePermission(PERMISSIONS.production.tasks.dispatch)
+  @Audit({
+    module: 'production',
+    action: '上传工序SOP',
+    targetType: 'batch_step_record',
+    targetParams: { productionBatchId: 'id', stepRecordId: 'recordId' },
+    captureResponse: false,
+  })
   @Post(':id/steps/:recordId/sop')
   @UseInterceptors(FileInterceptor('file'))
   async uploadStepSop(

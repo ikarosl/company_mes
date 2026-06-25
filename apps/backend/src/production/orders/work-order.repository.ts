@@ -16,6 +16,7 @@ import type {
   WorkOrderStatus,
 } from '@company/api-contract';
 import { DatabaseService, type QueryParam } from '../../database/database.service.js';
+import { AuditContextService } from '../../operation-log/audit-context.service.js';
 import { type PaginationOptions, toPageResult } from '../../shared/request-utils.js';
 import type {
   CountRow,
@@ -63,7 +64,10 @@ const BATCH_STATUSES = new Set<ProductionBatchStatus>([
 
 @Injectable()
 export class WorkOrderRepository {
-  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
+  constructor(
+    @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(AuditContextService) private readonly auditContext: AuditContextService,
+  ) {}
 
   async listOrders(filters: WorkOrderFilters, pagination: PaginationOptions) {
     const { where, params } = this.buildListFilters(filters);
@@ -161,18 +165,27 @@ export class WorkOrderRepository {
 
   async updateOrder(id: number, payload: UpdateWorkOrderPayload) {
     const current = await this.getOrderRow(id);
+    this.auditContext.setBeforeData(current);
     this.assertOrderEditable(current.status);
 
     const productId =
-      payload.productId === undefined ? current.product_id : readPositiveId(payload.productId, 'Missing product');
+      payload.productId === undefined
+        ? current.product_id
+        : readPositiveId(payload.productId, 'Missing product');
     await this.assertProductAvailable(productId);
     const orderNo =
-      payload.orderNo === undefined ? current.order_no : readRequiredString(payload.orderNo, 'Missing order no');
+      payload.orderNo === undefined
+        ? current.order_no
+        : readRequiredString(payload.orderNo, 'Missing order no');
     const ownerId = payload.ownerId === undefined ? current.owner_id : nullableId(payload.ownerId);
     const customerOrderNo =
-      payload.customerOrderNo === undefined ? current.customer_order_no : normalizeOptionalString(payload.customerOrderNo);
+      payload.customerOrderNo === undefined
+        ? current.customer_order_no
+        : normalizeOptionalString(payload.customerOrderNo);
     const customerName =
-      payload.customerName === undefined ? current.customer_name : normalizeOptionalString(payload.customerName);
+      payload.customerName === undefined
+        ? current.customer_name
+        : normalizeOptionalString(payload.customerName);
 
     await this.assertUserAvailable(ownerId);
     await this.assertOrderNoAvailable(orderNo, id);
@@ -201,18 +214,25 @@ export class WorkOrderRepository {
         ownerId,
         customerOrderNo,
         customerName,
-        payload.planStartDate === undefined ? formatDate(current.plan_start_date) : normalizeDate(payload.planStartDate),
-        payload.planEndDate === undefined ? formatDate(current.plan_end_date) : normalizeDate(payload.planEndDate),
+        payload.planStartDate === undefined
+          ? formatDate(current.plan_start_date)
+          : normalizeDate(payload.planStartDate),
+        payload.planEndDate === undefined
+          ? formatDate(current.plan_end_date)
+          : normalizeDate(payload.planEndDate),
         payload.remark === undefined ? current.remark : normalizeOptionalString(payload.remark),
         id,
       ],
     );
 
-    return this.getOrder(id);
+    const updated = await this.getOrder(id);
+    this.auditContext.setAfterData(updated);
+    return updated;
   }
 
   async changeOrderStatus(id: number, nextStatus: WorkOrderStatus) {
     const current = await this.getOrderRow(id);
+    this.auditContext.setBeforeData(current);
     const allowed = this.getAllowedOrderTransitions(current.status as WorkOrderStatus);
 
     if (!allowed.has(nextStatus)) {
@@ -228,7 +248,9 @@ export class WorkOrderRepository {
       [nextStatus, id],
     );
 
-    return this.getOrder(id);
+    const updated = await this.getOrder(id);
+    this.auditContext.setAfterData(updated);
+    return updated;
   }
 
   async listOrderBatches(orderId: number) {
@@ -312,7 +334,9 @@ export class WorkOrderRepository {
     this.assertOrderNotClosed(order.status);
     const current = await this.getBatchRow(orderId, batchId);
     const batchNo =
-      payload.batchNo === undefined ? current.batch_no : readRequiredString(payload.batchNo, 'Missing batch no');
+      payload.batchNo === undefined
+        ? current.batch_no
+        : readRequiredString(payload.batchNo, 'Missing batch no');
     const plannedQuantity =
       payload.plannedQuantity === undefined
         ? decimalString(current.planned_quantity)
@@ -346,8 +370,12 @@ export class WorkOrderRepository {
         plannedQuantity,
         ownerId,
         status,
-        payload.planStartDate === undefined ? formatDate(current.plan_start_date) : normalizeDate(payload.planStartDate),
-        payload.planEndDate === undefined ? formatDate(current.plan_end_date) : normalizeDate(payload.planEndDate),
+        payload.planStartDate === undefined
+          ? formatDate(current.plan_start_date)
+          : normalizeDate(payload.planStartDate),
+        payload.planEndDate === undefined
+          ? formatDate(current.plan_end_date)
+          : normalizeDate(payload.planEndDate),
         payload.remark === undefined ? current.remark : normalizeOptionalString(payload.remark),
         batchId,
         orderId,
@@ -550,7 +578,9 @@ export class WorkOrderRepository {
       'SELECT category_id FROM products WHERE id = ? AND is_deleted = 0 LIMIT 1',
       [productId],
     );
-    const [row] = await this.database.query<(RowDataPacket & { id: number; product_category_id: number | null })[]>(
+    const [row] = await this.database.query<
+      (RowDataPacket & { id: number; product_category_id: number | null })[]
+    >(
       `
       SELECT id, product_category_id
       FROM process_routes
@@ -564,7 +594,11 @@ export class WorkOrderRepository {
       throw new BadRequestException('Route not found or disabled');
     }
 
-    if (row.product_category_id !== null && product?.category_id !== null && row.product_category_id !== product?.category_id) {
+    if (
+      row.product_category_id !== null &&
+      product?.category_id !== null &&
+      row.product_category_id !== product?.category_id
+    ) {
       throw new BadRequestException('Route product type does not match product');
     }
   }
@@ -590,14 +624,32 @@ export class WorkOrderRepository {
   }
 
   private async assertOrderNoAvailable(orderNo: string, ignoredId?: number) {
-    await this.assertUniqueText('work_orders', 'order_no', orderNo, ignoredId, 'Work order no already exists');
+    await this.assertUniqueText(
+      'work_orders',
+      'order_no',
+      orderNo,
+      ignoredId,
+      'Work order no already exists',
+    );
   }
 
   private async assertBatchNoAvailable(batchNo: string, ignoredId?: number) {
-    await this.assertUniqueText('production_batches', 'batch_no', batchNo, ignoredId, 'Production batch no already exists');
+    await this.assertUniqueText(
+      'production_batches',
+      'batch_no',
+      batchNo,
+      ignoredId,
+      'Production batch no already exists',
+    );
   }
 
-  private async assertUniqueText(tableName: string, columnName: string, value: string, ignoredId: number | undefined, message: string) {
+  private async assertUniqueText(
+    tableName: string,
+    columnName: string,
+    value: string,
+    ignoredId: number | undefined,
+    message: string,
+  ) {
     const params: QueryParam[] = [value];
     const ignoredClause = ignoredId ? ' AND id <> ?' : '';
 
@@ -620,7 +672,11 @@ export class WorkOrderRepository {
     }
   }
 
-  private async assertBatchQuantityWithinOrder(orderId: number, newQuantity: number, ignoredBatchId?: number) {
+  private async assertBatchQuantityWithinOrder(
+    orderId: number,
+    newQuantity: number,
+    ignoredBatchId?: number,
+  ) {
     const order = await this.getOrderRow(orderId);
     const params: QueryParam[] = [orderId];
     const ignoredClause = ignoredBatchId ? ' AND id <> ?' : '';
@@ -629,7 +685,9 @@ export class WorkOrderRepository {
       params.push(ignoredBatchId);
     }
 
-    const [row] = await this.database.query<(RowDataPacket & { assigned_quantity: string | number | null })[]>(
+    const [row] = await this.database.query<
+      (RowDataPacket & { assigned_quantity: string | number | null })[]
+    >(
       `
       SELECT COALESCE(SUM(planned_quantity), 0) AS assigned_quantity
       FROM production_batches
@@ -638,7 +696,10 @@ export class WorkOrderRepository {
       params,
     );
 
-    if (decimalNumber(row?.assigned_quantity) + newQuantity > decimalNumber(order.planned_quantity)) {
+    if (
+      decimalNumber(row?.assigned_quantity) + newQuantity >
+      decimalNumber(order.planned_quantity)
+    ) {
       throw new BadRequestException('Batch quantity exceeds work order planned quantity');
     }
   }
@@ -650,7 +711,9 @@ export class WorkOrderRepository {
     }
 
     const batches = await this.listOrderBatches(orderId);
-    const nextStatus = batches.some((batch) => batch.status === 'doing' || batch.status === 'completed')
+    const nextStatus = batches.some(
+      (batch) => batch.status === 'doing' || batch.status === 'completed',
+    )
       ? 'doing'
       : 'released';
 

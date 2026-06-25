@@ -8,6 +8,7 @@ import type {
 } from '@company/api-contract';
 import { PermissionGuard } from '../../auth/permission.guard.js';
 import { RequirePermission } from '../../auth/require-permission.decorator.js';
+import { Audit } from '../../operation-log/audit.decorator.js';
 import { readId, readPagination } from '../../shared/request-utils.js';
 import { WorkOrderRepository } from './work-order.repository.js';
 
@@ -26,7 +27,10 @@ export class WorkOrderController {
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
   ) {
-    return this.orders.listOrders({ keyword, productId, status, ownerId }, readPagination(page, pageSize));
+    return this.orders.listOrders(
+      { keyword, productId, status, ownerId },
+      readPagination(page, pageSize),
+    );
   }
 
   @RequirePermission(PERMISSIONS.production.orders.detail)
@@ -36,30 +40,60 @@ export class WorkOrderController {
   }
 
   @RequirePermission(PERMISSIONS.production.orders.create)
+  @Audit({
+    module: 'production',
+    action: '创建生产工单',
+    targetType: 'work_order',
+    businessKeyBodyField: 'orderNo',
+  })
   @Post()
   createOrder(@Body() body: CreateWorkOrderPayload) {
     return this.orders.createOrder(body);
   }
 
   @RequirePermission(PERMISSIONS.production.orders.update)
+  @Audit({
+    module: 'production',
+    action: '修改生产工单',
+    targetType: 'work_order',
+    targetParams: { workOrderId: 'id' },
+  })
   @Put(':id')
   updateOrder(@Param('id') id: string, @Body() body: UpdateWorkOrderPayload) {
     return this.orders.updateOrder(readId(id), body);
   }
 
   @RequirePermission(PERMISSIONS.production.orders.release)
+  @Audit({
+    module: 'production',
+    action: '下达生产工单',
+    targetType: 'work_order',
+    targetParams: { workOrderId: 'id' },
+  })
   @Put(':id/release')
   releaseOrder(@Param('id') id: string) {
     return this.orders.changeOrderStatus(readId(id), 'released');
   }
 
   @RequirePermission(PERMISSIONS.production.orders.close)
+  @Audit({
+    module: 'production',
+    action: '关闭生产工单',
+    targetType: 'work_order',
+    targetParams: { workOrderId: 'id' },
+  })
   @Put(':id/close')
   closeOrder(@Param('id') id: string) {
     return this.orders.changeOrderStatus(readId(id), 'closed');
   }
 
   @RequirePermission(PERMISSIONS.production.orders.cancel)
+  @Audit({
+    module: 'production',
+    action: '取消生产工单',
+    targetType: 'work_order',
+    targetParams: { workOrderId: 'id' },
+  })
   @Put(':id/cancel')
   cancelOrder(@Param('id') id: string) {
     return this.orders.changeOrderStatus(readId(id), 'cancelled');

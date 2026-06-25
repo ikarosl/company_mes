@@ -27,6 +27,28 @@
       <el-form-item label="用户ID">
         <el-input v-model="query.userId" clearable />
       </el-form-item>
+      <el-form-item label="关键字">
+        <el-input v-model="query.keyword" clearable placeholder="动作 / 业务单号 / 用户" />
+      </el-form-item>
+      <el-form-item label="请求ID">
+        <el-input v-model="query.requestId" clearable />
+      </el-form-item>
+      <el-form-item label="对象类型">
+        <el-input v-model="query.targetType" clearable placeholder="work_order / user" />
+      </el-form-item>
+      <el-form-item label="对象ID">
+        <el-input v-model="query.targetId" clearable />
+      </el-form-item>
+      <el-form-item label="时间范围">
+        <el-date-picker
+          v-model="query.createdAtRange"
+          type="datetimerange"
+          range-separator="至"
+          start-placeholder="开始时间"
+          end-placeholder="结束时间"
+          value-format="YYYY-MM-DD HH:mm:ss"
+        />
+      </el-form-item>
       <el-form-item>
         <el-button type="primary" :loading="loading" @click="loadLogs">查询</el-button>
       </el-form-item>
@@ -51,6 +73,8 @@
           </el-tag>
         </template>
       </el-table-column>
+      <el-table-column prop="httpStatus" label="状态码" width="90" />
+      <el-table-column prop="durationMs" label="耗时(ms)" width="100" />
       <el-table-column prop="ip" label="IP" min-width="140" />
       <el-table-column prop="remark" label="备注" min-width="180" show-overflow-tooltip />
       <el-table-column prop="createdAt" label="时间" min-width="180" />
@@ -71,18 +95,35 @@
           >{{ activeLog.targetType }} / {{ activeLog.targetId }}</el-descriptions-item
         >
         <el-descriptions-item label="结果">{{ activeLog.result }}</el-descriptions-item>
+        <el-descriptions-item label="请求ID">{{ activeLog.requestId || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="请求">
+          {{ activeLog.httpMethod || '-' }} {{ activeLog.route || '-' }}
+        </el-descriptions-item>
+        <el-descriptions-item label="状态 / 耗时">
+          {{ activeLog.httpStatus ?? '-' }} / {{ activeLog.durationMs ?? '-' }}ms
+        </el-descriptions-item>
+        <el-descriptions-item label="关联对象">
+          {{ JSON.stringify(activeLog.targetIds) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="错误代码">{{
+          activeLog.errorCode || '-'
+        }}</el-descriptions-item>
         <el-descriptions-item label="备注">{{ activeLog.remark }}</el-descriptions-item>
       </el-descriptions>
-      <h2>返回数据</h2>
-      <pre>{{ JSON.stringify(activeLog?.afterData, null, 2) }}</pre>
+      <h2>请求数据</h2>
+      <pre>{{ JSON.stringify(activeLog?.requestData, null, 2) }}</pre>
       <h2>变更前数据</h2>
       <pre>{{ JSON.stringify(activeLog?.beforeData, null, 2) }}</pre>
+      <h2>字段差异</h2>
+      <pre>{{ JSON.stringify(activeDiff, null, 2) }}</pre>
+      <h2>返回 / 变更后数据</h2>
+      <pre>{{ JSON.stringify(activeLog?.afterData, null, 2) }}</pre>
     </el-dialog>
   </section>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import type { OperationLogListItem } from '@company/api-contract';
 import { systemApi } from '../../api/system';
 import { DialogWidth } from '../../utils/dialog';
@@ -93,11 +134,19 @@ const loading = ref(false);
 const detailVisible = ref(false);
 const logs = ref<OperationLogListItem[]>([]);
 const activeLog = ref<OperationLogListItem | null>(null);
+const activeDiff = computed(() =>
+  buildDiff(activeLog.value?.beforeData, activeLog.value?.afterData),
+);
 const query = reactive({
   logType: '',
   module: '',
   result: '',
   userId: '',
+  keyword: '',
+  requestId: '',
+  targetType: '',
+  targetId: '',
+  createdAtRange: [] as string[],
 });
 
 const loadLogs = async () => {
@@ -108,6 +157,12 @@ const loadLogs = async () => {
       module: query.module || undefined,
       result: query.result || undefined,
       userId: query.userId || undefined,
+      keyword: query.keyword || undefined,
+      requestId: query.requestId || undefined,
+      targetType: query.targetType || undefined,
+      targetId: query.targetId || undefined,
+      startedAt: query.createdAtRange[0] || undefined,
+      endedAt: query.createdAtRange[1] || undefined,
     });
   } catch (error) {
     EMessage.error(error, '日志加载失败');
@@ -120,6 +175,23 @@ const openDetail = (row: OperationLogListItem) => {
   activeLog.value = row;
   detailVisible.value = true;
 };
+
+const buildDiff = (before: unknown, after: unknown) => {
+  if (!isRecord(before) || !isRecord(after)) {
+    return null;
+  }
+
+  const diff: Record<string, { before: unknown; after: unknown }> = {};
+  for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) {
+      diff[key] = { before: before[key], after: after[key] };
+    }
+  }
+  return diff;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
 
 onMounted(loadLogs);
 </script>

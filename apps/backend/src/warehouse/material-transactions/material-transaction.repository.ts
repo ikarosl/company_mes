@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type {
   MaterialInboundPayload,
@@ -8,6 +14,7 @@ import type {
   MaterialTransactionListItem,
 } from '@company/api-contract';
 import { DatabaseService, type QueryParam } from '../../database/database.service.js';
+import { AuditContextService } from '../../operation-log/audit-context.service.js';
 import { execute, query } from '../../shared/repository.helpers.js';
 import { type PaginationOptions, toPageResult } from '../../shared/request-utils.js';
 
@@ -59,7 +66,10 @@ interface DemandRow extends RowDataPacket {
 
 @Injectable()
 export class MaterialTransactionRepository {
-  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
+  constructor(
+    @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(AuditContextService) private readonly auditContext: AuditContextService,
+  ) {}
 
   async list(filters: TransactionFilters, pagination: PaginationOptions) {
     const { where, params } = this.buildFilters(filters);
@@ -133,7 +143,9 @@ export class MaterialTransactionRepository {
     const productId = positiveId(payload.productId, '请选择物料');
     const batchNo = required(payload.materialBatchNo, '请填写物料批次号');
     const quantity = positiveDecimal(payload.quantity, '入库数量必须大于0');
-    const [existing] = await this.database.query<(RowDataPacket & { id: number; product_id: number })[]>(
+    const [existing] = await this.database.query<
+      (RowDataPacket & { id: number; product_id: number })[]
+    >(
       'SELECT id, product_id FROM material_batches WHERE material_batch_no = ? AND is_deleted = 0 LIMIT 1',
       [batchNo],
     );
@@ -143,6 +155,7 @@ export class MaterialTransactionRepository {
 
     // 相同物料批次再次入库时累加库存，同时更新本批次的供应商和技术协议快照。
     if (existing) {
+      this.auditContext.setBeforeData(await this.getMaterialBatchAuditSnapshot(existing.id));
       await this.database.execute(
         `
         UPDATE material_batches
@@ -166,6 +179,7 @@ export class MaterialTransactionRepository {
           existing.id,
         ],
       );
+      this.auditContext.setAfterData(await this.getMaterialBatchAuditSnapshot(existing.id));
       return { materialBatchId: String(existing.id) };
     }
 
@@ -188,6 +202,7 @@ export class MaterialTransactionRepository {
         userId,
       ],
     )) as ResultSetHeader;
+    this.auditContext.setAfterData(await this.getMaterialBatchAuditSnapshot(result.insertId));
     return { materialBatchId: String(result.insertId) };
   }
 
@@ -197,6 +212,7 @@ export class MaterialTransactionRepository {
     // 锁定需求和库存，保证累计出库与库存扣减在同一事务内完成。
     await this.database.transaction(async (connection) => {
       const usage = await this.lockUsage(connection, usageId);
+      this.auditContext.setBeforeData(usage);
       const remaining = number(usage.reserved_quantity) - number(usage.used_quantity);
       if (number(quantity) > remaining) {
         throw new BadRequestException('出库数量不能超过剩余预留数量');
@@ -233,6 +249,7 @@ export class MaterialTransactionRepository {
         [quantity, quantity, userId, usage.material_batch_id],
       );
     });
+    this.auditContext.setAfterData(await this.getUsageAuditSnapshot(usageId));
     return { success: true };
   }
 
@@ -243,6 +260,7 @@ export class MaterialTransactionRepository {
     // 退料反向减少累计使用量并回补同一个物料批次库存。
     await this.database.transaction(async (connection) => {
       const usage = await this.lockUsage(connection, usageId);
+      this.auditContext.setBeforeData(usage);
       if (number(quantity) > number(usage.used_quantity)) {
         throw new BadRequestException('退料数量不能超过累计出库数量');
       }
@@ -273,16 +291,57 @@ export class MaterialTransactionRepository {
         [quantity, userId, usage.material_batch_id],
       );
     });
+    this.auditContext.setAfterData(await this.getUsageAuditSnapshot(usageId));
     return { success: true };
   }
 
+  private async getMaterialBatchAuditSnapshot(materialBatchId: number) {
+    const [row] = await this.database.query<RowDataPacket[]>(
+      `
+      SELECT
+        id, product_id, material_batch_no, supplier_name, protocol_code,
+        received_date, quantity, status, remark, updated_by, updated_at
+      FROM material_batches
+      WHERE id = ? AND is_deleted = 0
+      LIMIT 1
+    `,
+      [materialBatchId],
+    );
+    return row ?? null;
+  }
+
+  private async getUsageAuditSnapshot(usageId: number) {
+    const [row] = await this.database.query<RowDataPacket[]>(
+      `
+      SELECT
+        bmu.id AS usage_id,
+        bmu.batch_id,
+        bmu.material_batch_id,
+        bmu.reserved_quantity,
+        bmu.used_quantity,
+        bmu.status AS usage_status,
+        mb.material_batch_no,
+        mb.quantity AS stock_quantity,
+        mb.status AS material_batch_status
+      FROM batch_material_usages bmu
+      INNER JOIN material_batches mb ON mb.id = bmu.material_batch_id AND mb.is_deleted = 0
+      WHERE bmu.id = ? AND bmu.is_deleted = 0
+      LIMIT 1
+    `,
+      [usageId],
+    );
+    return row ?? null;
+  }
+
   private async lockUsage(connection: Parameters<typeof query>[0], usageId: number) {
-    const [row] = await query<(RowDataPacket & {
-      material_batch_id: number;
-      reserved_quantity: string | number;
-      used_quantity: string | number;
-      stock_quantity: string | number;
-    })[]>(
+    const [row] = await query<
+      (RowDataPacket & {
+        material_batch_id: number;
+        reserved_quantity: string | number;
+        used_quantity: string | number;
+        stock_quantity: string | number;
+      })[]
+    >(
       connection,
       `
       SELECT bmu.material_batch_id, bmu.reserved_quantity, bmu.used_quantity, mb.quantity AS stock_quantity

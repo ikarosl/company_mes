@@ -15,6 +15,13 @@ export class SystemLogRepository {
       module?: string;
       result?: string;
       userId?: string;
+      action?: string;
+      targetType?: string;
+      targetId?: string;
+      requestId?: string;
+      keyword?: string;
+      startedAt?: string;
+      endedAt?: string;
     },
     pagination: PaginationOptions,
   ): Promise<PageResult<OperationLogListItem>> {

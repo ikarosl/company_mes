@@ -7,6 +7,7 @@ import type {
   MaterialAllocationRequirementItem,
 } from '@company/api-contract';
 import { DatabaseService, type QueryParam } from '../../database/database.service.js';
+import { AuditContextService } from '../../operation-log/audit-context.service.js';
 import { type PaginationOptions, toPageResult } from '../../shared/request-utils.js';
 import type { CountRow, ProductionBatchListRow } from '../production.types.js';
 import {
@@ -62,7 +63,10 @@ interface AvailableBatchRow extends RowDataPacket {
 
 @Injectable()
 export class MaterialAllocationRepository {
-  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
+  constructor(
+    @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(AuditContextService) private readonly auditContext: AuditContextService,
+  ) {}
 
   async listAllocations(filters: MaterialAllocationFilters, pagination: PaginationOptions) {
     const { where, params } = this.buildBatchFilters(filters);
@@ -112,7 +116,9 @@ export class MaterialAllocationRepository {
       requirementsByBatchId.set(row.batch_id, rows);
     }
 
-    const items = batches.map((batch) => this.mapAllocationBatch(batch, requirementsByBatchId.get(batch.id) ?? []));
+    const items = batches.map((batch) =>
+      this.mapAllocationBatch(batch, requirementsByBatchId.get(batch.id) ?? []),
+    );
     return toPageResult(items, Number(totalRow?.total ?? 0), pagination);
   }
 
@@ -145,8 +151,10 @@ export class MaterialAllocationRepository {
     const materialBatchId = readPositiveId(payload.materialBatchId, 'Missing material batch');
     const reservedQuantity = readDecimal(payload.reservedQuantity, 'Invalid reserved quantity');
     const usage = await this.getDemandUsage(batchId, productMaterialId);
+    this.auditContext.setBeforeData(usage);
     const materialBatch = await this.getAvailableMaterialBatch(materialBatchId, productMaterialId);
-    const currentReserved = usage.material_batch_id === materialBatchId ? decimalNumber(usage.reserved_quantity) : 0;
+    const currentReserved =
+      usage.material_batch_id === materialBatchId ? decimalNumber(usage.reserved_quantity) : 0;
     const availableQuantity = decimalNumber(materialBatch.available_quantity) + currentReserved;
     const planQuantity = decimalNumber(usage.plan_quantity);
 
@@ -179,11 +187,13 @@ export class MaterialAllocationRepository {
     );
 
     await this.refreshBatchMaterialStatus(batchId);
+    this.auditContext.setAfterData(await this.getDemandUsage(batchId, productMaterialId));
     return this.getAllocationBatch(batchId);
   }
 
   async clearAllocation(batchId: number, productMaterialId: number) {
     const usage = await this.getDemandUsage(batchId, productMaterialId);
+    this.auditContext.setBeforeData(usage);
 
     if (decimalNumber(usage.used_quantity) > 0) {
       throw new BadRequestException('该物料已有领用数量，不能清除分配');
@@ -204,6 +214,7 @@ export class MaterialAllocationRepository {
     );
 
     await this.refreshBatchMaterialStatus(batchId);
+    this.auditContext.setAfterData(await this.getDemandUsage(batchId, productMaterialId));
     return this.getAllocationBatch(batchId);
   }
 
@@ -243,7 +254,10 @@ export class MaterialAllocationRepository {
     return this.mapAllocationBatch(batch, await this.listRequirementRows([batchId], {}));
   }
 
-  private async listRequirementRows(batchIds: number[], filters: Pick<MaterialAllocationFilters, 'materialKeyword' | 'keyMaterial'>) {
+  private async listRequirementRows(
+    batchIds: number[],
+    filters: Pick<MaterialAllocationFilters, 'materialKeyword' | 'keyMaterial'>,
+  ) {
     const placeholders = batchIds.map(() => '?').join(',');
     const clauses = [`allocation.batch_id IN (${placeholders})`];
     const params: QueryParam[] = [...batchIds];
@@ -288,20 +302,30 @@ export class MaterialAllocationRepository {
     );
   }
 
-  private mapAllocationBatch(batch: ProductionBatchListRow, rows: RequirementRow[]): MaterialAllocationBatchItem {
+  private mapAllocationBatch(
+    batch: ProductionBatchListRow,
+    rows: RequirementRow[],
+  ): MaterialAllocationBatchItem {
     const requirements = rows.map((row) => this.mapRequirement(row));
-    const shortageCount = requirements.filter((item) => decimalNumber(item.unmetQuantity) > 0).length;
-    const allocatedCount = requirements.filter((item) => decimalNumber(item.reservedQuantity) >= decimalNumber(item.planQuantity)).length;
-    const usedCount = requirements.filter((item) => decimalNumber(item.usedQuantity) >= decimalNumber(item.planQuantity)).length;
-    const materialStatus = requirements.length === 0
-      ? 'missing_demand'
-      : usedCount === requirements.length
-        ? 'used'
-        : shortageCount === 0
-          ? 'allocated'
-          : allocatedCount > 0
-            ? 'partial'
-            : 'unallocated';
+    const shortageCount = requirements.filter(
+      (item) => decimalNumber(item.unmetQuantity) > 0,
+    ).length;
+    const allocatedCount = requirements.filter(
+      (item) => decimalNumber(item.reservedQuantity) >= decimalNumber(item.planQuantity),
+    ).length;
+    const usedCount = requirements.filter(
+      (item) => decimalNumber(item.usedQuantity) >= decimalNumber(item.planQuantity),
+    ).length;
+    const materialStatus =
+      requirements.length === 0
+        ? 'missing_demand'
+        : usedCount === requirements.length
+          ? 'used'
+          : shortageCount === 0
+            ? 'allocated'
+            : allocatedCount > 0
+              ? 'partial'
+              : 'unallocated';
 
     return {
       ...mapProductionBatch(batch),
@@ -318,15 +342,16 @@ export class MaterialAllocationRepository {
     const reservedQuantity = decimalNumber(row.reserved_quantity);
     const usedQuantity = decimalNumber(row.used_quantity);
     const unmetQuantity = Math.max(planQuantity - reservedQuantity, 0);
-    const allocationStatus = usedQuantity >= planQuantity
-      ? 'used'
-      : reservedQuantity >= planQuantity
-        ? 'allocated'
-        : reservedQuantity > 0
-          ? 'partial'
-          : row.status === 'cancelled'
-            ? 'cancelled'
-            : 'unallocated';
+    const allocationStatus =
+      usedQuantity >= planQuantity
+        ? 'used'
+        : reservedQuantity >= planQuantity
+          ? 'allocated'
+          : reservedQuantity > 0
+            ? 'partial'
+            : row.status === 'cancelled'
+              ? 'cancelled'
+              : 'unallocated';
 
     return {
       id: String(row.usage_id),
@@ -370,7 +395,9 @@ export class MaterialAllocationRepository {
     const params: QueryParam[] = [];
 
     if (filters.keyword?.trim()) {
-      clauses.push('(b.batch_no LIKE ? OR b.order_no LIKE ? OR b.product_model LIKE ? OR b.product_name LIKE ?)');
+      clauses.push(
+        '(b.batch_no LIKE ? OR b.order_no LIKE ? OR b.product_model LIKE ? OR b.product_name LIKE ?)',
+      );
       const keyword = `%${filters.keyword.trim()}%`;
       params.push(keyword, keyword, keyword, keyword);
     }
@@ -380,7 +407,11 @@ export class MaterialAllocationRepository {
       params.push(readPositiveId(filters.productId, 'Invalid product'));
     }
 
-    if (filters.materialKeyword?.trim() || filters.keyMaterial === '1' || filters.keyMaterial === '0') {
+    if (
+      filters.materialKeyword?.trim() ||
+      filters.keyMaterial === '1' ||
+      filters.keyMaterial === '0'
+    ) {
       const demandClauses = ['allocation.batch_id = b.batch_id'];
       if (filters.materialKeyword?.trim()) {
         demandClauses.push('(allocation.material_model LIKE ? OR allocation.material_name LIKE ?)');
@@ -488,10 +519,12 @@ export class MaterialAllocationRepository {
   }
 
   private async refreshBatchMaterialStatus(batchId: number) {
-    const rows = await this.database.query<(RowDataPacket & {
-      total: number;
-      allocated_count: number;
-    })[]>(
+    const rows = await this.database.query<
+      (RowDataPacket & {
+        total: number;
+        allocated_count: number;
+      })[]
+    >(
       `
       SELECT
         COUNT(*) AS total,
@@ -504,7 +537,8 @@ export class MaterialAllocationRepository {
     const summary = rows[0];
     const total = Number(summary?.total ?? 0);
     const allocatedCount = Number(summary?.allocated_count ?? 0);
-    const nextStatus = total > 0 && allocatedCount === total ? 'material_assigned' : 'material_pending';
+    const nextStatus =
+      total > 0 && allocatedCount === total ? 'material_assigned' : 'material_pending';
 
     await this.database.execute(
       `

@@ -129,6 +129,7 @@ export const mapWorkerTask = (row: WorkerTaskListRow): WorkerTaskItem => ({
   stepOrder: row.step_order,
   stepName: row.step_name,
   stepStatus: row.step_status as BatchStepStatus,
+  canStart: row.can_start === 1,
   startedAt: row.step_started_at ? row.step_started_at.toISOString() : null,
   completedAt: row.step_completed_at ? row.step_completed_at.toISOString() : null,
   outputQuantity: row.output_quantity === null ? null : decimalString(row.output_quantity),

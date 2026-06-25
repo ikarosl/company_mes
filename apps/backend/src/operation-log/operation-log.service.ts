@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { RowDataPacket } from 'mysql2/promise';
 import type { OperationLogListItem } from '@company/api-contract';
 import { DatabaseService, type QueryParam } from '../database/database.service.js';
@@ -9,12 +9,23 @@ export interface OperationLogPayload {
   module: string;
   action: string;
   userId?: string | null;
+  operatorUsername?: string | null;
   targetId?: string | number | null;
   targetType?: string | null;
+  targetIds?: unknown;
+  businessKey?: string | null;
   result?: string;
+  requestId?: string | null;
+  httpMethod?: string | null;
+  route?: string | null;
+  httpStatus?: number | null;
+  durationMs?: number | null;
+  requestData?: unknown;
   beforeData?: unknown;
   afterData?: unknown;
   ip?: string | null;
+  userAgent?: string | null;
+  errorCode?: string | null;
   remark?: string | null;
 }
 
@@ -24,13 +35,24 @@ interface OperationLogRow extends RowDataPacket {
   module: string;
   action: string;
   user_id: number | null;
+  operator_username: string | null;
   username: string | null;
   target_id: number | null;
   target_type: string | null;
+  target_ids: string | null;
+  business_key: string | null;
   result: string;
+  request_id: string | null;
+  http_method: string | null;
+  route: string | null;
+  http_status: number | null;
+  duration_ms: number | null;
+  request_data: string | null;
   before_data: string | null;
   after_data: string | null;
   ip: string | null;
+  user_agent: string | null;
+  error_code: string | null;
   remark: string | null;
   created_at: Date | string;
 }
@@ -41,6 +63,8 @@ interface CountRow extends RowDataPacket {
 
 @Injectable()
 export class OperationLogService {
+  private readonly logger = new Logger(OperationLogService.name);
+
   constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
 
   async write(payload: OperationLogPayload) {
@@ -48,27 +72,41 @@ export class OperationLogService {
       await this.database.execute(
         `
         INSERT INTO operation_logs (
-          log_type, module, action, user_id, target_id, target_type,
-          result, before_data, after_data, ip, remark, created_at
+          log_type, module, action, user_id, operator_username,
+          target_id, target_type, target_ids, business_key,
+          result, request_id, http_method, route, http_status, duration_ms,
+          request_data, before_data, after_data, ip, user_agent, error_code,
+          remark, created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
       `,
         [
           payload.logType,
           payload.module,
           payload.action,
           nullableNumber(payload.userId),
+          payload.operatorUsername ?? null,
           nullableNumber(payload.targetId),
           payload.targetType ?? null,
+          toJson(payload.targetIds),
+          payload.businessKey ?? null,
           payload.result ?? 'success',
+          payload.requestId ?? null,
+          payload.httpMethod ?? null,
+          payload.route ?? null,
+          payload.httpStatus ?? null,
+          payload.durationMs ?? null,
+          toJson(payload.requestData),
           toJson(payload.beforeData),
           toJson(payload.afterData),
           payload.ip ?? null,
+          payload.userAgent ?? null,
+          payload.errorCode ?? null,
           payload.remark ?? null,
         ],
       );
-    } catch {
-      // Audit logging must never break the business request path.
+    } catch (error) {
+      this.logger.error('Failed to persist operation log', error);
     }
   }
 
@@ -78,6 +116,13 @@ export class OperationLogService {
       module?: string;
       result?: string;
       userId?: string;
+      action?: string;
+      targetType?: string;
+      targetId?: string;
+      requestId?: string;
+      keyword?: string;
+      startedAt?: string;
+      endedAt?: string;
     },
     pagination: PaginationOptions,
   ) {
@@ -102,6 +147,44 @@ export class OperationLogService {
     if (filters.userId) {
       clauses.push('ol.user_id = ?');
       params.push(Number(filters.userId));
+    }
+
+    if (filters.action) {
+      clauses.push('ol.action LIKE ?');
+      params.push(`%${filters.action.trim()}%`);
+    }
+
+    if (filters.targetType) {
+      clauses.push('ol.target_type = ?');
+      params.push(filters.targetType);
+    }
+
+    if (filters.targetId) {
+      clauses.push('ol.target_id = ?');
+      params.push(Number(filters.targetId));
+    }
+
+    if (filters.requestId) {
+      clauses.push('ol.request_id = ?');
+      params.push(filters.requestId);
+    }
+
+    if (filters.keyword) {
+      clauses.push(
+        '(ol.action LIKE ? OR ol.business_key LIKE ? OR ol.operator_username LIKE ? OR u.username LIKE ?)',
+      );
+      const keyword = `%${filters.keyword.trim()}%`;
+      params.push(keyword, keyword, keyword, keyword);
+    }
+
+    if (filters.startedAt) {
+      clauses.push('ol.created_at >= ?');
+      params.push(filters.startedAt);
+    }
+
+    if (filters.endedAt) {
+      clauses.push('ol.created_at <= ?');
+      params.push(filters.endedAt);
     }
 
     const where = clauses.join(' AND ');
@@ -175,13 +258,23 @@ const mapOperationLog = (row: OperationLogRow): OperationLogListItem => ({
   module: row.module,
   action: row.action,
   userId: row.user_id === null ? null : String(row.user_id),
-  username: row.username,
+  username: row.operator_username ?? row.username,
   targetId: row.target_id === null ? null : String(row.target_id),
   targetType: row.target_type,
+  targetIds: fromJson(row.target_ids),
+  businessKey: row.business_key,
   result: row.result,
+  requestId: row.request_id,
+  httpMethod: row.http_method,
+  route: row.route,
+  httpStatus: row.http_status,
+  durationMs: row.duration_ms,
+  requestData: fromJson(row.request_data),
   beforeData: fromJson(row.before_data),
   afterData: fromJson(row.after_data),
   ip: row.ip,
+  userAgent: row.user_agent,
+  errorCode: row.error_code,
   remark: row.remark,
   createdAt:
     typeof row.created_at === 'string'

@@ -34,16 +34,16 @@ export class PermissionGuard implements CanActivate {
     );
     const profile = await this.authService.profile(claims.sub);
 
-    if (!profile.permissions.includes(permission)) {
-      throw new ForbiddenException('Permission denied');
-    }
-
     request.user = {
       id: claims.sub,
       username: profile.username,
       roles: profile.roles,
       permissions: profile.permissions,
     };
+
+    if (!profile.permissions.includes(permission)) {
+      throw new ForbiddenException('Permission denied');
+    }
 
     return true;
   }
