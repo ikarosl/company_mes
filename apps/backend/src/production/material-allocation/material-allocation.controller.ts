@@ -67,14 +67,14 @@ export class MaterialAllocationController {
     targetType: 'production_batch_material',
     targetParams: {
       productionBatchId: 'batchId',
-      productMaterialId: 'productMaterialId',
+      allocationId: 'allocationId',
     },
   })
-  @Delete('batches/:batchId/product-materials/:productMaterialId')
+  @Delete('batches/:batchId/allocations/:allocationId')
   clearAllocation(
     @Param('batchId') batchId: string,
-    @Param('productMaterialId') productMaterialId: string,
+    @Param('allocationId') allocationId: string,
   ) {
-    return this.allocation.clearAllocation(readId(batchId), readId(productMaterialId));
+    return this.allocation.clearAllocation(readId(batchId), readId(allocationId));
   }
 }

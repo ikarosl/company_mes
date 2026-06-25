@@ -89,13 +89,28 @@ export interface TaskMaterialRequirementItem {
 }
 
 export interface MaterialAllocationRequirementItem extends TaskMaterialRequirementItem {
-  batchMaterialUsageId: string | null;
-  materialBatchId: string | null;
-  materialBatchNo: string | null;
   reservedQuantity: string;
   unmetQuantity: string;
   availableBatchCount: number;
-  allocationStatus: 'unallocated' | 'partial' | 'allocated' | 'used' | 'cancelled';
+  allocationStatus: 'unallocated' | 'partial' | 'allocated' | 'used';
+  /** 同一需求可由多个物料批次分次预留。 */
+  allocations: MaterialAllocationRecordItem[];
+}
+
+/** 单次预留流水及其所在物料批次的领退料汇总。 */
+export interface MaterialAllocationRecordItem {
+  id: string;
+  materialBatchId: string;
+  materialBatchNo: string;
+  reservedQuantity: string;
+  issuedQuantity: string;
+  returnedQuantity: string;
+  usedQuantity: string;
+  remainingQuantity: string;
+  recordedByName: string | null;
+  recordedAt: string;
+  remark: string | null;
+  canClear: boolean;
 }
 
 export interface MaterialAllocationBatchItem extends ProductionBatchItem {

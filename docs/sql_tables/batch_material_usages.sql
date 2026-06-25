@@ -2,47 +2,43 @@
 SET NAMES utf8mb4;
 USE `company_test`;
 
-DROP TABLE IF EXISTS `batch_material_usages`;
 CREATE TABLE `batch_material_usages` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
-  `batch_id` bigint unsigned DEFAULT NULL COMMENT '生产批次ID',
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '物料操作流水ID',
+  `batch_id` bigint unsigned NOT NULL COMMENT '生产批次ID',
+  `material_batch_id` bigint unsigned NOT NULL COMMENT '物料批次ID',
+  `reserved_quantity` decimal(12,4) NOT NULL DEFAULT '0.0000' COMMENT '本次预留数量',
   `product_materials_id` bigint unsigned NOT NULL COMMENT '产品物料清单ID',
-  `material_batch_id` bigint unsigned DEFAULT NULL COMMENT '物料批次ID',
-  `plan_quantity` decimal(12,4) NOT NULL DEFAULT '0.0000' COMMENT '需求数量',
-  `reserved_quantity` decimal(12,4) NOT NULL DEFAULT '0.0000' COMMENT '预留数量',
-  `used_quantity` decimal(12,4) NOT NULL DEFAULT '0.0000' COMMENT '实际使用数量',
+  `operation_type` varchar(50) NOT NULL COMMENT 'reserve/issue/return',
+  `used_quantity` decimal(12,4) NOT NULL DEFAULT '0.0000' COMMENT '本次领料或退料数量',
   `unit` varchar(50) DEFAULT NULL COMMENT '单位',
-  `status` varchar(50) NOT NULL DEFAULT 'reserved' COMMENT 'reserved/part_used/used/cancelled',
-  `recorded_by` bigint unsigned DEFAULT NULL COMMENT '记录人',
-  `recorded_at` datetime DEFAULT NULL COMMENT '记录时间',
+  `recorded_by` bigint unsigned DEFAULT NULL COMMENT '记录人ID',
+  `recorded_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录时间',
   `remark` text COMMENT '备注',
-  `created_by` bigint unsigned DEFAULT NULL COMMENT '创建人',
+  `created_by` bigint unsigned DEFAULT NULL COMMENT '创建人ID',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `updated_by` bigint unsigned DEFAULT NULL COMMENT '更新人',
-  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `updated_by` bigint unsigned DEFAULT NULL COMMENT '更新人ID',
+  `updated_at` datetime DEFAULT NULL COMMENT '更新时间',
   `is_deleted` tinyint NOT NULL DEFAULT '0' COMMENT '软删除标记',
-  `deleted_by` bigint unsigned DEFAULT NULL COMMENT '删除人',
+  `deleted_by` bigint unsigned DEFAULT NULL COMMENT '删除人ID',
   `deleted_at` datetime DEFAULT NULL COMMENT '删除时间',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_batch_material_usages_batch_material` (`batch_id`,`product_materials_id`),
-  KEY `idx_batch_material_usages_batch_id` (`batch_id`),
-  KEY `idx_batch_material_usages_product_materials_id` (`product_materials_id`),
+  KEY `idx_batch_material_usages_batch_material` (`batch_id`,`product_materials_id`),
   KEY `idx_batch_material_usages_material_batch_id` (`material_batch_id`),
-  KEY `idx_batch_material_usages_status` (`status`),
-  KEY `idx_batch_material_usages_recorded_by` (`recorded_by`),
+  KEY `idx_batch_material_usages_operation_type` (`operation_type`),
+  KEY `idx_batch_material_usages_recorded_at` (`recorded_at`),
   KEY `idx_batch_material_usages_is_deleted` (`is_deleted`),
-  KEY `idx_batch_material_usages_created_by` (`created_by`),
-  KEY `idx_batch_material_usages_updated_by` (`updated_by`),
-  KEY `idx_batch_material_usages_deleted_by` (`deleted_by`),
-  CONSTRAINT `fk_batch_material_usages_batch_id` FOREIGN KEY (`batch_id`) REFERENCES `production_batches` (`id`) ON DELETE SET NULL,
-  CONSTRAINT `fk_batch_material_usages_created_by` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
-  CONSTRAINT `fk_batch_material_usages_deleted_by` FOREIGN KEY (`deleted_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
-  CONSTRAINT `fk_batch_material_usages_material_batch_id` FOREIGN KEY (`material_batch_id`) REFERENCES `material_batches` (`id`) ON DELETE SET NULL,
-  CONSTRAINT `fk_batch_material_usages_product_materials_id` FOREIGN KEY (`product_materials_id`) REFERENCES `product_materials` (`id`) ON DELETE RESTRICT,
-  CONSTRAINT `fk_batch_material_usages_recorded_by` FOREIGN KEY (`recorded_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
-  CONSTRAINT `fk_batch_material_usages_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
-  CONSTRAINT `chk_batch_material_usages_plan_quantity` CHECK (`plan_quantity` >= 0),
-  CONSTRAINT `chk_batch_material_usages_reserved_quantity` CHECK (`reserved_quantity` >= 0),
-  CONSTRAINT `chk_batch_material_usages_used_quantity` CHECK (`used_quantity` >= 0),
-  CONSTRAINT `chk_batch_material_usages_status` CHECK (`status` in ('reserved','part_used','used','cancelled'))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='批次物料使用表';
+  CONSTRAINT `fk_batch_material_usage_ops_batch_id`
+    FOREIGN KEY (`batch_id`) REFERENCES `production_batches` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_batch_material_usage_ops_material_batch_id`
+    FOREIGN KEY (`material_batch_id`) REFERENCES `material_batches` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_batch_material_usage_ops_product_materials_id`
+    FOREIGN KEY (`product_materials_id`) REFERENCES `product_materials` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `chk_batch_material_usage_ops_reserved_quantity` CHECK (`reserved_quantity` >= 0),
+  CONSTRAINT `chk_batch_material_usage_ops_used_quantity` CHECK (`used_quantity` >= 0),
+  CONSTRAINT `chk_batch_material_usages_operation_type`
+    CHECK (`operation_type` IN ('reserve','issue','return')),
+  CONSTRAINT `chk_batch_material_usage_ops_operation_quantity` CHECK (
+    (`operation_type` = 'reserve' AND `reserved_quantity` > 0 AND `used_quantity` = 0)
+    OR (`operation_type` IN ('issue','return') AND `reserved_quantity` = 0 AND `used_quantity` > 0)
+  )
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='生产批次物料预留、领料与退料流水表';

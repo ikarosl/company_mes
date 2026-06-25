@@ -41,7 +41,7 @@ export interface MaterialBatchUsageRow extends RowDataPacket {
   batch_id: number | null;
   reserved_quantity: string | number | null;
   used_quantity: string | number | null;
-  status: string | null;
+  operation_type: 'reserve' | 'issue' | 'return';
   recorded_by: number | null;
   recorded_by_name: string | null;
   recorded_at: Date | null;

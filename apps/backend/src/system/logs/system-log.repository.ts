@@ -20,7 +20,6 @@ export class SystemLogRepository {
       targetType?: string;
       targetId?: string;
       requestId?: string;
-      keyword?: string;
       startedAt?: string;
       endedAt?: string;
     },

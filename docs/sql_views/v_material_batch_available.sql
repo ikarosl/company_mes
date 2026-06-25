@@ -32,15 +32,26 @@ INNER JOIN products p
   AND p.is_deleted = 0
 LEFT JOIN (
   SELECT
-    material_batch_id,
-    SUM(reserved_quantity) AS reserved_quantity,
-    SUM(used_quantity) AS used_quantity,
-    SUM(GREATEST(reserved_quantity - used_quantity, 0)) AS reserved_not_used_quantity
-  FROM batch_material_usages
-  WHERE is_deleted = 0
-    AND material_batch_id IS NOT NULL
-    AND status <> 'cancelled'
-  GROUP BY material_batch_id
+    operation_summary.material_batch_id,
+    SUM(operation_summary.reserved_quantity) AS reserved_quantity,
+    SUM(operation_summary.net_used_quantity) AS used_quantity,
+    SUM(GREATEST(operation_summary.reserved_quantity - operation_summary.net_used_quantity, 0))
+      AS reserved_not_used_quantity
+  FROM (
+    SELECT
+      material_batch_id,
+      batch_id,
+      product_materials_id,
+      SUM(CASE WHEN operation_type = 'reserve' THEN reserved_quantity ELSE 0 END)
+        AS reserved_quantity,
+      SUM(CASE WHEN operation_type = 'issue' THEN used_quantity ELSE 0 END)
+        - SUM(CASE WHEN operation_type = 'return' THEN used_quantity ELSE 0 END)
+        AS net_used_quantity
+    FROM batch_material_usages
+    WHERE is_deleted = 0
+    GROUP BY material_batch_id, batch_id, product_materials_id
+  ) operation_summary
+  GROUP BY operation_summary.material_batch_id
 ) usage_summary
   ON usage_summary.material_batch_id = mb.id
 WHERE mb.is_deleted = 0;

@@ -69,7 +69,9 @@
               </template>
             </el-table-column>
             <el-table-column label="物料批次" min-width="160" show-overflow-tooltip>
-              <template #default="{ row }">{{ row.materialBatchNo || '-' }}</template>
+              <template #default="{ row }">
+                {{ formatAllocationBatchNos(row) }}
+              </template>
             </el-table-column>
             <el-table-column label="状态" width="110">
               <template #default="{ row }">
@@ -78,10 +80,12 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="150" fixed="right">
+            <el-table-column label="操作" width="170" fixed="right">
               <template #default="{ row }">
-                <el-button link type="primary" :disabled="Number(row.usedQuantity) > 0" @click="openAllocate(batch, row)">分配</el-button>
-                <el-button link type="danger" :disabled="!row.materialBatchId || Number(row.usedQuantity) > 0" @click="clearAllocation(batch, row)">清除</el-button>
+                <el-button link type="primary" :disabled="Number(row.unmetQuantity) <= 0" @click="openAllocate(batch, row)">
+                  {{ row.allocations.length ? '继续分配' : '分配' }}
+                </el-button>
+                <el-button link type="primary" :disabled="!row.allocations.length" @click="openAllocationDetail(batch, row)">分配明细</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -106,6 +110,9 @@
           <el-descriptions-item label="物料">{{ activeRequirement.materialModel }} / {{ activeRequirement.materialName }}</el-descriptions-item>
           <el-descriptions-item label="需求数量">{{ formatQuantity(activeRequirement.planQuantity) }} {{ activeRequirement.unit || '' }}</el-descriptions-item>
           <el-descriptions-item label="未满足">{{ formatQuantity(activeRequirement.unmetQuantity) }} {{ activeRequirement.unit || '' }}</el-descriptions-item>
+          <el-descriptions-item label="已分配批次" :span="2">
+            {{ formatAllocationBatchNos(activeRequirement) }}
+          </el-descriptions-item>
         </el-descriptions>
 
         <el-form class="dialog-form" label-width="108px" :model="allocateForm">
@@ -119,7 +126,7 @@
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="预留数量" required>
+          <el-form-item label="本次预留" required>
             <el-input-number v-model="allocateForm.reservedQuantity" :min="0.0001" :precision="4" :step="1" />
           </el-form-item>
           <el-form-item label="备注">
@@ -130,6 +137,39 @@
       <template #footer>
         <el-button @click="allocateDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="submitting" @click="submitAllocation">确认分配</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="allocationDetailVisible" title="分配明细" :width="DialogWidth.lg" class="business-dialog">
+      <template v-if="activeBatch && activeRequirement">
+        <el-descriptions :column="3" border class="allocation-summary">
+          <el-descriptions-item label="生产批次">{{ activeBatch.batchNo }}</el-descriptions-item>
+          <el-descriptions-item label="物料">{{ activeRequirement.materialModel }} / {{ activeRequirement.materialName }}</el-descriptions-item>
+          <el-descriptions-item label="累计预留">{{ formatQuantity(activeRequirement.reservedQuantity) }} {{ activeRequirement.unit || '' }}</el-descriptions-item>
+        </el-descriptions>
+        <el-table :data="activeRequirement.allocations" class="detail-table">
+          <el-table-column prop="materialBatchNo" label="物料批次" min-width="150" />
+          <el-table-column label="预留数量" width="110" align="right">
+            <template #default="{ row }">{{ formatQuantity(row.reservedQuantity) }}</template>
+          </el-table-column>
+          <el-table-column label="净领用" width="100" align="right">
+            <template #default="{ row }">{{ formatQuantity(row.usedQuantity) }}</template>
+          </el-table-column>
+          <el-table-column label="可领数量" width="100" align="right">
+            <template #default="{ row }">{{ formatQuantity(row.remainingQuantity) }}</template>
+          </el-table-column>
+          <el-table-column label="记录时间" width="170">
+            <template #default="{ row }">{{ formatTime(row.recordedAt) }}</template>
+          </el-table-column>
+          <el-table-column label="备注" min-width="140">
+            <template #default="{ row }">{{ row.remark || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="90" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="danger" :disabled="!row.canClear" @click="clearAllocation(row.id)">清除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
       </template>
     </el-dialog>
   </div>
@@ -165,7 +205,6 @@ const requirementStatusOptions: Record<MaterialAllocationRequirementItem['alloca
   partial: { label: '部分分配', type: 'warning' },
   allocated: { label: '已预留', type: 'success' },
   used: { label: '已领用', type: 'primary' },
-  cancelled: { label: '已取消', type: 'info' },
 };
 
 /** 查询条件：按生产批次、产品和物料筛选已生成的需求。 */
@@ -181,6 +220,8 @@ const total = ref(0);
 const currentPage = ref(1);
 const pageSize = ref(10);
 const allocateDialogVisible = ref(false);
+/** 分配明细弹窗：展示同一需求的多次预留流水。 */
+const allocationDetailVisible = ref(false);
 
 /** 分配弹窗表单：记录本次选择的物料批次、预留数量和业务备注。 */
 const allocateForm = reactive({
@@ -235,11 +276,21 @@ const openAllocate = async (batch: MaterialAllocationBatchItem, row: MaterialAll
   activeRequirement.value = row;
   availableBatches.value = await productionApi.listAvailableMaterialBatches(row.productMaterialId);
   Object.assign(allocateForm, {
-    materialBatchId: row.materialBatchId ?? '',
-    reservedQuantity: Number(row.reservedQuantity) > 0 ? Number(row.reservedQuantity) : Math.max(Number(row.unmetQuantity), 0.0001),
+    materialBatchId: '',
+    reservedQuantity: Math.max(Number(row.unmetQuantity), 0.0001),
     remark: '',
   });
   allocateDialogVisible.value = true;
+};
+
+/** 查看当前需求的所有物料批次预留记录。 */
+const openAllocationDetail = (
+  batch: MaterialAllocationBatchItem,
+  row: MaterialAllocationRequirementItem,
+) => {
+  activeBatch.value = batch;
+  activeRequirement.value = row;
+  allocationDetailVisible.value = true;
 };
 
 /** 根据所选批次可用量自动收敛本次预留数量，避免默认值超过库存。 */
@@ -280,9 +331,12 @@ const submitAllocation = async () => {
   }
 };
 
-const clearAllocation = async (batch: MaterialAllocationBatchItem, row: MaterialAllocationRequirementItem) => {
+const clearAllocation = async (allocationId: string) => {
+  if (!activeBatch.value) {
+    return;
+  }
   try {
-    await ElMessageBox.confirm('确认清除该物料分配？', '清除分配', {
+    await ElMessageBox.confirm('确认清除这一条物料批次预留？', '清除分配', {
       confirmButtonText: '确认清除',
       cancelButtonText: '取消',
       type: 'warning',
@@ -292,8 +346,15 @@ const clearAllocation = async (batch: MaterialAllocationBatchItem, row: Material
   }
 
   try {
-    const updated = await productionApi.clearMaterialAllocation(batch.id, row.productMaterialId);
+    const updated = await productionApi.clearMaterialAllocation(activeBatch.value.id, allocationId);
     replaceAllocationRow(updated);
+    activeRequirement.value =
+      updated.requirements.find(
+        (item) => item.productMaterialId === activeRequirement.value?.productMaterialId,
+      ) ?? null;
+    if (!activeRequirement.value?.allocations.length) {
+      allocationDetailVisible.value = false;
+    }
     EMessage.success('物料分配已清除');
   } catch (error) {
     EMessage.error(error, '清除物料分配失败');
@@ -316,9 +377,13 @@ const formatQuantity = (value: string | number | null | undefined) => {
     ? amount.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 4 })
     : '-';
 };
+const formatTime = (value: string) => value.replace('T', ' ').slice(0, 19);
 
 const formatAvailableBatch = (batch: MaterialAllocationAvailableBatchItem) =>
   `${batch.materialBatchNo} / 可用 ${formatQuantity(batch.availableQuantity)} / 库存 ${formatQuantity(batch.quantity)}`;
+/** 汇总展示当前需求已预留的多个物料批次号。 */
+const formatAllocationBatchNos = (row: MaterialAllocationRequirementItem) =>
+  row.allocations.map((item) => item.materialBatchNo).join('、') || '-';
 
 onMounted(async () => {
   await Promise.all([loadOptions(), loadAllocations()]);

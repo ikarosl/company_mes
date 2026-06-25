@@ -13,6 +13,7 @@
             <el-option label="全部" value="" />
             <el-option label="入库" value="inbound" />
             <el-option label="生产出库" value="outbound" />
+            <el-option label="退料" value="return" />
           </el-select>
         </el-form-item>
         <el-form-item label="生产批次">
@@ -45,10 +46,10 @@
         <el-table-column label="类型" width="112">
           <template #default="{ row }">
             <el-tag
-              :type="row.transactionType === 'inbound' ? 'success' : 'primary'"
+              :type="getTransactionTypeMeta(row.transactionType).type"
               effect="light"
             >
-              {{ row.transactionType === "inbound" ? "入库" : "生产出库" }}
+              {{ getTransactionTypeMeta(row.transactionType).label }}
             </el-tag>
           </template>
         </el-table-column>
@@ -213,7 +214,7 @@ import { DialogWidth } from "../../utils/dialog";
 import { EMessage } from "../../utils/message";
 
 /**
- * 统一整合物料批次入库记录与生产批次累计出库记录。
+ * 统一整合物料批次入库记录与逐次领料、退料流水。
  * 入库行展示原始入库总量，不随当前库存扣减而改变。
  */
 const rows = ref<MaterialTransactionListItem[]>([]);
@@ -347,7 +348,7 @@ const submitInbound = async () => {
     submitting.value = false;
   }
 };
-/** 出库扣减库存并累计 used_quantity；退料执行相反方向的数量调整。 */
+/** 出库和退料均新增独立操作流水，并同步扣减或回补当前库存。 */
 const submitFlow = async () => {
   if (!flowForm.usageId || flowForm.quantity <= 0)
     return EMessage.warning("请选择物料需求并填写数量");
@@ -386,6 +387,12 @@ const formatDemand = (item: MaterialTransactionDemandOption) =>
       ? `可出 ${formatQuantity(item.remainingQuantity)}`
       : `已出 ${formatQuantity(item.usedQuantity)}`
   }`;
+/** 出入库类型字典：退料作为独立流水展示，不再折算进累计出库行。 */
+const getTransactionTypeMeta = (type: MaterialTransactionListItem["transactionType"]) => ({
+  inbound: { label: "入库", type: "success" as const },
+  outbound: { label: "生产出库", type: "primary" as const },
+  return: { label: "退料", type: "warning" as const },
+}[type]);
 const formatQuantity = (value: string | number) =>
   Number(value).toLocaleString("zh-CN", { maximumFractionDigits: 4 });
 const formatTime = (value: string) => value.replace("T", " ").slice(0, 19);

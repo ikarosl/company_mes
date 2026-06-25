@@ -29,7 +29,7 @@ interface TransactionFilters {
 /** 统一出入库列表的数据库行结构。 */
 interface TransactionRow extends RowDataPacket {
   id: string;
-  transaction_type: 'inbound' | 'outbound';
+  transaction_type: 'inbound' | 'outbound' | 'return';
   material_batch_id: number;
   material_batch_no: string;
   material_product_id: number;
@@ -98,7 +98,7 @@ export class MaterialTransactionRepository {
     const rows = await this.database.query<DemandRow[]>(
       `
       SELECT
-        bmu.id AS usage_id,
+        allocation.usage_id,
         b.id AS production_batch_id,
         b.batch_no AS production_batch_no,
         wo.order_no,
@@ -108,17 +108,49 @@ export class MaterialTransactionRepository {
         p.product_name AS material_name,
         mb.id AS material_batch_id,
         mb.material_batch_no,
-        bmu.reserved_quantity,
-        bmu.used_quantity,
-        GREATEST(bmu.reserved_quantity - bmu.used_quantity, 0) AS remaining_quantity,
-        COALESCE(bmu.unit, pm.unit, p.unit) AS unit
-      FROM batch_material_usages bmu
-      INNER JOIN production_batches b ON b.id = bmu.batch_id AND b.is_deleted = 0
+        allocation.reserved_quantity,
+        allocation.used_quantity,
+        GREATEST(allocation.reserved_quantity - allocation.used_quantity, 0) AS remaining_quantity,
+        allocation.unit
+      FROM (
+        SELECT
+          MIN(reserve.id) AS usage_id,
+          reserve.batch_id,
+          reserve.product_materials_id,
+          reserve.material_batch_id,
+          SUM(reserve.reserved_quantity) AS reserved_quantity,
+          COALESCE(flow.issued_quantity, 0) - COALESCE(flow.returned_quantity, 0) AS used_quantity,
+          MAX(reserve.unit) AS unit
+        FROM batch_material_usages reserve
+        LEFT JOIN (
+          SELECT
+            batch_id,
+            product_materials_id,
+            material_batch_id,
+            SUM(CASE WHEN operation_type = 'issue' THEN used_quantity ELSE 0 END)
+              AS issued_quantity,
+            SUM(CASE WHEN operation_type = 'return' THEN used_quantity ELSE 0 END)
+              AS returned_quantity
+          FROM batch_material_usages
+          WHERE is_deleted = 0 AND operation_type IN ('issue','return')
+          GROUP BY batch_id, product_materials_id, material_batch_id
+        ) flow
+          ON flow.batch_id = reserve.batch_id
+          AND flow.product_materials_id = reserve.product_materials_id
+          AND flow.material_batch_id = reserve.material_batch_id
+        WHERE reserve.is_deleted = 0 AND reserve.operation_type = 'reserve'
+        GROUP BY
+          reserve.batch_id,
+          reserve.product_materials_id,
+          reserve.material_batch_id,
+          flow.issued_quantity,
+          flow.returned_quantity
+      ) allocation
+      INNER JOIN production_batches b ON b.id = allocation.batch_id AND b.is_deleted = 0
       INNER JOIN work_orders wo ON wo.id = b.work_order_id AND wo.is_deleted = 0
-      INNER JOIN product_materials pm ON pm.id = bmu.product_materials_id AND pm.is_deleted = 0
+      INNER JOIN product_materials pm ON pm.id = allocation.product_materials_id AND pm.is_deleted = 0
       INNER JOIN products p ON p.id = pm.material_product_id AND p.is_deleted = 0
-      INNER JOIN material_batches mb ON mb.id = bmu.material_batch_id AND mb.is_deleted = 0
-      WHERE bmu.is_deleted = 0 AND bmu.status <> 'cancelled'
+      INNER JOIN material_batches mb ON mb.id = allocation.material_batch_id AND mb.is_deleted = 0
       ORDER BY b.id DESC, p.product_model ASC
       `,
     );
@@ -221,21 +253,28 @@ export class MaterialTransactionRepository {
       if (number(quantity) > number(usage.stock_quantity)) {
         throw new BadRequestException('出库数量不能超过当前库存数量');
       }
-      const nextUsed = number(usage.used_quantity) + number(quantity);
+      // 每次领料新增 issue 流水，保留多次领料历史，不再覆盖累计数量。
       await execute(
         connection,
         `
-        UPDATE batch_material_usages
-        SET used_quantity = ?,
-          status = CASE WHEN ? >= reserved_quantity THEN 'used' ELSE 'part_used' END,
-          recorded_by = ?,
-          recorded_at = NOW(),
-          remark = COALESCE(?, remark),
-          updated_by = ?,
-          updated_at = NOW()
-        WHERE id = ?
+        INSERT INTO batch_material_usages (
+          batch_id, material_batch_id, reserved_quantity, product_materials_id,
+          operation_type, used_quantity, unit, recorded_by, recorded_at, remark,
+          created_by, created_at, updated_by, updated_at
+        )
+        VALUES (?, ?, 0, ?, 'issue', ?, ?, ?, NOW(), ?, ?, NOW(), ?, NOW())
         `,
-        [nextUsed.toFixed(4), nextUsed, userId, optional(payload.remark), userId, usageId],
+        [
+          usage.batch_id,
+          usage.material_batch_id,
+          usage.product_materials_id,
+          quantity,
+          usage.unit,
+          userId,
+          optional(payload.remark),
+          userId,
+          userId,
+        ],
       );
       await execute(
         connection,
@@ -265,26 +304,29 @@ export class MaterialTransactionRepository {
       if (number(quantity) > number(usage.used_quantity)) {
         throw new BadRequestException('退料数量不能超过累计出库数量');
       }
-      const nextUsed = number(usage.used_quantity) - number(quantity);
       const remark = [reason, optional(payload.remark)].filter(Boolean).join('；');
+      // 退料新增 return 流水，净使用量由 issue 合计减 return 合计实时计算。
       await execute(
         connection,
         `
-        UPDATE batch_material_usages
-        SET used_quantity = ?,
-          status = CASE
-            WHEN ? <= 0 THEN 'reserved'
-            WHEN ? < reserved_quantity THEN 'part_used'
-            ELSE 'used'
-          END,
-          recorded_by = ?,
-          recorded_at = NOW(),
-          remark = ?,
-          updated_by = ?,
-          updated_at = NOW()
-        WHERE id = ?
+        INSERT INTO batch_material_usages (
+          batch_id, material_batch_id, reserved_quantity, product_materials_id,
+          operation_type, used_quantity, unit, recorded_by, recorded_at, remark,
+          created_by, created_at, updated_by, updated_at
+        )
+        VALUES (?, ?, 0, ?, 'return', ?, ?, ?, NOW(), ?, ?, NOW(), ?, NOW())
         `,
-        [nextUsed.toFixed(4), nextUsed, nextUsed, userId, remark, userId, usageId],
+        [
+          usage.batch_id,
+          usage.material_batch_id,
+          usage.product_materials_id,
+          quantity,
+          usage.unit,
+          userId,
+          remark,
+          userId,
+          userId,
+        ],
       );
       await execute(
         connection,
@@ -315,18 +357,37 @@ export class MaterialTransactionRepository {
     const [row] = await this.database.query<RowDataPacket[]>(
       `
       SELECT
-        bmu.id AS usage_id,
-        bmu.batch_id,
-        bmu.material_batch_id,
-        bmu.reserved_quantity,
-        bmu.used_quantity,
-        bmu.status AS usage_status,
+        reserve.id AS usage_id,
+        reserve.batch_id,
+        reserve.material_batch_id,
+        (
+          SELECT SUM(active_reserve.reserved_quantity)
+          FROM batch_material_usages active_reserve
+          WHERE active_reserve.batch_id = reserve.batch_id
+            AND active_reserve.product_materials_id = reserve.product_materials_id
+            AND active_reserve.material_batch_id = reserve.material_batch_id
+            AND active_reserve.operation_type = 'reserve'
+            AND active_reserve.is_deleted = 0
+        ) AS reserved_quantity,
+        (
+          SELECT
+            COALESCE(SUM(CASE WHEN flow.operation_type = 'issue' THEN flow.used_quantity ELSE 0 END), 0)
+            - COALESCE(SUM(CASE WHEN flow.operation_type = 'return' THEN flow.used_quantity ELSE 0 END), 0)
+          FROM batch_material_usages flow
+          WHERE flow.batch_id = reserve.batch_id
+            AND flow.product_materials_id = reserve.product_materials_id
+            AND flow.material_batch_id = reserve.material_batch_id
+            AND flow.operation_type IN ('issue','return')
+            AND flow.is_deleted = 0
+        ) AS used_quantity,
         mb.material_batch_no,
         mb.quantity AS stock_quantity,
         mb.status AS material_batch_status
-      FROM batch_material_usages bmu
-      INNER JOIN material_batches mb ON mb.id = bmu.material_batch_id AND mb.is_deleted = 0
-      WHERE bmu.id = ? AND bmu.is_deleted = 0
+      FROM batch_material_usages reserve
+      INNER JOIN material_batches mb ON mb.id = reserve.material_batch_id AND mb.is_deleted = 0
+      WHERE reserve.id = ?
+        AND reserve.operation_type = 'reserve'
+        AND reserve.is_deleted = 0
       LIMIT 1
     `,
       [usageId],
@@ -338,17 +399,47 @@ export class MaterialTransactionRepository {
     const [row] = await query<
       (RowDataPacket & {
         material_batch_id: number;
+        batch_id: number;
+        product_materials_id: number;
         reserved_quantity: string | number;
         used_quantity: string | number;
         stock_quantity: string | number;
+        unit: string | null;
       })[]
     >(
       connection,
       `
-      SELECT bmu.material_batch_id, bmu.reserved_quantity, bmu.used_quantity, mb.quantity AS stock_quantity
-      FROM batch_material_usages bmu
-      INNER JOIN material_batches mb ON mb.id = bmu.material_batch_id AND mb.is_deleted = 0
-      WHERE bmu.id = ? AND bmu.is_deleted = 0
+      SELECT
+        reserve.batch_id,
+        reserve.product_materials_id,
+        reserve.material_batch_id,
+        (
+          SELECT SUM(active_reserve.reserved_quantity)
+          FROM batch_material_usages active_reserve
+          WHERE active_reserve.batch_id = reserve.batch_id
+            AND active_reserve.product_materials_id = reserve.product_materials_id
+            AND active_reserve.material_batch_id = reserve.material_batch_id
+            AND active_reserve.operation_type = 'reserve'
+            AND active_reserve.is_deleted = 0
+        ) AS reserved_quantity,
+        (
+          SELECT
+            COALESCE(SUM(CASE WHEN flow.operation_type = 'issue' THEN flow.used_quantity ELSE 0 END), 0)
+            - COALESCE(SUM(CASE WHEN flow.operation_type = 'return' THEN flow.used_quantity ELSE 0 END), 0)
+          FROM batch_material_usages flow
+          WHERE flow.batch_id = reserve.batch_id
+            AND flow.product_materials_id = reserve.product_materials_id
+            AND flow.material_batch_id = reserve.material_batch_id
+            AND flow.operation_type IN ('issue','return')
+            AND flow.is_deleted = 0
+        ) AS used_quantity,
+        reserve.unit,
+        mb.quantity AS stock_quantity
+      FROM batch_material_usages reserve
+      INNER JOIN material_batches mb ON mb.id = reserve.material_batch_id AND mb.is_deleted = 0
+      WHERE reserve.id = ?
+        AND reserve.operation_type = 'reserve'
+        AND reserve.is_deleted = 0
       FOR UPDATE
       `,
       [usageId],
@@ -377,7 +468,11 @@ export class MaterialTransactionRepository {
       const keyword = `%${filters.keyword.trim()}%`;
       params.push(keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword);
     }
-    if (filters.transactionType === 'inbound' || filters.transactionType === 'outbound') {
+    if (
+      filters.transactionType === 'inbound'
+      || filters.transactionType === 'outbound'
+      || filters.transactionType === 'return'
+    ) {
       clauses.push('tx.transaction_type = ?');
       params.push(filters.transactionType);
     }
@@ -410,7 +505,7 @@ export class MaterialTransactionRepository {
         p.product_name AS material_name,
         mb.supplier_name,
         mb.protocol_code,
-        mb.quantity + COALESCE(batch_usage.used_quantity, 0) AS quantity,
+        mb.quantity + COALESCE(batch_usage.net_outbound_quantity, 0) AS quantity,
         p.unit,
         NULL AS production_batch_id,
         NULL AS production_batch_no,
@@ -422,7 +517,11 @@ export class MaterialTransactionRepository {
       INNER JOIN products p ON p.id = mb.product_id AND p.is_deleted = 0
       LEFT JOIN users creator ON creator.id = mb.created_by
       LEFT JOIN (
-        SELECT material_batch_id, SUM(used_quantity) AS used_quantity
+        SELECT
+          material_batch_id,
+          SUM(CASE WHEN operation_type = 'issue' THEN used_quantity ELSE 0 END)
+            - SUM(CASE WHEN operation_type = 'return' THEN used_quantity ELSE 0 END)
+            AS net_outbound_quantity
         FROM batch_material_usages
         WHERE is_deleted = 0 AND material_batch_id IS NOT NULL
         GROUP BY material_batch_id
@@ -430,8 +529,8 @@ export class MaterialTransactionRepository {
       WHERE mb.is_deleted = 0
       UNION ALL
       SELECT
-        CONCAT('outbound-', bmu.id) AS id,
-        'outbound' AS transaction_type,
+        CONCAT(operation.operation_type, '-', operation.id) AS id,
+        CASE WHEN operation.operation_type = 'issue' THEN 'outbound' ELSE 'return' END AS transaction_type,
         mb.id AS material_batch_id,
         mb.material_batch_no,
         pm.material_product_id,
@@ -439,22 +538,23 @@ export class MaterialTransactionRepository {
         p.product_name AS material_name,
         mb.supplier_name,
         mb.protocol_code,
-        bmu.used_quantity AS quantity,
-        COALESCE(bmu.unit, pm.unit, p.unit) AS unit,
+        operation.used_quantity AS quantity,
+        COALESCE(operation.unit, pm.unit, p.unit) AS unit,
         b.id AS production_batch_id,
         b.batch_no AS production_batch_no,
         wo.order_no,
         recorder.display_name AS recorded_by_name,
-        COALESCE(bmu.recorded_at, bmu.updated_at) AS recorded_at,
-        bmu.remark
-      FROM batch_material_usages bmu
-      INNER JOIN material_batches mb ON mb.id = bmu.material_batch_id AND mb.is_deleted = 0
-      INNER JOIN product_materials pm ON pm.id = bmu.product_materials_id AND pm.is_deleted = 0
+        operation.recorded_at,
+        operation.remark
+      FROM batch_material_usages operation
+      INNER JOIN material_batches mb ON mb.id = operation.material_batch_id AND mb.is_deleted = 0
+      INNER JOIN product_materials pm ON pm.id = operation.product_materials_id AND pm.is_deleted = 0
       INNER JOIN products p ON p.id = pm.material_product_id AND p.is_deleted = 0
-      INNER JOIN production_batches b ON b.id = bmu.batch_id AND b.is_deleted = 0
+      INNER JOIN production_batches b ON b.id = operation.batch_id AND b.is_deleted = 0
       INNER JOIN work_orders wo ON wo.id = b.work_order_id AND wo.is_deleted = 0
-      LEFT JOIN users recorder ON recorder.id = bmu.recorded_by
-      WHERE bmu.is_deleted = 0 AND bmu.used_quantity > 0
+      LEFT JOIN users recorder ON recorder.id = operation.recorded_by
+      WHERE operation.is_deleted = 0
+        AND operation.operation_type IN ('issue','return')
     `;
   }
 }

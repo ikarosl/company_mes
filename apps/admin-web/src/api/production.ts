@@ -183,9 +183,9 @@ export const productionApi = {
       method: 'POST',
       data,
     }),
-  clearMaterialAllocation: (batchId: string, productMaterialId: string) =>
+  clearMaterialAllocation: (batchId: string, allocationId: string) =>
     requestData<MaterialAllocationBatchItem>({
-      url: `${BUSINESS_API.materialAllocation}/batches/${batchId}/product-materials/${productMaterialId}`,
+      url: `${BUSINESS_API.materialAllocation}/batches/${batchId}/allocations/${allocationId}`,
       method: 'DELETE',
     }),
   uploadTaskStepSop: (id: string, recordId: string, data: FormData) =>

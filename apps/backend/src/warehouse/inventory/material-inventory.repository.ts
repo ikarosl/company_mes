@@ -76,13 +76,8 @@ export class MaterialInventoryRepository {
       INNER JOIN products p ON p.id = mb.product_id AND p.is_deleted = 0
       LEFT JOIN product_categories c ON c.id = p.category_id AND c.is_deleted = 0
       LEFT JOIN (
-        SELECT
-          material_batch_id,
-          SUM(GREATEST(reserved_quantity - used_quantity, 0)) AS reserved_quantity,
-          SUM(used_quantity) AS used_quantity
-        FROM batch_material_usages
-        WHERE is_deleted = 0 AND material_batch_id IS NOT NULL
-        GROUP BY material_batch_id
+        SELECT material_batch_id, reserved_not_used_quantity AS reserved_quantity, used_quantity
+        FROM v_material_batch_available
       ) u ON u.material_batch_id = mb.id
       WHERE ${where}
       ORDER BY mb.id DESC
@@ -101,9 +96,9 @@ export class MaterialInventoryRepository {
     return {
       ...item,
       reservations: usages
-        .filter((row) => decimalNumber(row.reserved_quantity) > decimalNumber(row.used_quantity))
+        .filter((row) => row.operation_type === 'reserve')
         .map(mapUsage),
-      usages: usages.filter((row) => decimalNumber(row.used_quantity) > 0).map(mapUsage),
+      usages: usages.filter((row) => row.operation_type !== 'reserve').map(mapUsage),
     };
   }
 
@@ -196,11 +191,9 @@ export class MaterialInventoryRepository {
     const quantity = readDecimal(payload.quantity, 'Invalid stocktake quantity');
     const [summary] = await this.database.query<RowDataPacket[]>(
       `
-      SELECT
-        COALESCE(SUM(GREATEST(reserved_quantity - used_quantity, 0)), 0) AS reserved_quantity,
-        COALESCE(SUM(used_quantity), 0) AS used_quantity
-      FROM batch_material_usages
-      WHERE material_batch_id = ? AND is_deleted = 0
+      SELECT reserved_not_used_quantity AS reserved_quantity, used_quantity
+      FROM v_material_batch_available
+      WHERE material_batch_id = ?
     `,
       [id],
     );
@@ -328,13 +321,8 @@ export class MaterialInventoryRepository {
       INNER JOIN products p ON p.id = mb.product_id AND p.is_deleted = 0
       LEFT JOIN product_categories c ON c.id = p.category_id AND c.is_deleted = 0
       LEFT JOIN (
-        SELECT
-          material_batch_id,
-          SUM(GREATEST(reserved_quantity - used_quantity, 0)) AS reserved_quantity,
-          SUM(used_quantity) AS used_quantity
-        FROM batch_material_usages
-        WHERE is_deleted = 0 AND material_batch_id IS NOT NULL
-        GROUP BY material_batch_id
+        SELECT material_batch_id, reserved_not_used_quantity AS reserved_quantity, used_quantity
+        FROM v_material_batch_available
       ) u ON u.material_batch_id = mb.id
       WHERE mb.id = ? AND mb.is_deleted = 0
       LIMIT 1
@@ -353,23 +341,19 @@ export class MaterialInventoryRepository {
     return this.database.query<MaterialBatchUsageRow[]>(
       `
       SELECT
-        bmu.id,
-        bmu.batch_id,
-        bmu.plan_quantity AS reserved_quantity,
-        bmu.used_quantity,
-        CASE
-          WHEN bmu.used_quantity >= bmu.plan_quantity THEN 'used'
-          WHEN bmu.used_quantity > 0 THEN 'part_used'
-          ELSE 'reserved'
-        END AS status,
-        bmu.recorded_by,
+        operation.id,
+        operation.batch_id,
+        operation.reserved_quantity,
+        operation.used_quantity,
+        operation.operation_type,
+        operation.recorded_by,
         u.display_name AS recorded_by_name,
-        bmu.recorded_at,
-        bmu.remark
-      FROM batch_material_usages bmu
-      LEFT JOIN users u ON u.id = bmu.recorded_by
-      WHERE bmu.material_batch_id = ? AND bmu.is_deleted = 0
-      ORDER BY bmu.id DESC
+        operation.recorded_at,
+        operation.remark
+      FROM batch_material_usages operation
+      LEFT JOIN users u ON u.id = operation.recorded_by
+      WHERE operation.material_batch_id = ? AND operation.is_deleted = 0
+      ORDER BY operation.id DESC
     `,
       [materialBatchId],
     );
@@ -471,7 +455,7 @@ const mapUsage = (row: MaterialBatchUsageRow) => ({
   batchId: row.batch_id === null ? null : String(row.batch_id),
   reservedQuantity: decimalString(row.reserved_quantity),
   usedQuantity: decimalString(row.used_quantity),
-  status: row.status,
+  operationType: row.operation_type,
   recordedBy: row.recorded_by === null ? null : String(row.recorded_by),
   recordedByName: row.recorded_by_name,
   recordedAt: row.recorded_at ? row.recorded_at.toISOString() : null,

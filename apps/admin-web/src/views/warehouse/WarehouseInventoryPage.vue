@@ -201,11 +201,8 @@
         <el-table-column label="预留数量" width="130" align="right">
           <template #default="{ row }">{{ formatQuantity(row.reservedQuantity) }}</template>
         </el-table-column>
-        <el-table-column label="已用数量" width="130" align="right">
-          <template #default="{ row }">{{ formatQuantity(row.usedQuantity) }}</template>
-        </el-table-column>
-        <el-table-column label="状态" width="120">
-          <template #default="{ row }">{{ row.status || '-' }}</template>
+        <el-table-column label="操作类型" width="120">
+          <template #default="{ row }">{{ formatUsageType(row.operationType) }}</template>
         </el-table-column>
         <el-table-column label="记录人" width="120">
           <template #default="{ row }">{{ row.recordedByName || row.recordedBy || '-' }}</template>
@@ -227,11 +224,8 @@
         <el-table-column label="已用数量" width="130" align="right">
           <template #default="{ row }">{{ formatQuantity(row.usedQuantity) }}</template>
         </el-table-column>
-        <el-table-column label="预留数量" width="130" align="right">
-          <template #default="{ row }">{{ formatQuantity(row.reservedQuantity) }}</template>
-        </el-table-column>
-        <el-table-column label="状态" width="120">
-          <template #default="{ row }">{{ row.status || '-' }}</template>
+        <el-table-column label="操作类型" width="120">
+          <template #default="{ row }">{{ formatUsageType(row.operationType) }}</template>
         </el-table-column>
         <el-table-column label="记录人" width="120">
           <template #default="{ row }">{{ row.recordedByName || row.recordedBy || '-' }}</template>
@@ -534,6 +528,12 @@ const formatQuantity = (value: string | number | null) => {
     maximumFractionDigits: 4,
   });
 };
+/** 物料流水操作类型中文标签。 */
+const formatUsageType = (type: 'reserve' | 'issue' | 'return') => ({
+  reserve: '预留',
+  issue: '领料',
+  return: '退料',
+}[type]);
 
 const formatTime = (value: string | null) => {
   if (!value) {

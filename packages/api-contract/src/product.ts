@@ -309,7 +309,8 @@ export interface MaterialBatchUsageItem {
   batchId: string | null;
   reservedQuantity: string;
   usedQuantity: string;
-  status: string | null;
+  /** 物料操作类型：预留、领料或退料。 */
+  operationType: 'reserve' | 'issue' | 'return';
   recordedBy: string | null;
   recordedByName: string | null;
   recordedAt: string | null;
@@ -350,7 +351,7 @@ export interface StocktakeMaterialBatchPayload {
 }
 
 /** 物料出入库整合列表的记录类型。 */
-export type MaterialTransactionType = 'inbound' | 'outbound';
+export type MaterialTransactionType = 'inbound' | 'outbound' | 'return';
 
 /** 入库批次和累计生产出库记录的统一展示结构。 */
 export interface MaterialTransactionListItem {

@@ -4,6 +4,7 @@ import type {
   AllocateMaterialPayload,
   MaterialAllocationAvailableBatchItem,
   MaterialAllocationBatchItem,
+  MaterialAllocationRecordItem,
   MaterialAllocationRequirementItem,
 } from '@company/api-contract';
 import { DatabaseService, type QueryParam } from '../../database/database.service.js';
@@ -61,6 +62,22 @@ interface AvailableBatchRow extends RowDataPacket {
   status: string;
 }
 
+/** 单次预留流水，并附带同一需求、同一物料批次的领退料汇总。 */
+interface AllocationRecordRow extends RowDataPacket {
+  id: number;
+  batch_id: number;
+  product_material_id: number;
+  material_batch_id: number;
+  material_batch_no: string;
+  reserved_quantity: string | number;
+  issued_quantity: string | number;
+  returned_quantity: string | number;
+  used_quantity: string | number;
+  recorded_by_name: string | null;
+  recorded_at: Date;
+  remark: string | null;
+}
+
 @Injectable()
 export class MaterialAllocationRepository {
   constructor(
@@ -109,6 +126,8 @@ export class MaterialAllocationRepository {
 
     const batchIds = batches.map((batch) => batch.id);
     const requirements = batchIds.length ? await this.listRequirementRows(batchIds, filters) : [];
+    const allocationRecords = batchIds.length ? await this.listAllocationRecords(batchIds) : [];
+    const allocationsByRequirement = this.groupAllocationsByRequirement(allocationRecords);
     const requirementsByBatchId = new Map<number, RequirementRow[]>();
     for (const row of requirements) {
       const rows = requirementsByBatchId.get(row.batch_id) ?? [];
@@ -117,7 +136,11 @@ export class MaterialAllocationRepository {
     }
 
     const items = batches.map((batch) =>
-      this.mapAllocationBatch(batch, requirementsByBatchId.get(batch.id) ?? []),
+      this.mapAllocationBatch(
+        batch,
+        requirementsByBatchId.get(batch.id) ?? [],
+        allocationsByRequirement,
+      ),
     );
     return toPageResult(items, Number(totalRow?.total ?? 0), pagination);
   }
@@ -153,36 +176,35 @@ export class MaterialAllocationRepository {
     const usage = await this.getDemandUsage(batchId, productMaterialId);
     this.auditContext.setBeforeData(usage);
     const materialBatch = await this.getAvailableMaterialBatch(materialBatchId, productMaterialId);
-    const currentReserved =
-      usage.material_batch_id === materialBatchId ? decimalNumber(usage.reserved_quantity) : 0;
-    const availableQuantity = decimalNumber(materialBatch.available_quantity) + currentReserved;
+    const availableQuantity = decimalNumber(materialBatch.available_quantity);
     const planQuantity = decimalNumber(usage.plan_quantity);
+    const totalReserved = decimalNumber(usage.reserved_quantity);
 
-    if (decimalNumber(reservedQuantity) > planQuantity) {
-      throw new BadRequestException('预留数量不能超过需求数量');
+    if (totalReserved + decimalNumber(reservedQuantity) > planQuantity) {
+      throw new BadRequestException('累计预留数量不能超过需求数量');
     }
 
     if (decimalNumber(reservedQuantity) > availableQuantity) {
       throw new BadRequestException('预留数量不能超过物料批次可用量');
     }
 
+    // 每次分配新增 reserve 流水；既有预留保持不变，从而支持多物料批次共同满足一个需求。
     await this.database.execute(
       `
-      UPDATE batch_material_usages
-      SET material_batch_id = ?,
-        reserved_quantity = ?,
-        status = 'reserved',
-        recorded_at = NOW(),
-        remark = ?,
-        updated_at = NOW()
-      WHERE id = ? AND batch_id = ? AND is_deleted = 0
-    `,
+      INSERT INTO batch_material_usages (
+        batch_id, material_batch_id, reserved_quantity, product_materials_id,
+        operation_type, used_quantity, unit, recorded_at, remark,
+        created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, 'reserve', 0, ?, NOW(), ?, NOW(), NOW())
+      `,
       [
+        batchId,
         materialBatchId,
         reservedQuantity,
+        productMaterialId,
+        usage.unit,
         normalizeOptionalString(payload.remark),
-        usage.id,
-        batchId,
       ],
     );
 
@@ -191,30 +213,31 @@ export class MaterialAllocationRepository {
     return this.getAllocationBatch(batchId);
   }
 
-  async clearAllocation(batchId: number, productMaterialId: number) {
-    const usage = await this.getDemandUsage(batchId, productMaterialId);
-    this.auditContext.setBeforeData(usage);
-
-    if (decimalNumber(usage.used_quantity) > 0) {
-      throw new BadRequestException('该物料已有领用数量，不能清除分配');
+  async clearAllocation(batchId: number, allocationId: number) {
+    const allocation = await this.getAllocationRecord(batchId, allocationId);
+    this.auditContext.setBeforeData(allocation);
+    if (decimalNumber(allocation.net_used_quantity) > 0) {
+      throw new BadRequestException('该预留已被领料使用，不能清除');
     }
 
     await this.database.execute(
       `
       UPDATE batch_material_usages
-      SET material_batch_id = NULL,
-        reserved_quantity = 0,
-        status = 'reserved',
-        recorded_at = NULL,
-        remark = NULL,
+      SET is_deleted = 1,
+        deleted_at = NOW(),
         updated_at = NOW()
-      WHERE id = ? AND batch_id = ? AND is_deleted = 0
+      WHERE id = ?
+        AND batch_id = ?
+        AND operation_type = 'reserve'
+        AND is_deleted = 0
     `,
-      [usage.id, batchId],
+      [allocationId, batchId],
     );
 
     await this.refreshBatchMaterialStatus(batchId);
-    this.auditContext.setAfterData(await this.getDemandUsage(batchId, productMaterialId));
+    this.auditContext.setAfterData(
+      await this.getDemandUsage(batchId, allocation.product_materials_id),
+    );
     return this.getAllocationBatch(batchId);
   }
 
@@ -251,7 +274,13 @@ export class MaterialAllocationRepository {
       throw new NotFoundException('Production batch not found');
     }
 
-    return this.mapAllocationBatch(batch, await this.listRequirementRows([batchId], {}));
+    const requirementRows = await this.listRequirementRows([batchId], {});
+    const allocationRows = await this.listAllocationRecords([batchId]);
+    return this.mapAllocationBatch(
+      batch,
+      requirementRows,
+      this.groupAllocationsByRequirement(allocationRows),
+    );
   }
 
   private async listRequirementRows(
@@ -292,7 +321,7 @@ export class MaterialAllocationRepository {
         allocation.need_batch_record,
         allocation.material_batch_id,
         allocation.material_batch_no,
-        allocation.usage_status AS status,
+        allocation.material_status AS status,
         allocation.remark
       FROM v_batch_material_allocation allocation
       WHERE ${clauses.join(' AND ')}
@@ -305,8 +334,14 @@ export class MaterialAllocationRepository {
   private mapAllocationBatch(
     batch: ProductionBatchListRow,
     rows: RequirementRow[],
+    allocationsByRequirement: Map<string, MaterialAllocationRecordItem[]>,
   ): MaterialAllocationBatchItem {
-    const requirements = rows.map((row) => this.mapRequirement(row));
+    const requirements = rows.map((row) =>
+      this.mapRequirement(
+        row,
+        allocationsByRequirement.get(this.requirementKey(row.batch_id, row.product_material_id)) ?? [],
+      ),
+    );
     const shortageCount = requirements.filter(
       (item) => decimalNumber(item.unmetQuantity) > 0,
     ).length;
@@ -337,7 +372,10 @@ export class MaterialAllocationRepository {
     };
   }
 
-  private mapRequirement(row: RequirementRow): MaterialAllocationRequirementItem {
+  private mapRequirement(
+    row: RequirementRow,
+    allocations: MaterialAllocationRecordItem[],
+  ): MaterialAllocationRequirementItem {
     const planQuantity = decimalNumber(row.plan_quantity);
     const reservedQuantity = decimalNumber(row.reserved_quantity);
     const usedQuantity = decimalNumber(row.used_quantity);
@@ -349,14 +387,11 @@ export class MaterialAllocationRepository {
           ? 'allocated'
           : reservedQuantity > 0
             ? 'partial'
-            : row.status === 'cancelled'
-              ? 'cancelled'
-              : 'unallocated';
+            : 'unallocated';
 
     return {
       id: String(row.usage_id),
       usageId: String(row.usage_id),
-      batchMaterialUsageId: String(row.usage_id),
       productMaterialId: String(row.product_material_id),
       materialProductId: String(row.material_product_id),
       materialModel: row.material_model,
@@ -369,10 +404,9 @@ export class MaterialAllocationRepository {
       unit: row.unit,
       isKeyMaterial: row.is_key_material === 1,
       needBatchRecord: row.need_batch_record === 1,
-      materialBatchId: row.material_batch_id === null ? null : String(row.material_batch_id),
-      materialBatchNo: row.material_batch_no,
       availableBatchCount: 0,
       allocationStatus,
+      allocations,
     };
   }
 
@@ -483,7 +517,7 @@ export class MaterialAllocationRepository {
         allocation.need_batch_record,
         allocation.material_batch_id,
         allocation.material_batch_no,
-        allocation.usage_status AS status,
+        allocation.material_status AS status,
         allocation.remark
       FROM v_batch_material_allocation allocation
       WHERE allocation.batch_id = ? AND allocation.product_material_id = ?
@@ -496,11 +530,136 @@ export class MaterialAllocationRepository {
       throw new NotFoundException('Material demand not found');
     }
 
-    if (decimalNumber(rows[0].used_quantity) > 0) {
-      throw new BadRequestException('该物料已有领用数量，不能重新分配');
-    }
-
     return rows[0];
+  }
+
+  /** 查询每条 reserve 流水，供页面展示多批次分配明细并按记录清除。 */
+  private async listAllocationRecords(batchIds: number[]) {
+    const placeholders = batchIds.map(() => '?').join(',');
+    return this.database.query<AllocationRecordRow[]>(
+      `
+      SELECT
+        reserve.id,
+        reserve.batch_id,
+        reserve.product_materials_id AS product_material_id,
+        reserve.material_batch_id,
+        mb.material_batch_no,
+        reserve.reserved_quantity,
+        COALESCE(flow.issued_quantity, 0) AS issued_quantity,
+        COALESCE(flow.returned_quantity, 0) AS returned_quantity,
+        COALESCE(flow.issued_quantity, 0) - COALESCE(flow.returned_quantity, 0) AS used_quantity,
+        recorder.display_name AS recorded_by_name,
+        reserve.recorded_at,
+        reserve.remark
+      FROM batch_material_usages reserve
+      INNER JOIN material_batches mb
+        ON mb.id = reserve.material_batch_id
+        AND mb.is_deleted = 0
+      LEFT JOIN users recorder ON recorder.id = reserve.recorded_by
+      LEFT JOIN (
+        SELECT
+          batch_id,
+          product_materials_id,
+          material_batch_id,
+          SUM(CASE WHEN operation_type = 'issue' THEN used_quantity ELSE 0 END)
+            AS issued_quantity,
+          SUM(CASE WHEN operation_type = 'return' THEN used_quantity ELSE 0 END)
+            AS returned_quantity
+        FROM batch_material_usages
+        WHERE is_deleted = 0 AND operation_type IN ('issue','return')
+        GROUP BY batch_id, product_materials_id, material_batch_id
+      ) flow
+        ON flow.batch_id = reserve.batch_id
+        AND flow.product_materials_id = reserve.product_materials_id
+        AND flow.material_batch_id = reserve.material_batch_id
+      WHERE reserve.batch_id IN (${placeholders})
+        AND reserve.operation_type = 'reserve'
+        AND reserve.is_deleted = 0
+      ORDER BY reserve.batch_id DESC, reserve.product_materials_id, reserve.id ASC
+      `,
+      batchIds,
+    );
+  }
+
+  private groupAllocationsByRequirement(rows: AllocationRecordRow[]) {
+    const grouped = new Map<string, MaterialAllocationRecordItem[]>();
+    for (const row of rows) {
+      const key = this.requirementKey(row.batch_id, row.product_material_id);
+      const allocations = grouped.get(key) ?? [];
+      const usedQuantity = decimalNumber(row.used_quantity);
+      const reservedQuantity = decimalNumber(row.reserved_quantity);
+      allocations.push({
+        id: String(row.id),
+        materialBatchId: String(row.material_batch_id),
+        materialBatchNo: row.material_batch_no,
+        reservedQuantity: decimalString(row.reserved_quantity),
+        issuedQuantity: decimalString(row.issued_quantity),
+        returnedQuantity: decimalString(row.returned_quantity),
+        usedQuantity: decimalString(row.used_quantity),
+        remainingQuantity: Math.max(reservedQuantity - usedQuantity, 0).toFixed(4),
+        recordedByName: row.recorded_by_name,
+        recordedAt: row.recorded_at.toISOString(),
+        remark: row.remark,
+        canClear: usedQuantity <= 0,
+      });
+      grouped.set(key, allocations);
+    }
+    return grouped;
+  }
+
+  private requirementKey(batchId: number, productMaterialId: number) {
+    return `${batchId}:${productMaterialId}`;
+  }
+
+  /** 锁定待清除预留并汇总同物料批次净领用，防止清除后出现领用量超过预留量。 */
+  private async getAllocationRecord(batchId: number, allocationId: number) {
+    const [row] = await this.database.query<
+      (RowDataPacket & {
+        id: number;
+        product_materials_id: number;
+        reserved_quantity: string | number;
+        total_reserved_quantity: string | number;
+        net_used_quantity: string | number;
+      })[]
+    >(
+      `
+      SELECT
+        reserve.id,
+        reserve.product_materials_id,
+        reserve.reserved_quantity,
+        (
+          SELECT COALESCE(SUM(other_reserve.reserved_quantity), 0)
+          FROM batch_material_usages other_reserve
+          WHERE other_reserve.batch_id = reserve.batch_id
+            AND other_reserve.product_materials_id = reserve.product_materials_id
+            AND other_reserve.material_batch_id = reserve.material_batch_id
+            AND other_reserve.operation_type = 'reserve'
+            AND other_reserve.is_deleted = 0
+        ) AS total_reserved_quantity,
+        (
+          SELECT
+            COALESCE(SUM(CASE WHEN flow.operation_type = 'issue' THEN flow.used_quantity ELSE 0 END), 0)
+            - COALESCE(SUM(CASE WHEN flow.operation_type = 'return' THEN flow.used_quantity ELSE 0 END), 0)
+          FROM batch_material_usages flow
+          WHERE flow.batch_id = reserve.batch_id
+            AND flow.product_materials_id = reserve.product_materials_id
+            AND flow.material_batch_id = reserve.material_batch_id
+            AND flow.operation_type IN ('issue','return')
+            AND flow.is_deleted = 0
+        ) AS net_used_quantity
+      FROM batch_material_usages reserve
+      WHERE reserve.id = ?
+        AND reserve.batch_id = ?
+        AND reserve.operation_type = 'reserve'
+        AND reserve.is_deleted = 0
+      LIMIT 1
+      `,
+      [allocationId, batchId],
+    );
+    if (!row) {
+      throw new NotFoundException('物料预留记录不存在');
+    }
+    return row;
   }
 
   private async getAvailableMaterialBatch(materialBatchId: number, productMaterialId: number) {
@@ -543,9 +702,9 @@ export class MaterialAllocationRepository {
       `
       SELECT
         COUNT(*) AS total,
-        SUM(CASE WHEN reserved_quantity >= plan_quantity THEN 1 ELSE 0 END) AS allocated_count
-      FROM batch_material_usages
-      WHERE batch_id = ? AND is_deleted = 0
+        SUM(CASE WHEN reserved_quantity >= required_quantity THEN 1 ELSE 0 END) AS allocated_count
+      FROM v_batch_material_allocation
+      WHERE batch_id = ?
     `,
       [batchId],
     );

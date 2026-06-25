@@ -240,13 +240,8 @@ export class ProductRepository {
       INNER JOIN products p ON p.id = mb.product_id AND p.is_deleted = 0
       LEFT JOIN product_categories c ON c.id = p.category_id AND c.is_deleted = 0
       LEFT JOIN (
-        SELECT
-          material_batch_id,
-          SUM(GREATEST(reserved_quantity - used_quantity, 0)) AS reserved_quantity,
-          SUM(used_quantity) AS used_quantity
-        FROM batch_material_usages
-        WHERE is_deleted = 0 AND material_batch_id IS NOT NULL
-        GROUP BY material_batch_id
+        SELECT material_batch_id, reserved_not_used_quantity AS reserved_quantity, used_quantity
+        FROM v_material_batch_available
       ) u ON u.material_batch_id = mb.id
       WHERE mb.product_id = ? AND mb.is_deleted = 0
       ORDER BY mb.id DESC
@@ -455,21 +450,14 @@ export class ProductRepository {
       await execute(
         connection,
         `
-        INSERT INTO batch_material_usages (
-          batch_id, product_materials_id, material_batch_id, plan_quantity,
-          reserved_quantity, used_quantity, unit, status, recorded_at,
-          created_at, updated_at
+        INSERT INTO batch_material_requirements (
+          batch_id, product_materials_id, plan_quantity, unit, created_at, updated_at
         )
         SELECT
           b.id,
           pm.id,
-          NULL,
           pm.quantity_per_unit * b.planned_quantity,
-          0,
-          0,
           pm.unit,
-          'reserved',
-          NOW(),
           NOW(),
           NOW()
         FROM production_batches b
@@ -483,61 +471,42 @@ export class ProductRepository {
         WHERE b.is_deleted = 0
           AND EXISTS (
             SELECT 1
-            FROM batch_material_usages generated
+            FROM batch_material_requirements generated
             WHERE generated.batch_id = b.id
               AND generated.is_deleted = 0
           )
           AND NOT EXISTS (
             SELECT 1
-            FROM batch_material_usages current_usage
+            FROM batch_material_requirements current_usage
             WHERE current_usage.batch_id = b.id
               AND current_usage.product_materials_id = pm.id
               AND current_usage.is_deleted = 0
           )
         ON DUPLICATE KEY UPDATE
-          batch_material_usages.plan_quantity = IF(
-            batch_material_usages.material_batch_id IS NULL
-              AND batch_material_usages.reserved_quantity = 0
-              AND batch_material_usages.used_quantity = 0,
+          batch_material_requirements.plan_quantity = IF(
+            NOT EXISTS (
+              SELECT 1 FROM batch_material_usages operation
+              WHERE operation.batch_id = b.id
+                AND operation.product_materials_id = pm.id
+                AND operation.is_deleted = 0
+            ),
             pm.quantity_per_unit * b.planned_quantity,
-            batch_material_usages.plan_quantity
+            batch_material_requirements.plan_quantity
           ),
-          batch_material_usages.unit = IF(
-            batch_material_usages.material_batch_id IS NULL
-              AND batch_material_usages.reserved_quantity = 0
-              AND batch_material_usages.used_quantity = 0,
+          batch_material_requirements.unit = IF(
+            NOT EXISTS (
+              SELECT 1 FROM batch_material_usages operation
+              WHERE operation.batch_id = b.id
+                AND operation.product_materials_id = pm.id
+                AND operation.is_deleted = 0
+            ),
             pm.unit,
-            batch_material_usages.unit
+            batch_material_requirements.unit
           ),
-          batch_material_usages.status = IF(
-            batch_material_usages.material_batch_id IS NULL
-              AND batch_material_usages.reserved_quantity = 0
-              AND batch_material_usages.used_quantity = 0,
-            'reserved',
-            batch_material_usages.status
-          ),
-          batch_material_usages.is_deleted = IF(
-            batch_material_usages.material_batch_id IS NULL
-              AND batch_material_usages.reserved_quantity = 0
-              AND batch_material_usages.used_quantity = 0,
-            0,
-            batch_material_usages.is_deleted
-          ),
-          batch_material_usages.deleted_by = IF(
-            batch_material_usages.material_batch_id IS NULL
-              AND batch_material_usages.reserved_quantity = 0
-              AND batch_material_usages.used_quantity = 0,
-            NULL,
-            batch_material_usages.deleted_by
-          ),
-          batch_material_usages.deleted_at = IF(
-            batch_material_usages.material_batch_id IS NULL
-              AND batch_material_usages.reserved_quantity = 0
-              AND batch_material_usages.used_quantity = 0,
-            NULL,
-            batch_material_usages.deleted_at
-          ),
-          batch_material_usages.updated_at = NOW()
+          batch_material_requirements.is_deleted = 0,
+          batch_material_requirements.deleted_by = NULL,
+          batch_material_requirements.deleted_at = NULL,
+          batch_material_requirements.updated_at = NOW()
       `,
         [productId],
       );
@@ -545,21 +514,24 @@ export class ProductRepository {
       await execute(
         connection,
         `
-        UPDATE batch_material_usages bmu
+        UPDATE batch_material_requirements requirement
         INNER JOIN product_materials pm
-          ON pm.id = bmu.product_materials_id
+          ON pm.id = requirement.product_materials_id
           AND pm.product_id = ?
           AND pm.is_deleted = 0
         INNER JOIN production_batches b
-          ON b.id = bmu.batch_id
+          ON b.id = requirement.batch_id
           AND b.is_deleted = 0
-        SET bmu.plan_quantity = pm.quantity_per_unit * b.planned_quantity,
-          bmu.unit = COALESCE(pm.unit, bmu.unit),
-          bmu.updated_at = NOW()
-        WHERE bmu.is_deleted = 0
-          AND bmu.material_batch_id IS NULL
-          AND bmu.reserved_quantity = 0
-          AND bmu.used_quantity = 0
+        SET requirement.plan_quantity = pm.quantity_per_unit * b.planned_quantity,
+          requirement.unit = COALESCE(pm.unit, requirement.unit),
+          requirement.updated_at = NOW()
+        WHERE requirement.is_deleted = 0
+          AND NOT EXISTS (
+            SELECT 1 FROM batch_material_usages operation
+            WHERE operation.batch_id = requirement.batch_id
+              AND operation.product_materials_id = requirement.product_materials_id
+              AND operation.is_deleted = 0
+          )
       `,
         [productId],
       );
@@ -567,18 +539,21 @@ export class ProductRepository {
       await execute(
         connection,
         `
-        UPDATE batch_material_usages bmu
+        UPDATE batch_material_requirements requirement
         INNER JOIN product_materials pm
-          ON pm.id = bmu.product_materials_id
+          ON pm.id = requirement.product_materials_id
           AND pm.product_id = ?
           AND pm.is_deleted = 1
-        SET bmu.is_deleted = 1,
-          bmu.deleted_at = NOW(),
-          bmu.updated_at = NOW()
-        WHERE bmu.is_deleted = 0
-          AND bmu.material_batch_id IS NULL
-          AND bmu.reserved_quantity = 0
-          AND bmu.used_quantity = 0
+        SET requirement.is_deleted = 1,
+          requirement.deleted_at = NOW(),
+          requirement.updated_at = NOW()
+        WHERE requirement.is_deleted = 0
+          AND NOT EXISTS (
+            SELECT 1 FROM batch_material_usages operation
+            WHERE operation.batch_id = requirement.batch_id
+              AND operation.product_materials_id = requirement.product_materials_id
+              AND operation.is_deleted = 0
+          )
       `,
         [productId],
       );
@@ -592,14 +567,11 @@ export class ProductRepository {
       `
       SELECT COUNT(*) AS total
       FROM product_materials pm
-      INNER JOIN batch_material_usages bmu ON bmu.product_materials_id = pm.id AND bmu.is_deleted = 0
+      INNER JOIN batch_material_usages operation
+        ON operation.product_materials_id = pm.id
+        AND operation.is_deleted = 0
       WHERE pm.product_id = ?
         AND pm.is_deleted = 0
-        AND (
-          bmu.material_batch_id IS NOT NULL
-          OR bmu.reserved_quantity > 0
-          OR bmu.used_quantity > 0
-        )
     `,
       [productId],
     );

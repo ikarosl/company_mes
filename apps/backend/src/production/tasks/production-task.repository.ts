@@ -95,16 +95,16 @@ export class ProductionTaskRepository {
         SUM(CASE WHEN sr.status = 'completed' THEN 1 ELSE 0 END) AS finished_step_count,
         COUNT(DISTINCT CASE WHEN sr.responsible_user_id IS NOT NULL THEN sr.id END) AS assigned_step_count,
         (
-          SELECT COUNT(*) FROM batch_material_usages bmu
-          WHERE bmu.batch_id = b.id AND bmu.is_deleted = 0
+          SELECT COUNT(*) FROM batch_material_requirements requirement
+          WHERE requirement.batch_id = b.id AND requirement.is_deleted = 0
         ) AS material_requirement_count,
         (
-          SELECT COUNT(*) FROM batch_material_usages bmu
-          WHERE bmu.batch_id = b.id AND bmu.is_deleted = 0 AND bmu.reserved_quantity > 0
+          SELECT COUNT(*) FROM v_batch_material_allocation allocation
+          WHERE allocation.batch_id = b.id AND allocation.reserved_quantity > 0
         ) AS assigned_material_count,
         (
-          SELECT COUNT(*) FROM batch_material_usages bmu
-          WHERE bmu.batch_id = b.id AND bmu.is_deleted = 0 AND bmu.used_quantity >= bmu.plan_quantity
+          SELECT COUNT(*) FROM v_batch_material_allocation allocation
+          WHERE allocation.batch_id = b.id AND allocation.used_quantity >= allocation.required_quantity
         ) AS used_material_count
       FROM production_batches b
       INNER JOIN work_orders wo ON wo.id = b.work_order_id AND wo.is_deleted = 0
@@ -689,18 +689,19 @@ export class ProductionTaskRepository {
     >(
       `
       SELECT
-        (SELECT COUNT(*) FROM batch_material_usages bmu
-          WHERE bmu.batch_id = ? AND bmu.is_deleted = 0) AS material_requirement_count,
-        (SELECT COUNT(*) FROM batch_material_usages bmu
-          WHERE bmu.batch_id = ? AND bmu.is_deleted = 0 AND bmu.reserved_quantity = 0) AS unallocated_material_count,
-        (SELECT COUNT(*) FROM batch_material_usages bmu
-          WHERE bmu.batch_id = ? AND bmu.is_deleted = 0
-            AND bmu.reserved_quantity > 0 AND bmu.reserved_quantity < bmu.plan_quantity) AS partial_material_count,
+        (SELECT COUNT(*) FROM batch_material_requirements requirement
+          WHERE requirement.batch_id = ? AND requirement.is_deleted = 0) AS material_requirement_count,
+        (SELECT COUNT(*) FROM v_batch_material_allocation allocation
+          WHERE allocation.batch_id = ? AND allocation.reserved_quantity = 0) AS unallocated_material_count,
+        (SELECT COUNT(*) FROM v_batch_material_allocation allocation
+          WHERE allocation.batch_id = ?
+            AND allocation.reserved_quantity > 0
+            AND allocation.reserved_quantity < allocation.required_quantity) AS partial_material_count,
         (SELECT COUNT(*)
-          FROM batch_material_usages bmu
-          INNER JOIN product_materials pm ON pm.id = bmu.product_materials_id AND pm.is_deleted = 0
-          WHERE bmu.batch_id = ? AND bmu.is_deleted = 0
-            AND pm.is_key_material = 1 AND bmu.reserved_quantity < bmu.plan_quantity) AS critical_unallocated_count,
+          FROM v_batch_material_allocation allocation
+          WHERE allocation.batch_id = ?
+            AND allocation.is_key_material = 1
+            AND allocation.reserved_quantity < allocation.required_quantity) AS critical_unallocated_count,
         (SELECT COUNT(*) FROM batch_step_records sr
           WHERE sr.batch_id = ? AND sr.is_deleted = 0) AS step_count,
         (SELECT COUNT(*) FROM batch_step_records sr
@@ -1045,16 +1046,16 @@ export class ProductionTaskRepository {
         SUM(CASE WHEN sr.status = 'completed' THEN 1 ELSE 0 END) AS finished_step_count,
         COUNT(DISTINCT CASE WHEN sr.responsible_user_id IS NOT NULL THEN sr.id END) AS assigned_step_count,
         (
-          SELECT COUNT(*) FROM batch_material_usages bmu
-          WHERE bmu.batch_id = b.id AND bmu.is_deleted = 0
+          SELECT COUNT(*) FROM batch_material_requirements requirement
+          WHERE requirement.batch_id = b.id AND requirement.is_deleted = 0
         ) AS material_requirement_count,
         (
-          SELECT COUNT(*) FROM batch_material_usages bmu
-          WHERE bmu.batch_id = b.id AND bmu.is_deleted = 0 AND bmu.reserved_quantity > 0
+          SELECT COUNT(*) FROM v_batch_material_allocation allocation
+          WHERE allocation.batch_id = b.id AND allocation.reserved_quantity > 0
         ) AS assigned_material_count,
         (
-          SELECT COUNT(*) FROM batch_material_usages bmu
-          WHERE bmu.batch_id = b.id AND bmu.is_deleted = 0 AND bmu.used_quantity >= bmu.plan_quantity
+          SELECT COUNT(*) FROM v_batch_material_allocation allocation
+          WHERE allocation.batch_id = b.id AND allocation.used_quantity >= allocation.required_quantity
         ) AS used_material_count
       FROM production_batches b
       INNER JOIN work_orders wo ON wo.id = b.work_order_id AND wo.is_deleted = 0
@@ -1140,24 +1141,26 @@ export class ProductionTaskRepository {
     const rows = await this.database.query<TaskMaterialRequirementRow[]>(
       `
       SELECT
-        COALESCE(CAST(bmu.id AS CHAR), CAST(pm.id AS CHAR)) AS id,
-        bmu.id AS usage_id,
+        COALESCE(CAST(requirement.id AS CHAR), CAST(pm.id AS CHAR)) AS id,
+        requirement.id AS usage_id,
         pm.id AS product_material_id,
         pm.material_product_id,
         mp.product_model AS material_model,
         mp.product_name AS material_name,
         pm.quantity_per_unit,
-        COALESCE(bmu.plan_quantity, pm.quantity_per_unit * ?) AS plan_quantity,
-        COALESCE(bmu.used_quantity, 0) AS used_quantity,
+        COALESCE(requirement.plan_quantity, pm.quantity_per_unit * ?) AS plan_quantity,
+        COALESCE(allocation.used_quantity, 0) AS used_quantity,
         pm.unit,
         pm.is_key_material,
         pm.need_batch_record
       FROM product_materials pm
       INNER JOIN products mp ON mp.id = pm.material_product_id AND mp.is_deleted = 0
-      LEFT JOIN batch_material_usages bmu ON bmu.product_materials_id = pm.id
-        AND bmu.batch_id = ?
-        AND bmu.material_batch_id IS NULL
-        AND bmu.is_deleted = 0
+      LEFT JOIN batch_material_requirements requirement
+        ON requirement.product_materials_id = pm.id
+        AND requirement.batch_id = ?
+        AND requirement.is_deleted = 0
+      LEFT JOIN v_batch_material_allocation allocation
+        ON allocation.requirement_id = requirement.id
       WHERE pm.product_id = ? AND pm.is_deleted = 0
       ORDER BY pm.id ASC
     `,
@@ -1172,25 +1175,19 @@ export class ProductionTaskRepository {
     batchId: number,
     productId: number,
   ) {
-    // 需求数量 = BOM 单件用量 × 批次计划数量；已分配或已使用记录保持历史数量。
+    // 需求数量 = BOM 单件用量 × 批次计划数量；流水存在后保留需求快照，避免改写历史。
     await execute(
       connection,
       `
-      INSERT INTO batch_material_usages (
-        batch_id, product_materials_id, material_batch_id, plan_quantity,
-        reserved_quantity, used_quantity, unit, status, recorded_at,
+      INSERT INTO batch_material_requirements (
+        batch_id, product_materials_id, plan_quantity, unit,
         created_at, updated_at, is_deleted, deleted_by, deleted_at
       )
       SELECT
         b.id,
         pm.id,
-        NULL,
         pm.quantity_per_unit * b.planned_quantity,
-        0,
-        0,
         pm.unit,
-        'reserved',
-        NOW(),
         NOW(),
         NOW(),
         0,
@@ -1200,56 +1197,30 @@ export class ProductionTaskRepository {
       INNER JOIN product_materials pm ON pm.product_id = ? AND pm.is_deleted = 0
       WHERE b.id = ? AND b.is_deleted = 0
       ON DUPLICATE KEY UPDATE
-        batch_material_usages.plan_quantity = IF(
-          batch_material_usages.material_batch_id IS NULL
-            AND batch_material_usages.reserved_quantity = 0
-            AND batch_material_usages.used_quantity = 0,
+        batch_material_requirements.plan_quantity = IF(
+          NOT EXISTS (
+            SELECT 1 FROM batch_material_usages operation
+            WHERE operation.batch_id = b.id
+              AND operation.product_materials_id = pm.id
+              AND operation.is_deleted = 0
+          ),
           pm.quantity_per_unit * b.planned_quantity,
-          batch_material_usages.plan_quantity
+          batch_material_requirements.plan_quantity
         ),
-        batch_material_usages.unit = IF(
-          batch_material_usages.material_batch_id IS NULL
-            AND batch_material_usages.reserved_quantity = 0
-            AND batch_material_usages.used_quantity = 0,
+        batch_material_requirements.unit = IF(
+          NOT EXISTS (
+            SELECT 1 FROM batch_material_usages operation
+            WHERE operation.batch_id = b.id
+              AND operation.product_materials_id = pm.id
+              AND operation.is_deleted = 0
+          ),
           pm.unit,
-          batch_material_usages.unit
+          batch_material_requirements.unit
         ),
-        batch_material_usages.status = IF(
-          batch_material_usages.material_batch_id IS NULL
-            AND batch_material_usages.reserved_quantity = 0
-            AND batch_material_usages.used_quantity = 0,
-          'reserved',
-          batch_material_usages.status
-        ),
-        batch_material_usages.recorded_at = IF(
-          batch_material_usages.material_batch_id IS NULL
-            AND batch_material_usages.reserved_quantity = 0
-            AND batch_material_usages.used_quantity = 0,
-          NOW(),
-          batch_material_usages.recorded_at
-        ),
-        batch_material_usages.is_deleted = IF(
-          batch_material_usages.material_batch_id IS NULL
-            AND batch_material_usages.reserved_quantity = 0
-            AND batch_material_usages.used_quantity = 0,
-          0,
-          batch_material_usages.is_deleted
-        ),
-        batch_material_usages.deleted_by = IF(
-          batch_material_usages.material_batch_id IS NULL
-            AND batch_material_usages.reserved_quantity = 0
-            AND batch_material_usages.used_quantity = 0,
-          NULL,
-          batch_material_usages.deleted_by
-        ),
-        batch_material_usages.deleted_at = IF(
-          batch_material_usages.material_batch_id IS NULL
-            AND batch_material_usages.reserved_quantity = 0
-            AND batch_material_usages.used_quantity = 0,
-          NULL,
-          batch_material_usages.deleted_at
-        ),
-        batch_material_usages.updated_at = NOW()
+        batch_material_requirements.is_deleted = 0,
+        batch_material_requirements.deleted_by = NULL,
+        batch_material_requirements.deleted_at = NULL,
+        batch_material_requirements.updated_at = NOW()
     `,
       [productId, batchId],
     );
@@ -1257,19 +1228,22 @@ export class ProductionTaskRepository {
     await execute(
       connection,
       `
-      UPDATE batch_material_usages bmu
+      UPDATE batch_material_requirements requirement
       LEFT JOIN product_materials pm
-        ON pm.id = bmu.product_materials_id
+        ON pm.id = requirement.product_materials_id
         AND pm.product_id = ?
         AND pm.is_deleted = 0
-      SET bmu.is_deleted = 1,
-        bmu.deleted_at = NOW(),
-        bmu.updated_at = NOW()
-      WHERE bmu.batch_id = ?
-        AND bmu.is_deleted = 0
-        AND bmu.material_batch_id IS NULL
-        AND bmu.reserved_quantity = 0
-        AND bmu.used_quantity = 0
+      SET requirement.is_deleted = 1,
+        requirement.deleted_at = NOW(),
+        requirement.updated_at = NOW()
+      WHERE requirement.batch_id = ?
+        AND requirement.is_deleted = 0
+        AND NOT EXISTS (
+          SELECT 1 FROM batch_material_usages operation
+          WHERE operation.batch_id = requirement.batch_id
+            AND operation.product_materials_id = requirement.product_materials_id
+            AND operation.is_deleted = 0
+        )
         AND pm.id IS NULL
     `,
       [productId, batchId],
@@ -1279,7 +1253,7 @@ export class ProductionTaskRepository {
       connection,
       `
       SELECT COUNT(*) AS total
-      FROM batch_material_usages
+      FROM batch_material_requirements
       WHERE batch_id = ? AND is_deleted = 0
     `,
       [batchId],
@@ -1291,7 +1265,7 @@ export class ProductionTaskRepository {
   private async countBatchMaterialUsages(connection: PoolConnection, batchId: number) {
     const [row] = await query<(RowDataPacket & { total: number })[]>(
       connection,
-      'SELECT COUNT(*) AS total FROM batch_material_usages WHERE batch_id = ? AND is_deleted = 0',
+      'SELECT COUNT(*) AS total FROM batch_material_requirements WHERE batch_id = ? AND is_deleted = 0',
       [batchId],
     );
     return Number(row?.total ?? 0);
