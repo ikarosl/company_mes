@@ -14,6 +14,7 @@ import ProductsPage from '../views/product/ProductsPage.vue';
 import ProcessesPage from '../views/product/ProcessesPage.vue';
 import ProcessRoutesPage from '../views/product/ProcessRoutesPage.vue';
 import MaterialAllocationPage from '../views/production/MaterialAllocationPage.vue';
+import ProductionExecutionRecordsPage from '../views/production/ProductionExecutionRecordsPage.vue';
 import ProductionOrdersPage from '../views/production/ProductionOrdersPage.vue';
 import ProductionTasksPage from '../views/production/ProductionTasksPage.vue';
 import WorkerTasksPage from '../views/WorkerTasksPage.vue';
@@ -108,14 +109,14 @@ export const routes: RouteRecordRaw[] = [
           permission: PERMISSIONS.warehouse.inventory.page,
         },
       },
-plannedPage(
-  'warehouse/finished-transactions',
-  'warehouse-finished-transactions',
-  '成品出入库管理',
-  '仓储管理',
-  ['入库', '出库', '发运', '查看成品出入库记录'],
-  PERMISSIONS.warehouse.finishedTransactions.page,
-),
+      plannedPage(
+        'warehouse/finished-transactions',
+        'warehouse-finished-transactions',
+        '成品出入库管理',
+        '仓储管理',
+        ['入库', '出库', '发运', '查看成品出入库记录'],
+        PERMISSIONS.warehouse.finishedTransactions.page,
+      ),
       {
         path: 'warehouse/material-transactions',
         name: 'warehouse-material-transactions',
@@ -229,14 +230,16 @@ plannedPage(
         ['查看', '派工', '改派', '一键按默认派工', '清除全部派工'],
         PERMISSIONS.production.dispatch.page,
       ),
-      plannedPage(
-        'production/execution-records',
-        'production-execution-records',
-        '生产报工',
-        '生产管理',
-        ['查看', '开工', '完工', '开工并报工', '批量报工', '查看详情'],
-        PERMISSIONS.production.reports.page,
-      ),
+      {
+        path: 'production/execution-records',
+        name: 'production-execution-records',
+        component: ProductionExecutionRecordsPage,
+        meta: {
+          title: '生产报工',
+          section: '生产管理',
+          permission: PERMISSIONS.production.reports.page,
+        },
+      },
 
       plannedPage(
         'quality/inspections',

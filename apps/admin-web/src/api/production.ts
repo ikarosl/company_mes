@@ -46,7 +46,10 @@ export const productionApi = {
       method: 'PUT',
       data,
     }),
-  changeOrderStatus: (id: string, status: Extract<WorkOrderStatus, 'released' | 'closed' | 'cancelled'>) =>
+  changeOrderStatus: (
+    id: string,
+    status: Extract<WorkOrderStatus, 'released' | 'closed' | 'cancelled'>,
+  ) =>
     requestData<WorkOrderDetail>({
       url: `${BUSINESS_API.orders}/${id}/${status === 'released' ? 'release' : status === 'closed' ? 'close' : 'cancel'}`,
       method: 'PUT',
@@ -77,6 +80,17 @@ export const productionApi = {
   getTask: (id: string) =>
     requestData<ProductionTaskDetail>({
       url: `${BUSINESS_API.tasks}/${id}`,
+      method: 'GET',
+    }),
+  listExecutionRecords: (params?: QueryParams) =>
+    requestData<PageResult<ProductionTaskDetail>>({
+      url: BUSINESS_API.executionRecords,
+      method: 'GET',
+      params,
+    }),
+  getExecutionRecord: (id: string) =>
+    requestData<ProductionTaskDetail>({
+      url: `${BUSINESS_API.executionRecords}/${id}`,
       method: 'GET',
     }),
   listWorkerTasks: (params?: QueryParams) =>
@@ -135,7 +149,10 @@ export const productionApi = {
       method: 'GET',
     }),
   generateTaskMaterialDemand: (id: string) =>
-    requestData<{ task: ProductionTaskDetail; materials: ProductionTaskDetail['materialRequirements'] }>({
+    requestData<{
+      task: ProductionTaskDetail;
+      materials: ProductionTaskDetail['materialRequirements'];
+    }>({
       url: `${BUSINESS_API.tasks}/${id}/material-demand`,
       method: 'POST',
     }),

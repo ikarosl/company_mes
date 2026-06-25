@@ -134,6 +134,19 @@ export class ProductionTaskRepository {
     };
   }
 
+  async listExecutionRecords(
+    filters: Pick<ProductionTaskFilters, 'keyword' | 'status'>,
+    pagination: PaginationOptions,
+  ) {
+    const page = await this.listTasks(filters, pagination);
+    const items = await Promise.all(page.items.map((task) => this.getTask(Number(task.id))));
+
+    return {
+      ...page,
+      items,
+    };
+  }
+
   async listTasksForWorker(
     userId: string,
     filters: ProductionTaskFilters,
