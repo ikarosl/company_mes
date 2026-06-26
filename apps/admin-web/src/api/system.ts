@@ -3,6 +3,7 @@ import {
   type AssignSystemUserRolesPayload,
   type CreateSystemUserPayload,
   type OperationLogListItem,
+  type PageResult,
   type ResetSystemUserPasswordPayload,
   SYSTEM_API,
   type SystemDepartmentOption,
@@ -90,7 +91,7 @@ export const systemApi = {
       data,
     }),
   listOperationLogs: (params?: QueryParams) =>
-    requestPageItems<OperationLogListItem>({
+    requestData<PageResult<OperationLogListItem>>({
       url: SYSTEM_API.logs,
       method: 'GET',
       params,

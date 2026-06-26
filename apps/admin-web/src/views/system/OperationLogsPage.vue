@@ -19,7 +19,14 @@
         </el-select>
       </el-form-item>
       <el-form-item label="模块">
-        <el-input v-model="query.module" clearable placeholder="auth / production-batches" />
+        <el-select v-model="query.module" clearable filterable placeholder="请选择模块" style="width: 170px">
+          <el-option
+            v-for="item in operationLogModuleOptions"
+            :key="item.value"
+            :label="item.label"
+            :value="item.value"
+          />
+        </el-select>
       </el-form-item>
       <el-form-item label="结果">
         <el-select v-model="query.result" clearable placeholder="全部" style="width: 130px">
@@ -29,9 +36,6 @@
       </el-form-item>
       <el-form-item label="用户ID">
         <el-input v-model="query.userId" clearable />
-      </el-form-item>
-      <el-form-item label="关键字">
-        <el-input v-model="query.keyword" clearable placeholder="动作 / 业务单号 / 用户" />
       </el-form-item>
       <el-form-item label="请求ID">
         <el-input v-model="query.requestId" clearable />
@@ -53,7 +57,7 @@
         />
       </el-form-item>
       <el-form-item>
-        <el-button type="primary" :loading="loading" @click="loadLogs">查询</el-button>
+        <el-button type="primary" :loading="loading" @click="searchLogs">查询</el-button>
         <el-button @click="resetQuery">重置</el-button>
       </el-form-item>
     </el-form>
@@ -88,6 +92,16 @@
         </template>
       </el-table-column>
     </el-table>
+    <div class="table-footer">
+      <span class="total-text">共 {{ total }} 条</span>
+      <el-pagination
+        v-model:current-page="currentPage"
+        :page-size="pageSize"
+        :total="total"
+        layout="prev, pager, next, jumper"
+        @current-change="loadLogs"
+      />
+    </div>
 
     <el-dialog v-model="detailVisible" title="日志详情" :width="DialogWidth.lg">
       <el-descriptions v-if="activeLog" border :column="1" class="detail-block">
@@ -128,7 +142,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
-import type { OperationLogListItem } from '@company/api-contract';
+import { OPERATION_LOG_MODULE_OPTIONS, type OperationLogListItem } from '@company/api-contract';
 import { systemApi } from '../../api/system';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
@@ -137,10 +151,18 @@ import { EMessage } from '../../utils/message';
 const loading = ref(false);
 const detailVisible = ref(false);
 const logs = ref<OperationLogListItem[]>([]);
+const total = ref(0);
+const currentPage = ref(1);
+const pageSize = 10;
 const activeLog = ref<OperationLogListItem | null>(null);
 const activeDiff = computed(() =>
   buildDiff(activeLog.value?.beforeData, activeLog.value?.afterData),
 );
+
+/** 模块筛选项：固定使用后端审计 module 枚举，避免人工输入造成查不到数据。 */
+const operationLogModuleOptions = OPERATION_LOG_MODULE_OPTIONS;
+
+/** 查询条件：提交接口前会补充分页参数，并将空字符串转换为 undefined。 */
 const query = reactive({
   keyword: '',
   logType: '',
@@ -153,10 +175,13 @@ const query = reactive({
   createdAtRange: [] as string[],
 });
 
+/** 拉取日志分页数据：后端按 page/pageSize 返回当前页列表和总数。 */
 const loadLogs = async () => {
   loading.value = true;
   try {
-    logs.value = await systemApi.listOperationLogs({
+    const page = await systemApi.listOperationLogs({
+      page: currentPage.value,
+      pageSize,
       keyword: query.keyword || undefined,
       logType: query.logType || undefined,
       module: query.module || undefined,
@@ -168,6 +193,8 @@ const loadLogs = async () => {
       startedAt: query.createdAtRange[0] || undefined,
       endedAt: query.createdAtRange[1] || undefined,
     });
+    logs.value = page.items;
+    total.value = page.total;
   } catch (error) {
     EMessage.error(error, '日志加载失败');
   } finally {
@@ -175,6 +202,13 @@ const loadLogs = async () => {
   }
 };
 
+/** 查询按钮：从第一页重新加载，避免当前页超出筛选后的结果范围。 */
+const searchLogs = async () => {
+  currentPage.value = 1;
+  await loadLogs();
+};
+
+/** 重置全部搜索条件，并恢复第一页的 10 条分页查询。 */
 const resetQuery = async () => {
   Object.assign(query, {
     keyword: '',
@@ -182,15 +216,22 @@ const resetQuery = async () => {
     module: '',
     result: '',
     userId: '',
+    requestId: '',
+    targetType: '',
+    targetId: '',
+    createdAtRange: [],
   });
+  currentPage.value = 1;
   await loadLogs();
 };
 
+/** 打开详情弹窗：展示请求数据、变更前后快照和字段差异。 */
 const openDetail = (row: OperationLogListItem) => {
   activeLog.value = row;
   detailVisible.value = true;
 };
 
+/** 构造字段差异：仅比较一层字段，方便管理员快速定位本次变更内容。 */
 const buildDiff = (before: unknown, after: unknown) => {
   if (!isRecord(before) || !isRecord(after)) {
     return null;
@@ -240,6 +281,19 @@ onMounted(loadLogs);
 
 .query-bar {
   margin-bottom: 10px;
+}
+
+.table-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.total-text {
+  color: #606266;
+  font-size: 13px;
 }
 
 .detail-block {

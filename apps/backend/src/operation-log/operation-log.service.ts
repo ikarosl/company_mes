@@ -130,9 +130,12 @@ export class OperationLogService {
     const params: QueryParam[] = [];
 
     if (filters.keyword?.trim()) {
+      // 关键字搜索覆盖常用追溯字段：模块、动作、业务单号、用户、对象、IP 和备注。
       clauses.push(`(
         ol.module LIKE ?
         OR ol.action LIKE ?
+        OR ol.business_key LIKE ?
+        OR ol.operator_username LIKE ?
         OR u.username LIKE ?
         OR u.display_name LIKE ?
         OR ol.target_type LIKE ?
@@ -141,7 +144,18 @@ export class OperationLogService {
         OR ol.remark LIKE ?
       )`);
       const keyword = `%${filters.keyword.trim()}%`;
-      params.push(keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword);
+      params.push(
+        keyword,
+        keyword,
+        keyword,
+        keyword,
+        keyword,
+        keyword,
+        keyword,
+        keyword,
+        keyword,
+        keyword,
+      );
     }
 
     if (filters.logType) {
@@ -182,14 +196,6 @@ export class OperationLogService {
     if (filters.requestId) {
       clauses.push('ol.request_id = ?');
       params.push(filters.requestId);
-    }
-
-    if (filters.keyword) {
-      clauses.push(
-        '(ol.action LIKE ? OR ol.business_key LIKE ? OR ol.operator_username LIKE ? OR u.username LIKE ?)',
-      );
-      const keyword = `%${filters.keyword.trim()}%`;
-      params.push(keyword, keyword, keyword, keyword);
     }
 
     if (filters.startedAt) {
