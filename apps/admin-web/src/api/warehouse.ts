@@ -44,15 +44,39 @@ export const warehouseApi = {
       url: `${BUSINESS_API.warehouseInventory}/${id}/${disabled ? 'disable' : 'enable'}`,
       method: 'PUT',
     }),
-  listFinishedTransactions: (params?: QueryParams) =>
+  listWarehouseItems: (params?: QueryParams) =>
     requestData<PageResult<unknown>>({
-      url: BUSINESS_API.warehouseFinishedTransactions,
+      url: BUSINESS_API.warehouseItems,
       method: 'GET',
       params,
     }),
-  listMaterialTransactions: (params?: QueryParams) =>
+  listInboundOrders: (params?: QueryParams) =>
     requestData<PageResult<unknown>>({
-      url: BUSINESS_API.warehouseMaterialTransactions,
+      url: BUSINESS_API.warehouseInboundOrders,
+      method: 'GET',
+      params,
+    }),
+  listOutboundOrders: (params?: QueryParams) =>
+    requestData<PageResult<unknown>>({
+      url: BUSINESS_API.warehouseOutboundOrders,
+      method: 'GET',
+      params,
+    }),
+  listReturnOrders: (params?: QueryParams) =>
+    requestData<PageResult<unknown>>({
+      url: BUSINESS_API.warehouseReturnOrders,
+      method: 'GET',
+      params,
+    }),
+  listScraps: (params?: QueryParams) =>
+    requestData<PageResult<unknown>>({
+      url: BUSINESS_API.warehouseScraps,
+      method: 'GET',
+      params,
+    }),
+  listStockChecks: (params?: QueryParams) =>
+    requestData<PageResult<unknown>>({
+      url: BUSINESS_API.warehouseStockChecks,
       method: 'GET',
       params,
     }),

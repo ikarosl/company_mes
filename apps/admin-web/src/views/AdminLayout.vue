@@ -97,19 +97,39 @@ const menuGroups: MenuGroup[] = [
     index: '/warehouse',
     items: [
       {
-        title: '库存管理',
+        title: '库存对象管理',
+        path: '/warehouse/items',
+        permission: PERMISSIONS.warehouse.items.page,
+      },
+      {
+        title: '库存批次与现存量',
         path: '/warehouse/inventory',
         permission: PERMISSIONS.warehouse.inventory.page,
       },
       {
-        title: '出入库管理',
-        path: '/warehouse/finished-transactions',
-        permission: PERMISSIONS.warehouse.finishedTransactions.page,
+        title: '入库管理',
+        path: '/warehouse/inbound-orders',
+        permission: PERMISSIONS.warehouse.inboundOrders.page,
       },
       {
-        title: '物料出入库管理',
-        path: '/warehouse/material-transactions',
-        permission: PERMISSIONS.warehouse.materialTransactions.page,
+        title: '出库管理',
+        path: '/warehouse/outbound-orders',
+        permission: PERMISSIONS.warehouse.outboundOrders.page,
+      },
+      {
+        title: '退料管理',
+        path: '/warehouse/return-orders',
+        permission: PERMISSIONS.warehouse.returnOrders.page,
+      },
+      {
+        title: '报废管理',
+        path: '/warehouse/scraps',
+        permission: PERMISSIONS.warehouse.scraps.page,
+      },
+      {
+        title: '库存盘点',
+        path: '/warehouse/stock-checks',
+        permission: PERMISSIONS.warehouse.stockChecks.page,
       },
     ],
   },
@@ -135,12 +155,12 @@ const menuGroups: MenuGroup[] = [
       {
         title: '派工管理',
         path: '/production/dispatch',
-        permission: PERMISSIONS.production.tasks.dispatch,
+        permission: PERMISSIONS.production.dispatch.page,
       },
       {
         title: '生产报工',
         path: '/production/execution-records',
-        permission: PERMISSIONS.production.tasks.start,
+        permission: PERMISSIONS.production.reports.page,
       },
     ],
   },
@@ -176,8 +196,8 @@ const canShow = (permission?: string) => authStore.hasPermission(permission);
 
 const getMenuItemTitle = (item: MenuItem) => {
   const titleMap: Record<string, string> = {
-    '/warehouse/finished-transactions': '成品出入库管理',
-    '/warehouse/material-transactions': '物料出入库管理',
+    '/warehouse/inbound-orders': '入库管理',
+    '/warehouse/outbound-orders': '出库管理',
   };
 
   return titleMap[item.path] ?? item.title;
