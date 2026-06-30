@@ -344,6 +344,35 @@
 7. 需求、分配、出库、退料、报废的累计数量通过视图汇总，不建议写回主表。
 8. 入库、出库、退料、报废、盘点调整等影响库存数量的动作都应生成库存流水。
 
+## 0.1 库存单据收敛边界
+
+为避免后续开发边界不明确，本方案对 `stock_order` 的适用范围做如下约束：
+
+1. `stock_order`、`stock_order_detail` 只收敛普通入库和普通出库单据。
+2. 采购入库、生产入库、委外入库、成品入库、半成品入库、生产领料出库、销售出库等库存动作，可以使用 `stock_order`、`stock_order_detail` 表达业务单据。
+3. 退料、报废、盘点需要保留独立业务单据表，不应被强行迁入 `stock_order_detail`。
+4. `return_order`、`return_detail` 负责记录退料业务过程、退料数量、退回库存状态、是否释放原预留等操作明细。
+5. `item_scrap` 负责记录报废场景、报废原因、报废数量、是否触发补料等操作明细。
+6. `stock_check_order`、`stock_check_detail` 负责记录盘点任务、账面数量快照、实盘数量、差异数量和是否已调整等操作明细。
+7. 退料、报废、盘点确认后必须生成 `inventory_transaction`，但来源明细应分别指向 `return_detail`、`item_scrap`、`stock_check_detail`。
+8. 入库、出库流水可以填写 `stock_order_id`、`stock_order_detail_id`；退料、报废、盘点流水不要求生成 `stock_order`，除非后续有统一单据号展示的明确需求。
+
+简化关系：
+
+```text
+普通入库/普通出库
+  stock_order -> stock_order_detail -> inventory_transaction
+
+退料
+  return_order -> return_detail -> inventory_transaction
+
+报废
+  item_scrap -> inventory_transaction
+
+盘点
+  stock_check_order -> stock_check_detail -> inventory_transaction
+```
+
 ---
 
 # 一、基础资料表
@@ -709,6 +738,7 @@
 * `business_type` 决定库存流水的业务类型。
 * 入库单、出库单不再拆成两套主表，统一由该表承载。
 * 对外接口可以继续按入库、出库分路由，但底层表必须统一。
+* 该表不替代 `return_order`、`item_scrap`、`stock_check_order` 等需要明确操作日志明细的业务单据。
 
 ---
 

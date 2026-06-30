@@ -9,6 +9,7 @@ import { MaterialInventoryController } from './inventory/material-inventory.cont
 import { WarehouseItemController } from './items/warehouse-item.controller.js';
 import { WarehouseItemRepository } from './items/warehouse-item.repository.js';
 import { OutboundOrderController } from './outbound-orders/outbound-order.controller.js';
+import { OutboundOrderRepository } from './outbound-orders/outbound-order.repository.js';
 import { ReturnOrderController } from './return-orders/return-order.controller.js';
 import { ItemScrapController } from './scraps/item-scrap.controller.js';
 import { StockCheckController } from './stock-checks/stock-check.controller.js';
@@ -24,6 +25,6 @@ import { StockCheckController } from './stock-checks/stock-check.controller.js';
     ItemScrapController,
     StockCheckController,
   ],
-  providers: [WarehouseItemRepository, InventoryRepository, InboundOrderRepository],
+  providers: [WarehouseItemRepository, InventoryRepository, InboundOrderRepository, OutboundOrderRepository],
 })
 export class WarehouseModule {}

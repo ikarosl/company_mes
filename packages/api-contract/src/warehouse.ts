@@ -182,6 +182,64 @@ export interface InboundOrderDetail extends InboundOrderListItem {
 /** 出库单状态：前端兼容名称，底层映射到 stock_order.status。 */
 export type OutboundOrderStatus = '待确认' | '已拣货' | '已完成' | '已取消';
 
+/** 出库单列表项，对应 stock_order(order_direction=出库) */
+export interface OutboundOrderListItem {
+  id: string;
+  outboundNo: string;
+  businessType: StockOrderBusinessType;
+  workOrderId: string | null;
+  productionBatchId: string | null;
+  status: OutboundOrderStatus;
+  outboundAt: string | null;
+  operatorId: string | null;
+  remark: string | null;
+  createdAt: string;
+  updatedAt: string;
+  detailCount: number;
+  totalOutboundNumber: string;
+}
+
+/** 出库明细请求行。生产领料出库应基于已分配行出库。 */
+export interface OutboundDetailPayload {
+  allocationId: string;
+  outboundNumber: string | number;
+  stockStatus?: WarehouseStockStatus;
+  remark?: string | null;
+}
+
+/** 创建出库单请求参数 */
+export interface CreateOutboundOrderPayload {
+  outboundNo?: string | null;
+  productionBatchId: string;
+  workOrderId?: string | null;
+  operatorId?: string | null;
+  remark?: string | null;
+  details: OutboundDetailPayload[];
+}
+
+/** 出库明细详情，对应 stock_order_detail + production_item_allocation */
+export interface OutboundDetailItem {
+  id: string;
+  outboundId: string;
+  demandId: string;
+  allocationId: string;
+  productionBatchId: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  batchId: string;
+  batchCode: string;
+  outboundNumber: string;
+  stockStatus: WarehouseStockStatus;
+  remark: string | null;
+  createdAt: string;
+}
+
+/** 出库单详情 */
+export interface OutboundOrderDetail extends OutboundOrderListItem {
+  details: OutboundDetailItem[];
+}
+
 /** 退料单状态 */
 export type ReturnOrderStatus = '待处理' | '已入库' | '已报废' | '已取消';
 

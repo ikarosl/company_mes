@@ -37,3 +37,55 @@ export const BUSINESS_API = {
   workerTasks: '/worker/tasks',
   inspectorTasks: '/inspector/tasks',
 } as const;
+
+export const WAREHOUSE_API = {
+  items: {
+    root: BUSINESS_API.warehouseItems,
+    detail: (id: string) => `${BUSINESS_API.warehouseItems}/${id}`,
+    typeOptions: `${BUSINESS_API.warehouseItems}/types/options`,
+    enable: (id: string) => `${BUSINESS_API.warehouseItems}/${id}/enable`,
+    disable: (id: string) => `${BUSINESS_API.warehouseItems}/${id}/disable`,
+  },
+  inventory: {
+    root: BUSINESS_API.warehouseInventory,
+    detail: (id: string) => `${BUSINESS_API.warehouseInventory}/${id}`,
+    available: `${BUSINESS_API.warehouseInventory}/available`,
+    reserved: `${BUSINESS_API.warehouseInventory}/reserved`,
+    stocktake: (id: string) => `${BUSINESS_API.warehouseInventory}/${id}/stocktake`,
+    enable: (id: string) => `${BUSINESS_API.warehouseInventory}/${id}/enable`,
+    disable: (id: string) => `${BUSINESS_API.warehouseInventory}/${id}/disable`,
+  },
+  inboundOrders: {
+    root: BUSINESS_API.warehouseInboundOrders,
+    detail: (id: string) => `${BUSINESS_API.warehouseInboundOrders}/${id}`,
+    confirm: (id: string) => `${BUSINESS_API.warehouseInboundOrders}/${id}/confirm`,
+    cancel: (id: string) => `${BUSINESS_API.warehouseInboundOrders}/${id}/cancel`,
+  },
+  outboundOrders: {
+    root: BUSINESS_API.warehouseOutboundOrders,
+    detail: (id: string) => `${BUSINESS_API.warehouseOutboundOrders}/${id}`,
+    pick: (id: string) => `${BUSINESS_API.warehouseOutboundOrders}/${id}/pick`,
+    confirm: (id: string) => `${BUSINESS_API.warehouseOutboundOrders}/${id}/confirm`,
+    cancel: (id: string) => `${BUSINESS_API.warehouseOutboundOrders}/${id}/cancel`,
+  },
+  returnOrders: {
+    root: BUSINESS_API.warehouseReturnOrders,
+    detail: (id: string) => `${BUSINESS_API.warehouseReturnOrders}/${id}`,
+    confirmInbound: (id: string) => `${BUSINESS_API.warehouseReturnOrders}/${id}/confirm-inbound`,
+    confirmScrap: (id: string) => `${BUSINESS_API.warehouseReturnOrders}/${id}/confirm-scrap`,
+    cancel: (id: string) => `${BUSINESS_API.warehouseReturnOrders}/${id}/cancel`,
+  },
+  scraps: {
+    root: BUSINESS_API.warehouseScraps,
+    detail: (id: string) => `${BUSINESS_API.warehouseScraps}/${id}`,
+    confirm: (id: string) => `${BUSINESS_API.warehouseScraps}/${id}/confirm`,
+    cancel: (id: string) => `${BUSINESS_API.warehouseScraps}/${id}/cancel`,
+  },
+  stockChecks: {
+    root: BUSINESS_API.warehouseStockChecks,
+    detail: (id: string) => `${BUSINESS_API.warehouseStockChecks}/${id}`,
+    complete: (id: string) => `${BUSINESS_API.warehouseStockChecks}/${id}/complete`,
+    adjust: (id: string) => `${BUSINESS_API.warehouseStockChecks}/${id}/adjust`,
+    cancel: (id: string) => `${BUSINESS_API.warehouseStockChecks}/${id}/cancel`,
+  },
+} as const;
