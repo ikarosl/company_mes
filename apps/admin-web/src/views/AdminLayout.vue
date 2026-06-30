@@ -97,11 +97,6 @@ const menuGroups: MenuGroup[] = [
     index: '/warehouse',
     items: [
       {
-        title: '库存对象管理',
-        path: '/warehouse/items',
-        permission: PERMISSIONS.warehouse.items.page,
-      },
-      {
         title: '库存批次与现存量',
         path: '/warehouse/inventory',
         permission: PERMISSIONS.warehouse.inventory.page,

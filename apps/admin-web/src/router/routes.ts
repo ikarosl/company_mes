@@ -17,6 +17,11 @@ import ProductionOrdersPage from '../views/production/ProductionOrdersPage.vue';
 import ProductionTasksPage from '../views/production/ProductionTasksPage.vue';
 import WorkerTasksPage from '../views/WorkerTasksPage.vue';
 import WarehouseInventoryPage from '../views/warehouse/WarehouseInventoryPage.vue';
+import InboundOrdersPage from '../views/warehouse/InboundOrdersPage.vue';
+import OutboundOrdersPage from '../views/warehouse/OutboundOrdersPage.vue';
+import ReturnOrdersPage from '../views/warehouse/ReturnOrdersPage.vue';
+import ScrapsPage from '../views/warehouse/ScrapsPage.vue';
+import StockChecksPage from '../views/warehouse/StockChecksPage.vue';
 // import ProcessTemplatesPage from '../views/ProcessTemplatesPage.vue';
 // import ProductionBatchDetailPage from '../views/ProductionBatchDetailPage.vue';
 // import ProductionBatchesPage from '../views/ProductionBatchesPage.vue';
@@ -96,14 +101,6 @@ export const routes: RouteRecordRaw[] = [
         meta: { title: '日志管理', section: '系统管理', permission: PERMISSIONS.system.logs.page },
       },
 
-      plannedPage(
-        'warehouse/items',
-        'warehouse-items',
-        '库存对象管理',
-        '仓储管理',
-        ['查看', '新增', '编辑', '启用', '停用', '维护物料/半成品/成品基础信息'],
-        PERMISSIONS.warehouse.items.page,
-      ),
       {
         path: 'warehouse/inventory',
         name: 'warehouse-inventory',
@@ -114,46 +111,36 @@ export const routes: RouteRecordRaw[] = [
           permission: PERMISSIONS.warehouse.inventory.page,
         },
       },
-      plannedPage(
-        'warehouse/inbound-orders',
-        'warehouse-inbound-orders',
-        '入库管理',
-        '仓储管理',
-        ['查看', '新增入库单', '确认入库', '取消入库', '查看入库明细'],
-        PERMISSIONS.warehouse.inboundOrders.page,
-      ),
-      plannedPage(
-        'warehouse/outbound-orders',
-        'warehouse-outbound-orders',
-        '出库管理',
-        '仓储管理',
-        ['查看', '创建出库单', '拣货', '确认出库', '取消出库', '查看出库明细'],
-        PERMISSIONS.warehouse.outboundOrders.page,
-      ),
-      plannedPage(
-        'warehouse/return-orders',
-        'warehouse-return-orders',
-        '退料管理',
-        '仓储管理',
-        ['查看', '创建退料单', '确认退料入库', '确认退料报废', '取消退料'],
-        PERMISSIONS.warehouse.returnOrders.page,
-      ),
-      plannedPage(
-        'warehouse/scraps',
-        'warehouse-scraps',
-        '报废管理',
-        '仓储管理',
-        ['查看', '创建报废单', '确认报废', '取消报废', '生成报废补料需求'],
-        PERMISSIONS.warehouse.scraps.page,
-      ),
-      plannedPage(
-        'warehouse/stock-checks',
-        'warehouse-stock-checks',
-        '库存盘点',
-        '仓储管理',
-        ['查看', '创建盘点单', '录入实盘数', '完成盘点', '生成盘点调整流水'],
-        PERMISSIONS.warehouse.stockChecks.page,
-      ),
+      {
+        path: 'warehouse/inbound-orders',
+        name: 'warehouse-inbound-orders',
+        component: InboundOrdersPage,
+        meta: { title: '入库管理', section: '仓储管理', permission: PERMISSIONS.warehouse.inboundOrders.page },
+      },
+      {
+        path: 'warehouse/outbound-orders',
+        name: 'warehouse-outbound-orders',
+        component: OutboundOrdersPage,
+        meta: { title: '出库管理', section: '仓储管理', permission: PERMISSIONS.warehouse.outboundOrders.page },
+      },
+      {
+        path: 'warehouse/return-orders',
+        name: 'warehouse-return-orders',
+        component: ReturnOrdersPage,
+        meta: { title: '退料管理', section: '仓储管理', permission: PERMISSIONS.warehouse.returnOrders.page },
+      },
+      {
+        path: 'warehouse/scraps',
+        name: 'warehouse-scraps',
+        component: ScrapsPage,
+        meta: { title: '报废管理', section: '仓储管理', permission: PERMISSIONS.warehouse.scraps.page },
+      },
+      {
+        path: 'warehouse/stock-checks',
+        name: 'warehouse-stock-checks',
+        component: StockChecksPage,
+        meta: { title: '库存盘点', section: '仓储管理', permission: PERMISSIONS.warehouse.stockChecks.page },
+      },
 
       {
         path: 'product/processes',

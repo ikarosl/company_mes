@@ -365,8 +365,8 @@ export class InboundOrderRepository {
         idt.id,
         idt.order_id,
         idt.item_id,
-        ii.item_code,
-        ii.item_name,
+        COALESCE(p.item_code, p.product_model) AS item_code,
+        p.product_name AS item_name,
         idt.batch_id,
         ib.batch_code,
         idt.quantity,
@@ -375,7 +375,7 @@ export class InboundOrderRepository {
         idt.remark,
         idt.created_at
       FROM stock_order_detail idt
-      INNER JOIN item_info ii ON ii.id = idt.item_id
+      INNER JOIN products p ON p.id = idt.item_id
       INNER JOIN item_batch ib ON ib.id = idt.batch_id AND ib.item_id = idt.item_id
       WHERE idt.order_id = ?
       ORDER BY idt.id ASC

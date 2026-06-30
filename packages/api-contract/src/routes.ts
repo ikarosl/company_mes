@@ -89,3 +89,16 @@ export const WAREHOUSE_API = {
     cancel: (id: string) => `${BUSINESS_API.warehouseStockChecks}/${id}/cancel`,
   },
 } as const;
+
+export const PRODUCTION_MATERIAL_API = {
+  demands: (taskId: string) => `${BUSINESS_API.tasks}/${taskId}/demands`,
+  allocations: (taskId: string) => `${BUSINESS_API.tasks}/${taskId}/allocations`,
+  batchItemSummary: (taskId: string) => `${BUSINESS_API.tasks}/${taskId}/batch-item-summary`,
+  outputSummary: (taskId: string) => `${BUSINESS_API.tasks}/${taskId}/output-summary`,
+  allocation: {
+    root: BUSINESS_API.materialAllocation,
+    detail: (id: string) => `${BUSINESS_API.materialAllocation}/${id}`,
+    cancel: (id: string) => `${BUSINESS_API.materialAllocation}/${id}/cancel`,
+    available: `${BUSINESS_API.materialAllocation}/available`,
+  },
+} as const;

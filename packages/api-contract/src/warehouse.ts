@@ -255,3 +255,172 @@ export type ItemScrapStatus = '待确认' | '已确认' | '已取消';
 
 /** 盘点单状态 */
 export type StockCheckStatus = '待盘点' | '盘点中' | '已完成' | '已取消';
+
+// ─── 退料单 ──────────────────────────────────────────────
+
+/** 退料单列表项，对应 return_order */
+export interface ReturnOrderListItem {
+  id: string;
+  returnNo: string;
+  productionBatchId: string;
+  workOrderId: string | null;
+  status: ReturnOrderStatus;
+  operatorId: string | null;
+  remark: string | null;
+  createdAt: string;
+  returnAt: string | null;
+  detailCount: number;
+  totalReturnNumber: string;
+}
+
+/** 退料明细请求行 */
+export interface ReturnDetailPayload {
+  allocationId: string;
+  itemId: string;
+  batchId: string;
+  returnNumber: string | number;
+  returnStockStatus?: WarehouseStockStatus;
+  releaseAfterReturn?: boolean;
+  remark?: string | null;
+}
+
+/** 创建退料单请求参数 */
+export interface CreateReturnOrderPayload {
+  returnNo?: string | null;
+  productionBatchId: string;
+  workOrderId?: string | null;
+  operatorId?: string | null;
+  remark?: string | null;
+  details: ReturnDetailPayload[];
+}
+
+/** 退料明细详情 */
+export interface ReturnDetailItem {
+  id: string;
+  returnId: string;
+  productionBatchId: string;
+  demandId: string;
+  allocationId: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  batchId: string;
+  batchCode: string;
+  returnNumber: string;
+  returnStockStatus: WarehouseStockStatus;
+  releaseAfterReturn: boolean;
+  remark: string | null;
+  createdAt: string;
+}
+
+/** 退料单详情 */
+export interface ReturnOrderDetail extends ReturnOrderListItem {
+  details: ReturnDetailItem[];
+}
+
+// ─── 报废单 ──────────────────────────────────────────────
+
+/** 报废单列表项，对应 item_scrap */
+export interface ItemScrapListItem {
+  id: string;
+  scrapNo: string;
+  productionBatchId: string | null;
+  demandId: string | null;
+  allocationId: string | null;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  batchId: string | null;
+  batchCode: string | null;
+  scrapScene: ItemScrapScene;
+  scrapNumber: string;
+  status: ItemScrapStatus;
+  reason: string | null;
+  operatorId: string | null;
+  confirmedAt: string | null;
+  remark: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 创建报废单请求参数 */
+export interface CreateItemScrapPayload {
+  scrapNo?: string | null;
+  productionBatchId?: string | null;
+  demandId?: string | null;
+  allocationId?: string | null;
+  itemId: string;
+  batchId?: string | null;
+  scrapScene: ItemScrapScene;
+  scrapNumber: string | number;
+  reason?: string | null;
+  operatorId?: string | null;
+  remark?: string | null;
+}
+
+/** 报废单详情 */
+export type ItemScrapDetail = ItemScrapListItem;
+
+// ─── 盘点单 ──────────────────────────────────────────────
+
+/** 盘点单列表项，对应 stock_check_order */
+export interface StockCheckListItem {
+  id: string;
+  checkNo: string;
+  status: StockCheckStatus;
+  operatorId: string | null;
+  remark: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  detailCount: number;
+  totalItems: number;
+  pendingItems: number;
+}
+
+/** 盘点明细请求行 */
+export interface StockCheckDetailPayload {
+  itemId: string;
+  batchId: string;
+  stockStatus: WarehouseStockStatus;
+  actualQuantity: string | number;
+  remark?: string | null;
+}
+
+/** 创建盘点单请求参数 */
+export interface CreateStockCheckPayload {
+  checkNo?: string | null;
+  operatorId?: string | null;
+  remark?: string | null;
+  details: StockCheckDetailPayload[];
+}
+
+/** 编辑盘点单（更新实盘数量等） */
+export interface UpdateStockCheckPayload {
+  details: StockCheckDetailPayload[];
+  remark?: string | null;
+}
+
+/** 盘点明细详情 */
+export interface StockCheckDetailItem {
+  id: string;
+  stockCheckId: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  batchId: string;
+  batchCode: string;
+  stockStatus: WarehouseStockStatus;
+  systemQuantity: string;
+  actualQuantity: string;
+  differenceQuantity: string;
+  result: '盘盈' | '盘亏' | '一致';
+  adjusted: boolean;
+  remark: string | null;
+  createdAt: string;
+}
+
+/** 盘点单详情 */
+export interface StockCheckOrderDetail extends StockCheckListItem {
+  details: StockCheckDetailItem[];
+}

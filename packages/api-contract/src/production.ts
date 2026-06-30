@@ -189,3 +189,111 @@ export interface UpdateBatchStepRecordPayload {
   abnormalQuantity?: string | number | null;
   remark?: string | null;
 }
+
+// ─── 生产投入需求与分配（统一库存方案） ──────────────────────
+
+/** 生产投入需求汇总项，对应 v_production_item_demand_summary */
+export interface ProductionItemDemandSummaryItem {
+  demandId: string;
+  productionBatchId: string;
+  bomId: string | null;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  needNumber: string;
+  demandType: number;
+  parentDemandId: string | null;
+  sourceScrapId: string | null;
+  businessStatus: string;
+  allocatedQuantity: string;
+  unallocatedQuantity: string;
+  outboundQuantity: string;
+  notOutboundQuantity: string;
+  returnedQuantity: string;
+  stockScrappedQuantity: string;
+  productionScrappedQuantity: string;
+  availableOutboundQuantity: string;
+  isShortage: boolean;
+  isQuantityAbnormal: boolean;
+  progressStatus: string;
+}
+
+/** 生产投入分配汇总项，对应 v_production_item_allocation_summary */
+export interface ProductionItemAllocationSummaryItem {
+  allocationId: string;
+  demandId: string;
+  productionBatchId: string;
+  itemId: string;
+  batchId: string;
+  batchCode: string;
+  assignedNumber: string;
+  outboundQuantity: string;
+  returnedQuantity: string;
+  returnedAvailableQuantity: string;
+  releasedReturnQuantity: string;
+  stockScrappedQuantity: string;
+  productionScrappedQuantity: string;
+  availableOutboundQuantity: string;
+  isQuantityAbnormal: boolean;
+}
+
+/** 可分配库存批次，对应 v_item_batch_available_to_allocate */
+export interface ItemBatchAvailableToAllocateItem {
+  batchId: string;
+  itemId: string;
+  itemName: string;
+  itemKind: string;
+  batchCode: string;
+  onHandAvailableQuantity: string;
+  reservedQuantity: string;
+  availableToAllocateQuantity: string;
+}
+
+/** 创建分配请求参数 */
+export interface CreateAllocationPayload {
+  productionBatchId: string;
+  demandId: string;
+  itemId: string;
+  batchId: string;
+  assignedNumber: string | number;
+  remark?: string | null;
+}
+
+/** 生产批次投入汇总，对应 v_production_batch_item_summary */
+export interface ProductionBatchItemSummaryItem {
+  productionBatchId: string;
+  itemId: string;
+  itemName: string;
+  totalNeedNumber: string;
+  totalAllocatedQuantity: string;
+  totalUnallocatedQuantity: string;
+  totalOutboundQuantity: string;
+  totalReturnedQuantity: string;
+  actualConsumedQuantity: string;
+  totalStockScrappedQuantity: string;
+  totalProductionScrappedQuantity: string;
+  isShortage: boolean;
+  isQuantityAbnormal: boolean;
+}
+
+/** 生产批次产出汇总，对应 v_production_batch_output_summary */
+export interface ProductionBatchOutputSummaryItem {
+  productionBatchId: string;
+  workOrderId: string;
+  itemId: string;
+  itemName: string;
+  itemKind: string;
+  batchId: string;
+  batchCode: string;
+  inboundQuantity: string;
+  stockStatus: string;
+  sourceStage: string | null;
+}
+
+/** 生产物料需求与分配详情 */
+export interface ProductionMaterialDetail {
+  demands: ProductionItemDemandSummaryItem[];
+  allocations: ProductionItemAllocationSummaryItem[];
+  batchItemSummary: ProductionBatchItemSummaryItem[];
+  outputSummary: ProductionBatchOutputSummaryItem[];
+}

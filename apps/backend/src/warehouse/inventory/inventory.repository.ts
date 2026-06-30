@@ -48,7 +48,6 @@ export class InventoryRepository {
       `
       SELECT COUNT(*) AS total
       FROM v_item_batch_stock stock
-      INNER JOIN item_info ii ON ii.id = stock.item_id
       WHERE ${where}
     `,
       params,
@@ -58,7 +57,7 @@ export class InventoryRepository {
       SELECT
         stock.batch_id,
         stock.item_id,
-        ii.item_code,
+        stock.item_code,
         stock.item_name,
         stock.item_kind,
         stock.batch_code,
@@ -73,7 +72,6 @@ export class InventoryRepository {
         stock.defective_quantity,
         stock.total_quantity
       FROM v_item_batch_stock stock
-      INNER JOIN item_info ii ON ii.id = stock.item_id
       WHERE ${where}
       ORDER BY stock.batch_id DESC
       LIMIT ? OFFSET ?
@@ -91,7 +89,7 @@ export class InventoryRepository {
       SELECT
         stock.batch_id,
         stock.item_id,
-        ii.item_code,
+        stock.item_code,
         stock.item_name,
         stock.item_kind,
         stock.batch_code,
@@ -106,7 +104,7 @@ export class InventoryRepository {
         stock.defective_quantity,
         stock.total_quantity
       FROM v_item_batch_stock stock
-      INNER JOIN item_info ii ON ii.id = stock.item_id
+      -- view already includes item_code/item_name
       WHERE stock.batch_id = ?
       LIMIT 1
     `,
@@ -130,7 +128,7 @@ export class InventoryRepository {
       `
       SELECT COUNT(*) AS total
       FROM v_item_batch_available_to_allocate available_stock
-      INNER JOIN item_info ii ON ii.id = available_stock.item_id
+
       WHERE ${where}
     `,
       params,
@@ -154,7 +152,7 @@ export class InventoryRepository {
       SELECT
         available_stock.batch_id,
         available_stock.item_id,
-        ii.item_code,
+        available_stock.item_code,
         available_stock.item_name,
         available_stock.item_kind,
         available_stock.batch_code,
@@ -162,7 +160,7 @@ export class InventoryRepository {
         available_stock.reserved_quantity,
         available_stock.available_to_allocate_quantity
       FROM v_item_batch_available_to_allocate available_stock
-      INNER JOIN item_info ii ON ii.id = available_stock.item_id
+
       WHERE ${where}
       ORDER BY available_stock.batch_id DESC
       LIMIT ? OFFSET ?
@@ -187,12 +185,26 @@ export class InventoryRepository {
     );
   }
 
+  /** 更新库存批次业务状态。 */
+  async changeBatchStatus(batchId: number, batchStatus: string) {
+    await this.database.execute(
+      `
+      UPDATE item_batch
+      SET batch_status = ?, updated_at = NOW()
+      WHERE id = ?
+    `,
+      [batchStatus, batchId],
+    );
+
+    return this.getBatchStock(batchId);
+  }
+
   private buildStockFilters(filters: InventoryFilters, alias: string) {
     const clauses = ['1 = 1'];
     const params: QueryParam[] = [];
 
     if (filters.keyword?.trim()) {
-      clauses.push(`(${alias}.batch_code LIKE ? OR ${alias}.item_name LIKE ? OR ii.item_code LIKE ?)`);
+      clauses.push(`(${alias}.batch_code LIKE ? OR ${alias}.item_name LIKE ? OR ${alias}.item_code LIKE ?)`);
       const keyword = `%${filters.keyword.trim()}%`;
       params.push(keyword, keyword, keyword);
     }

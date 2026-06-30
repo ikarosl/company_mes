@@ -1,53 +1,65 @@
 import { PERMISSIONS } from '@company/constants';
-import { Body, Controller, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import type { CreateReturnOrderPayload } from '@company/api-contract';
 import { PermissionGuard } from '../../auth/permission.guard.js';
 import { RequirePermission } from '../../auth/require-permission.decorator.js';
 import { readId, readPagination } from '../../shared/request-utils.js';
-import { plannedWarehouseEndpoint } from '../warehouse-planned-endpoint.js';
+import { ReturnOrderRepository } from './return-order.repository.js';
 
 /** 退料管理：记录生产批次退回库存，以及是否释放原预留。 */
 @UseGuards(PermissionGuard)
 @Controller('warehouse/return-orders')
 export class ReturnOrderController {
-  /** 查询退料单列表，后续读取 return_order。 */
+  constructor(@Inject(ReturnOrderRepository) private readonly returnOrders: ReturnOrderRepository) {}
+
+  /** 查询退料单列表，读取 return_order 并汇总明细。 */
   @RequirePermission(PERMISSIONS.warehouse.returnOrders.view)
   @Get()
-  listReturnOrders(@Query('page') page?: string, @Query('pageSize') pageSize?: string) {
-    return plannedWarehouseEndpoint('退料单列表', readPagination(page, pageSize));
+  listReturnOrders(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('keyword') keyword?: string,
+    @Query('status') status?: string,
+    @Query('productionBatchId') productionBatchId?: string,
+  ) {
+    return this.returnOrders.listReturnOrders(
+      { keyword, status, productionBatchId },
+      readPagination(page, pageSize),
+    );
   }
 
-  /** 查询退料单详情，后续包含 return_detail 明细。 */
+  /** 查询退料单详情，包含 return_detail 明细。 */
   @RequirePermission(PERMISSIONS.warehouse.returnOrders.detail)
   @Get(':id')
   getReturnOrder(@Param('id') id: string) {
-    return plannedWarehouseEndpoint('退料单详情', { returnOrderId: readId(id) });
+    return this.returnOrders.getReturnOrder(readId(id));
   }
 
-  /** 创建退料单，后续关联 production_item_allocation。 */
+  /** 创建退料单，关联 production_item_allocation 写入 return_order + return_detail。 */
   @RequirePermission(PERMISSIONS.warehouse.returnOrders.create)
   @Post()
-  createReturnOrder(@Body() body: unknown) {
-    return plannedWarehouseEndpoint('新增退料单', body);
+  createReturnOrder(@Body() body: CreateReturnOrderPayload) {
+    return this.returnOrders.createReturnOrder(body);
   }
 
-  /** 确认退料入库，后续生成正数 inventory_transaction。 */
+  /** 确认退料入库，生成正数 inventory_transaction（退料入库类型）。 */
   @RequirePermission(PERMISSIONS.warehouse.returnOrders.confirmInbound)
   @Put(':id/confirm-inbound')
   confirmReturnInbound(@Param('id') id: string) {
-    return plannedWarehouseEndpoint('确认退料入库', { returnOrderId: readId(id) });
+    return this.returnOrders.confirmReturnInbound(readId(id));
   }
 
-  /** 确认退料报废，后续创建 item_scrap 并扣减库存。 */
+  /** 确认退料报废，创建 item_scrap 记录并变更退料单状态。 */
   @RequirePermission(PERMISSIONS.warehouse.returnOrders.confirmScrap)
   @Put(':id/confirm-scrap')
   confirmReturnScrap(@Param('id') id: string) {
-    return plannedWarehouseEndpoint('确认退料报废', { returnOrderId: readId(id) });
+    return this.returnOrders.confirmReturnScrap(readId(id));
   }
 
-  /** 取消退料，后续校验未入库和未报废后流转状态。 */
+  /** 取消退料单，仅允许待处理状态的退料单取消。 */
   @RequirePermission(PERMISSIONS.warehouse.returnOrders.cancel)
   @Put(':id/cancel')
   cancelReturnOrder(@Param('id') id: string) {
-    return plannedWarehouseEndpoint('取消退料', { returnOrderId: readId(id) });
+    return this.returnOrders.cancelReturnOrder(readId(id));
   }
 }

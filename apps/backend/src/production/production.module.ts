@@ -7,10 +7,12 @@ import { WorkOrderRepository } from './orders/work-order.repository.js';
 import { ProductionTaskController } from './tasks/production-task.controller.js';
 import { WorkerTaskController } from './tasks/worker-task.controller.js';
 import { ProductionTaskRepository } from './tasks/production-task.repository.js';
+import { ProductionMaterialController } from './materials/production-material.controller.js';
+import { ProductionMaterialRepository } from './materials/production-material.repository.js';
 
 @Module({
   imports: [AuthModule, DatabaseModule, OperationLogModule],
-  controllers: [WorkOrderController, ProductionTaskController, WorkerTaskController],
-  providers: [WorkOrderRepository, ProductionTaskRepository],
+  controllers: [WorkOrderController, ProductionTaskController, WorkerTaskController, ProductionMaterialController],
+  providers: [WorkOrderRepository, ProductionTaskRepository, ProductionMaterialRepository],
 })
 export class ProductionModule {}

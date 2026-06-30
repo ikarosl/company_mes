@@ -130,48 +130,23 @@
 
 ## 二、产品、文件与工艺
 
-### 9. `product_categories`
+### 9. `product_categories`（兼 `item_type` 职责）
 
-职责：维护产品分类信息，按产品属性和产品类型组织产品资料。
+职责：维护产品分类信息，按产品属性和产品类型组织产品资料，同时承担库存对象分类（`item_type`）的职责。
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `bigint unsigned` | 主键，自增 |
-| `product_attribute` | `varchar(64)` | 产品属性，如成品、半成品等 |
-| `product_type` | `varchar(64)` | 产品类型 |
-| `status` | `tinyint` | 状态，默认 `1` |
-| `remark` | `varchar(255)` | 备注 |
-| `created_by` | `bigint unsigned` | 创建人，关联 `users.id` |
-| `created_at` | `datetime` | 创建时间 |
-| `updated_by` | `bigint unsigned` | 更新人，关联 `users.id` |
-| `updated_at` | `datetime` | 更新时间 |
-| `is_deleted` | `tinyint` | 软删除标记，默认 `0` |
-| `deleted_by` | `bigint unsigned` | 删除人，关联 `users.id` |
-| `deleted_at` | `datetime` | 删除时间 |
+> `item_kind` 字段由统一库存方案扩展，用于区分物料/半成品/成品。
+> 本表已在"一、基础资料表"中详细描述，此处不再重复字段列表。 |
 
-### 10. `products`
+### 10. `products`（兼 `item_info` 职责）
 
 职责：维护产品和物料主数据。原材料、半成品、成品均通过产品表统一表达，并通过 `product_materials` 建立用料关系。
+统一库存方案中库存对象也使用本表（不再单独存在 `item_info` 表）。
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `bigint unsigned` | 主键，自增 |
-| `product_model` | `varchar(128)` | 产品型号，结合软删除标记唯一 |
-| `product_name` | `varchar(128)` | 产品名称 |
-| `category_id` | `bigint unsigned` | 产品分类 ID，关联 `product_categories.id` |
-| `default_route_id` | `bigint unsigned` | 默认工艺路线 ID，关联 `process_routes.id` |
-| `unit` | `varchar(32)` | 单位，默认 `pcs` |
-| `acquire_method` | `varchar(32)` | 获取方式：`self_made`、`outsourced`、`purchased` |
-| `spec_values` | `json` | 产品规格参数 |
-| `status` | `tinyint` | 状态，默认 `1` |
-| `remark` | `varchar(255)` | 备注 |
-| `created_by` | `bigint unsigned` | 创建人，关联 `users.id` |
-| `created_at` | `datetime` | 创建时间 |
-| `updated_by` | `bigint unsigned` | 更新人，关联 `users.id` |
-| `updated_at` | `datetime` | 更新时间 |
-| `is_deleted` | `tinyint` | 软删除标记，默认 `0` |
-| `deleted_by` | `bigint unsigned` | 删除人，关联 `users.id` |
-| `deleted_at` | `datetime` | 删除时间 |
+> `item_code`、`default_unit` 字段由统一库存方案扩展。
+> 本表已在"一、基础资料表"中详细描述，此处不再重复字段列表。
+
+**统一库存方案引用规则**：所有原引用 `item_info.id` 的外键和查询，现统一指向 `products.id`。
+原引用 `item_type.id` 的外键和查询，现统一指向 `product_categories.id`。 |
 
 ### 11. `technical_files`
 
@@ -325,7 +300,7 @@
 | `is_deleted` | `tinyint` | 软删除标记，默认 `0` |
 | `deleted_by` | `bigint unsigned` | 删除人，关联 `users.id` |
 | `deleted_at` | `datetime` | 删除时间 |
-特别说明：旧仓库方案中的 `material_batch`、`material_demand`、`material_allocation`、`inbound_order`、`inbound_detail`、`outbound_order`、`outbound_detail` 已被推翻。方案二以后以统一库存对象模型为准：库存对象使用 `item_info`，库存批次使用 `item_batch`，出入库业务统一使用 `stock_order`、`stock_order_detail`，库存数量事实来源为 `inventory_transaction`。
+特别说明：旧仓库方案中的 `material_batch`、`material_demand`、`material_allocation`、`inbound_order`、`inbound_detail`、`outbound_order`、`outbound_detail` 已被推翻。方案二以后以统一库存对象模型为准：库存对象使用 `products`（兼 `item_info` 职责），库存批次使用 `item_batch`，出入库业务统一使用 `stock_order`、`stock_order_detail`，库存数量事实来源为 `inventory_transaction`。
 
 ## 三、生产库存管理数据库表设计｜统一库存对象版本
 
@@ -336,7 +311,7 @@
 核心设计原则：
 
 1. 物料、半成品、成品统一作为库存对象管理。
-2. 所有库存对象统一使用 `item_info` 表维护基础信息。
+2. 所有库存对象统一使用 `products` 表维护基础信息（融合原 `item_info`）。
 3. 所有库存批次统一使用 `item_batch` 表维护。
 4. 生产批次 `production_batches` 不等于库存批次 `item_batch`。
 5. 库存流水 `inventory_transaction.batch_id` 统一关联 `item_batch.id`。
@@ -379,24 +354,33 @@
 
 ---
 
-### 1. `item_type`
+### 1. `product_categories`（融合 `item_type`）
 
 职责：维护库存对象分类，用于区分物料、半成品、成品等对象类型。
 
-| 字段           | 类型             | 说明                                                   |
-| ------------ | -------------- | ---------------------------------------------------- |
-| `id`         | `BIGINT`       | 主键                                                   |
-| `item_kind`  | `VARCHAR(30)`  | 库存对象大类：`material`、`semi_finished`、`finished_product` |
-| `type_name`  | `VARCHAR(100)` | 类型名称，例如粘合剂、焊膏、腔体、微带环形器                               |
-| `remark`     | `TEXT`         | 备注                                                   |
-| `created_at` | `TIMESTAMP`    | 创建时间，默认 `CURRENT_TIMESTAMP`                          |
-| `updated_at` | `TIMESTAMP`    | 更新时间，默认 `CURRENT_TIMESTAMP`                          |
+> 本表融合了原库存方案中的 `item_type`，扩展了 `item_kind` 字段。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | `bigint unsigned` | 主键，自增 |
+| `product_attribute` | `varchar(64)` | 产品属性，如成品、半成品等 |
+| `product_type` | `varchar(64)` | 产品类型 |
+| `item_kind` | `varchar(30)` | 库存对象大类：`material`、`semi_finished`、`finished_product` |
+| `status` | `tinyint` | 状态，默认 `1` |
+| `remark` | `varchar(255)` | 备注 |
+| `created_by` | `bigint unsigned` | 创建人，关联 `users.id` |
+| `created_at` | `datetime` | 创建时间 |
+| `updated_by` | `bigint unsigned` | 更新人，关联 `users.id` |
+| `updated_at` | `datetime` | 更新时间 |
+| `is_deleted` | `tinyint` | 软删除标记，默认 `0` |
+| `deleted_by` | `bigint unsigned` | 删除人，关联 `users.id` |
+| `deleted_at` | `datetime` | 删除时间 |
 
 约束：
 
 * 主键：`id`
-* 检查约束：`CHECK (item_kind IN ('material', 'semi_finished', 'finished_product'))`
-* 唯一约束：`UNIQUE (item_kind, type_name)`
+* 外键：无
+* 检查约束：`CHECK (item_kind IN ('material', 'semi_finished', 'finished_product'))`（如已定义）
 
 说明：
 
@@ -407,44 +391,54 @@
 
 ---
 
-### 2. `item_info`
+### 2. `products`（融合 `item_info`）
 
 职责：维护所有可库存对象的基础信息，包括物料、半成品、成品。
 
-| 字段             | 类型             | 说明                          |
-| -------------- | -------------- | --------------------------- |
-| `id`           | `BIGINT`       | 主键                          |
-| `item_code`    | `VARCHAR(100)` | 库存对象编码                      |
-| `item_name`    | `VARCHAR(200)` | 库存对象名称                      |
-| `type_id`      | `BIGINT`       | 类型 ID，关联 `item_type.id`     |
-| `default_unit` | `VARCHAR(20)`  | 默认单位，例如 `g`、`kg`、`个`        |
-| `status`       | `VARCHAR(20)`  | 状态，默认 `启用`；可选：`启用`、`停用`     |
-| `remark`       | `TEXT`         | 备注                          |
-| `created_at`   | `TIMESTAMP`    | 创建时间，默认 `CURRENT_TIMESTAMP` |
-| `updated_at`   | `TIMESTAMP`    | 更新时间，默认 `CURRENT_TIMESTAMP` |
+> 本表融合了原库存方案中的 `item_info`，扩展了 `item_code`、`default_unit` 字段。
+> 物料、半成品、成品都进入该表。是否是物料、半成品或成品，通过 `category_id -> product_categories.item_kind` 判断。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | `bigint unsigned` | 主键，自增 |
+| `item_code` | `varchar(100)` | 库存对象编码（兼顾客存方案），唯一 |
+| `product_model` | `varchar(128)` | 产品型号，结合软删除标记唯一 |
+| `product_name` | `varchar(128)` | 产品名称 |
+| `category_id` | `bigint unsigned` | 分类 ID，关联 `product_categories.id` |
+| `default_route_id` | `bigint unsigned` | 默认工艺路线 ID，关联 `process_routes.id` |
+| `unit` | `varchar(32)` | 生产单位，默认 `pcs` |
+| `default_unit` | `varchar(20)` | 库存默认单位，例如 `g`、`kg`、`个` |
+| `acquire_method` | `varchar(32)` | 获取方式：`self_made`、`outsourced`、`purchased` |
+| `spec_values` | `json` | 产品规格参数 |
+| `status` | `varchar(20)` | 状态，默认 `启用`；可选：`启用`、`停用` |
+| `remark` | `varchar(255)` | 备注 |
+| `created_by` | `bigint unsigned` | 创建人，关联 `users.id` |
+| `created_at` | `datetime` | 创建时间 |
+| `updated_by` | `bigint unsigned` | 更新人，关联 `users.id` |
+| `updated_at` | `datetime` | 更新时间 |
+| `is_deleted` | `tinyint` | 软删除标记，默认 `0` |
+| `deleted_by` | `bigint unsigned` | 删除人，关联 `users.id` |
+| `deleted_at` | `datetime` | 删除时间 |
 
 约束：
 
 * 主键：`id`
-* 唯一约束：`UNIQUE (item_code)`
-* 外键：`FOREIGN KEY (type_id) REFERENCES item_type(id)`
-* 检查约束：`CHECK (status IN ('启用', '停用'))`
+* 唯一约束：`UNIQUE (item_code)`、`UNIQUE (product_model, ...)`
+* 外键：`FOREIGN KEY (category_id) REFERENCES product_categories(id)`
 
 说明：
 
-* 该表统一替代原来的 `product_material_info`。
-* 物料、半成品、成品都进入该表。
-* 是否是物料、半成品或成品，通过 `type_id -> item_type.item_kind` 判断。
+* 在统一库存方案中，不再单独存在 `item_info` 表。所有库存对象（物料、半成品、成品）统一使用 `products` 表。
+* `item_code` 作为库存侧唯一标识，创建时优先从 `product_model` 自动同步。
+* 库存上下文中的 `item_id` 即 `products.id`。
 
 示例：
 
-| id  | item_name      | item_kind        | default_unit |
-| --- | -------------- | ---------------- | ------------ |
-| pi2 | 粘合-h822        | material         | g            |
-| pi3 | 6g-20g微带环形器半成品 | semi_finished    | 个            |
-| pi4 | 10g-30g微带环形器成品 | finished_product | 个            |
-| pi5 | 焊膏-md422       | material         | g            |
-| pi6 | 腔体-10*10       | material         | 个            |
+| id | item_code | product_name | item_kind | default_unit |
+| --- | --- | --- | --- | --- |
+| pi2 | MAT-001 | 粘合-h822 | material | g |
+| pi3 | SF-001 | 6g-20g微带环形器半成品 | semi_finished | 个 |
+| pi4 | FP-001 | 10g-30g微带环形器成品 | finished_product | 个 |
 
 ---
 
@@ -455,8 +449,8 @@
 | 字段           | 类型              | 说明                          |
 | ------------ | --------------- | --------------------------- |
 | `id`         | `BIGINT`        | 主键                          |
-| `product_id` | `BIGINT`        | 被生产对象 ID，关联 `item_info.id`  |
-| `item_id`    | `BIGINT`        | 消耗对象 ID，关联 `item_info.id`   |
+| `product_id` | `BIGINT`        | 被生产对象 ID，关联 `products.id`  |
+| `item_id`    | `BIGINT`        | 消耗对象 ID，关联 `products.id`   |
 | `per_unit`   | `DECIMAL(12,4)` | 生产一个目标对象需要消耗的数量             |
 | `unit`       | `VARCHAR(20)`   | 用量单位                        |
 | `bom_status` | `VARCHAR(20)`   | BOM 状态，默认 `启用`；可选：`启用`、`停用` |
@@ -467,8 +461,8 @@
 约束：
 
 * 主键：`id`
-* 外键：`FOREIGN KEY (product_id) REFERENCES item_info(id)`
-* 外键：`FOREIGN KEY (item_id) REFERENCES item_info(id)`
+* 外键：`FOREIGN KEY (product_id) REFERENCES products(id)`
+* 外键：`FOREIGN KEY (item_id) REFERENCES products(id)`
 * 检查约束：`CHECK (per_unit > 0)`
 * 检查约束：`CHECK (bom_status IN ('启用', '停用'))`
 * 唯一约束：`UNIQUE (product_id, item_id)`
@@ -496,7 +490,7 @@
 | ------------------ | --------------- | --------------------------- |
 | `id`               | `BIGINT`        | 主键                          |
 | `work_order_no`    | `VARCHAR(100)`  | 工单编号                        |
-| `product_id`       | `BIGINT`        | 计划生产对象 ID，关联 `item_info.id` |
+| `product_id`       | `BIGINT`        | 计划生产对象 ID，关联 `products.id` |
 | `planned_quantity` | `DECIMAL(12,4)` | 工单计划生产数量                    |
 | `status`           | `VARCHAR(30)`   | 工单状态，默认 `pending`           |
 | `remark`           | `TEXT`          | 备注                          |
@@ -507,7 +501,7 @@
 
 * 主键：`id`
 * 唯一约束：`UNIQUE (work_order_no)`
-* 外键：`FOREIGN KEY (product_id) REFERENCES item_info(id)`
+* 外键：`FOREIGN KEY (product_id) REFERENCES products(id)`
 * 检查约束：`CHECK (planned_quantity > 0)`
 * 检查约束：`CHECK (status IN ('pending', 'doing', 'completed', 'cancelled', 'closed'))`
 
@@ -578,7 +572,7 @@
 | 字段                           | 类型             | 说明                                     |
 | ---------------------------- | -------------- | -------------------------------------- |
 | `id`                         | `BIGINT`       | 主键，库存批次 ID                             |
-| `item_id`                    | `BIGINT`       | 库存对象 ID，关联 `item_info.id`              |
+| `item_id`                    | `BIGINT`       | 库存对象 ID，关联 `products.id`              |
 | `batch_code`                 | `VARCHAR(100)` | 库存批次号                                  |
 | `source_type`                | `VARCHAR(30)`  | 来源类型：`自产`、`外购`、`委外`、`退货入库`、`盘点生成`、`其他` |
 | `provider`                   | `VARCHAR(100)` | 供应商或委外方，自产时可为空                         |
@@ -593,7 +587,7 @@
 约束：
 
 * 主键：`id`
-* 外键：`FOREIGN KEY (item_id) REFERENCES item_info(id)`
+* 外键：`FOREIGN KEY (item_id) REFERENCES products(id)`
 * 外键：`FOREIGN KEY (source_work_order_id) REFERENCES work_orders(id)`
 * 外键：`FOREIGN KEY (source_production_batch_id) REFERENCES production_batches(id)`
 * 唯一约束：`UNIQUE (item_id, batch_code)`
@@ -629,7 +623,7 @@
 | 字段                    | 类型              | 说明                           |
 | --------------------- | --------------- | ---------------------------- |
 | `id`                  | `BIGINT`        | 主键                           |
-| `item_id`             | `BIGINT`        | 库存对象 ID，关联 `item_info.id`    |
+| `item_id`             | `BIGINT`        | 库存对象 ID，关联 `products.id`    |
 | `batch_id`            | `BIGINT`        | 库存批次 ID，关联 `item_batch.id`   |
 | `transaction_type`    | `VARCHAR(30)`   | 库存变动类型                       |
 | `quantity`            | `DECIMAL(12,4)` | 库存变动数量。正数表示增加，负数表示减少，不能为 `0` |
@@ -682,7 +676,7 @@
 * 主键：`id`
 * 检查约束：`CHECK (quantity <> 0)`
 * 唯一约束：`UNIQUE (idempotency_key)`
-* 外键：`FOREIGN KEY (item_id) REFERENCES item_info(id)`
+* 外键：`FOREIGN KEY (item_id) REFERENCES products(id)`
 * 外键：`FOREIGN KEY (batch_id, item_id) REFERENCES item_batch(id, item_id)`
 
 说明：
@@ -750,7 +744,7 @@
 | --------------------- | --------------- | --------------------------------------- |
 | `id`                  | `BIGINT`        | 主键                                      |
 | `order_id`            | `BIGINT`        | 库存单据主表 ID，关联 `stock_order.id`          |
-| `item_id`             | `BIGINT`        | 库存对象 ID，关联 `item_info.id`               |
+| `item_id`             | `BIGINT`        | 库存对象 ID，关联 `products.id`               |
 | `batch_id`            | `BIGINT`        | 库存批次 ID，关联 `item_batch.id`              |
 | `quantity`            | `DECIMAL(12,4)` | 业务数量，始终保存正数；库存增减由库存流水正负表达           |
 | `stock_status`        | `VARCHAR(20)`   | 本次入库后的库存状态或本次出库扣减的库存状态，默认 `可用`      |
@@ -766,7 +760,7 @@
 
 * 主键：`id`
 * 外键：`FOREIGN KEY (order_id) REFERENCES stock_order(id)`
-* 外键：`FOREIGN KEY (item_id) REFERENCES item_info(id)`
+* 外键：`FOREIGN KEY (item_id) REFERENCES products(id)`
 * 外键：`FOREIGN KEY (batch_id, item_id) REFERENCES item_batch(id, item_id)`
 * 外键：`FOREIGN KEY (demand_id, production_batch_id) REFERENCES production_item_demand(id, production_batch_id)`
 * 外键：`FOREIGN KEY (allocation_id, demand_id) REFERENCES production_item_allocation(id, demand_id)`
@@ -800,7 +794,7 @@
 | `id`                  | `BIGINT`        | 主键                                 |
 | `production_batch_id` | `BIGINT`        | 生产批次 ID，关联 `production_batches.id` |
 | `bom_id`              | `BIGINT`        | BOM 行 ID，正常需求建议保存                  |
-| `item_id`             | `BIGINT`        | 需求对象 ID，关联 `item_info.id`          |
+| `item_id`             | `BIGINT`        | 需求对象 ID，关联 `products.id`          |
 | `need_number`         | `DECIMAL(12,4)` | 需求数量                               |
 | `demand_type`         | `TINYINT`       | 需求类型，默认 `0`                        |
 | `parent_demand_id`    | `BIGINT`        | 补料需求关联的原始需求 ID                     |
@@ -828,7 +822,7 @@
 
 * 主键：`id`
 * 外键：`FOREIGN KEY (production_batch_id) REFERENCES production_batches(id)`
-* 外键：`FOREIGN KEY (item_id) REFERENCES item_info(id)`
+* 外键：`FOREIGN KEY (item_id) REFERENCES products(id)`
 * 外键：`FOREIGN KEY (bom_id, item_id) REFERENCES product_bom(id, item_id)`
 * 外键：`FOREIGN KEY (parent_demand_id) REFERENCES production_item_demand(id)`
 * 外键：`FOREIGN KEY (source_scrap_id) REFERENCES item_scrap(id)`
@@ -1046,7 +1040,7 @@
 * 外键：`FOREIGN KEY (production_batch_id) REFERENCES production_batches(id)`
 * 外键：`FOREIGN KEY (demand_id) REFERENCES production_item_demand(id)`
 * 外键：`FOREIGN KEY (allocation_id) REFERENCES production_item_allocation(id)`
-* 外键：`FOREIGN KEY (item_id) REFERENCES item_info(id)`
+* 外键：`FOREIGN KEY (item_id) REFERENCES products(id)`
 * 外键：`FOREIGN KEY (batch_id, item_id) REFERENCES item_batch(id, item_id)`
 * 检查约束：`CHECK (scrap_number > 0)`
 * 检查约束：`CHECK (scrap_scene IN ('WAREHOUSE_ALLOCATED', 'RETURN_AFTER_OUTBOUND', 'PRODUCTION_CONSUMED', 'IN_STOCK'))`
@@ -1121,7 +1115,7 @@
 
 * 主键：`id`
 * 外键：`FOREIGN KEY (stock_check_id) REFERENCES stock_check_order(id)`
-* 外键：`FOREIGN KEY (item_id) REFERENCES item_info(id)`
+* 外键：`FOREIGN KEY (item_id) REFERENCES products(id)`
 * 外键：`FOREIGN KEY (batch_id, item_id) REFERENCES item_batch(id, item_id)`
 * 检查约束：`CHECK (system_quantity >= 0)`
 * 检查约束：`CHECK (actual_quantity >= 0)`
@@ -1501,9 +1495,9 @@
 # 十三、最终表关系简图
 
 ```text
-item_type
+product_categories（兼 item_type）
   ↓
-item_info
+products（兼 item_info）
   ↓
 product_bom
 

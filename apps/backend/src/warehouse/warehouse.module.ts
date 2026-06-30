@@ -11,8 +11,11 @@ import { WarehouseItemRepository } from './items/warehouse-item.repository.js';
 import { OutboundOrderController } from './outbound-orders/outbound-order.controller.js';
 import { OutboundOrderRepository } from './outbound-orders/outbound-order.repository.js';
 import { ReturnOrderController } from './return-orders/return-order.controller.js';
+import { ReturnOrderRepository } from './return-orders/return-order.repository.js';
 import { ItemScrapController } from './scraps/item-scrap.controller.js';
+import { ItemScrapRepository } from './scraps/item-scrap.repository.js';
 import { StockCheckController } from './stock-checks/stock-check.controller.js';
+import { StockCheckRepository } from './stock-checks/stock-check.repository.js';
 
 @Module({
   imports: [AuthModule, DatabaseModule, OperationLogModule],
@@ -25,6 +28,14 @@ import { StockCheckController } from './stock-checks/stock-check.controller.js';
     ItemScrapController,
     StockCheckController,
   ],
-  providers: [WarehouseItemRepository, InventoryRepository, InboundOrderRepository, OutboundOrderRepository],
+  providers: [
+    WarehouseItemRepository,
+    InventoryRepository,
+    InboundOrderRepository,
+    OutboundOrderRepository,
+    ReturnOrderRepository,
+    ItemScrapRepository,
+    StockCheckRepository,
+  ],
 })
 export class WarehouseModule {}

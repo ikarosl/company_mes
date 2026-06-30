@@ -394,8 +394,8 @@ export class OutboundOrderRepository {
         sod.demand_id,
         sod.allocation_id,
         sod.item_id,
-        ii.item_code,
-        ii.item_name,
+        COALESCE(p.item_code, p.product_model) AS item_code,
+        p.product_name AS item_name,
         sod.batch_id,
         ib.batch_code,
         sod.quantity,
@@ -403,7 +403,7 @@ export class OutboundOrderRepository {
         sod.remark,
         sod.created_at
       FROM stock_order_detail sod
-      INNER JOIN item_info ii ON ii.id = sod.item_id
+      INNER JOIN products p ON p.id = sod.item_id
       INNER JOIN item_batch ib ON ib.id = sod.batch_id AND ib.item_id = sod.item_id
       WHERE sod.order_id = ?
       ORDER BY sod.id ASC

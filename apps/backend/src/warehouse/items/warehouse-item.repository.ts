@@ -17,9 +17,9 @@ interface WarehouseItemRow extends RowDataPacket {
   item_code: string;
   item_name: string;
   type_id: number;
-  item_kind: WarehouseItemKind;
-  type_name: string;
-  default_unit: string;
+  item_kind: WarehouseItemKind | null;
+  type_name: string | null;
+  default_unit: string | null;
   status: WarehouseItemStatus;
   remark: string | null;
   created_at: Date;
@@ -52,15 +52,15 @@ export class WarehouseItemRepository {
 
   /**
    * 查询库存对象列表。
-   * 统一库存模型中物料、半成品、成品都来自 item_info，通过 item_type.item_kind 区分大类。
+   * 统一库存模型中物料、半成品、成品都来自 products，通过 product_categories.item_kind 区分大类。
    */
   async listItems(filters: WarehouseItemFilters, pagination: PaginationOptions) {
     const { where, params } = this.buildListFilters(filters);
     const [totalRow] = await this.database.query<CountRow[]>(
       `
       SELECT COUNT(*) AS total
-      FROM item_info ii
-      INNER JOIN item_type it ON it.id = ii.type_id
+      FROM products p
+      LEFT JOIN product_categories pc ON pc.id = p.category_id
       WHERE ${where}
     `,
       params,
@@ -68,21 +68,21 @@ export class WarehouseItemRepository {
     const rows = await this.database.query<WarehouseItemRow[]>(
       `
       SELECT
-        ii.id,
-        ii.item_code,
-        ii.item_name,
-        ii.type_id,
-        it.item_kind,
-        it.type_name,
-        ii.default_unit,
-        ii.status,
-        ii.remark,
-        ii.created_at,
-        ii.updated_at
-      FROM item_info ii
-      INNER JOIN item_type it ON it.id = ii.type_id
+        p.id,
+        COALESCE(p.item_code, p.product_model) AS item_code,
+        p.product_name AS item_name,
+        p.category_id AS type_id,
+        pc.item_kind,
+        pc.product_type AS type_name,
+        COALESCE(p.default_unit, p.unit) AS default_unit,
+        p.status,
+        p.remark,
+        p.created_at,
+        p.updated_at
+      FROM products p
+      LEFT JOIN product_categories pc ON pc.id = p.category_id
       WHERE ${where}
-      ORDER BY ii.id DESC
+      ORDER BY p.id DESC
       LIMIT ? OFFSET ?
     `,
       [...params, pagination.pageSize, pagination.offset],
@@ -96,7 +96,7 @@ export class WarehouseItemRepository {
     return mapWarehouseItem(await this.getItemRow(id));
   }
 
-  /** 查询库存对象分类选项，供新增和编辑时选择 item_type。 */
+  /** 查询库存对象分类选项（来自 product_categories）。 */
   async listTypeOptions(itemKind?: string): Promise<WarehouseItemTypeOption[]> {
     const params: QueryParam[] = [];
     const clauses: string[] = [];
@@ -108,10 +108,10 @@ export class WarehouseItemRepository {
 
     const rows = await this.database.query<WarehouseItemTypeRow[]>(
       `
-      SELECT id, item_kind, type_name
-      FROM item_type
+      SELECT id, item_kind, product_type AS type_name
+      FROM product_categories
       ${clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : ''}
-      ORDER BY item_kind ASC, type_name ASC
+      ORDER BY item_kind ASC, product_type ASC
     `,
       params,
     );
@@ -124,10 +124,10 @@ export class WarehouseItemRepository {
   }
 
   /**
-   * 创建库存对象。
+   * 创建库存对象（写入 products 表）。
    * 1. 校验分类存在
    * 2. 校验库存对象编码唯一
-   * 3. 写入 item_info
+   * 3. 写入 products
    */
   async createItem(payload: CreateWarehouseItemPayload) {
     const itemCode = readRequiredString(payload.itemCode, 'Missing item code');
@@ -141,12 +141,12 @@ export class WarehouseItemRepository {
 
     const result = (await this.database.execute(
       `
-      INSERT INTO item_info (
-        item_code, item_name, type_id, default_unit, status, remark, created_at, updated_at
+      INSERT INTO products (
+        item_code, product_model, product_name, category_id, unit, default_unit, status, remark, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
     `,
-      [itemCode, itemName, typeId, defaultUnit, status, normalizeOptionalString(payload.remark)],
+      [itemCode, itemCode, itemName, typeId, defaultUnit, defaultUnit, status, normalizeOptionalString(payload.remark)],
     )) as ResultSetHeader;
 
     return this.getItem(result.insertId);
@@ -154,7 +154,6 @@ export class WarehouseItemRepository {
 
   /**
    * 编辑库存对象。
-   * 编码变更时必须重新校验唯一，避免后续库存批次按编码展示时混淆。
    */
   async updateItem(id: number, payload: UpdateWarehouseItemPayload) {
     const current = await this.getItemRow(id);
@@ -162,7 +161,7 @@ export class WarehouseItemRepository {
     const itemName = payload.itemName === undefined ? current.item_name : readRequiredString(payload.itemName, 'Missing item name');
     const typeId = payload.typeId === undefined ? current.type_id : readPositiveId(payload.typeId, 'Missing item type');
     const defaultUnit =
-      payload.defaultUnit === undefined ? current.default_unit : readRequiredString(payload.defaultUnit, 'Missing default unit');
+      payload.defaultUnit === undefined ? (current.default_unit ?? '个') : readRequiredString(payload.defaultUnit, 'Missing default unit');
     const status = payload.status === undefined ? current.status : readItemStatus(payload.status);
 
     await this.assertTypeExists(typeId);
@@ -170,10 +169,10 @@ export class WarehouseItemRepository {
 
     await this.database.execute(
       `
-      UPDATE item_info
+      UPDATE products
       SET item_code = ?,
-        item_name = ?,
-        type_id = ?,
+        product_name = ?,
+        category_id = ?,
         default_unit = ?,
         status = ?,
         remark = ?,
@@ -194,12 +193,12 @@ export class WarehouseItemRepository {
     return this.getItem(id);
   }
 
-  /** 启停用库存对象，仅修改 item_info.status，不影响历史库存流水。 */
+  /** 启停用库存对象，仅修改 products.status。 */
   async changeItemStatus(id: number, status: WarehouseItemStatus) {
     await this.getItemRow(id);
     await this.database.execute(
       `
-      UPDATE item_info
+      UPDATE products
       SET status = ?, updated_at = NOW()
       WHERE id = ?
     `,
@@ -214,23 +213,23 @@ export class WarehouseItemRepository {
     const params: QueryParam[] = [];
 
     if (filters.keyword?.trim()) {
-      clauses.push('(ii.item_code LIKE ? OR ii.item_name LIKE ?)');
+      clauses.push('(p.item_code LIKE ? OR p.product_name LIKE ? OR p.product_model LIKE ?)');
       const keyword = `%${filters.keyword.trim()}%`;
-      params.push(keyword, keyword);
+      params.push(keyword, keyword, keyword);
     }
 
     if (filters.itemKind?.trim()) {
-      clauses.push('it.item_kind = ?');
+      clauses.push('pc.item_kind = ?');
       params.push(readItemKind(filters.itemKind));
     }
 
     if (filters.typeId?.trim()) {
-      clauses.push('ii.type_id = ?');
+      clauses.push('p.category_id = ?');
       params.push(readPositiveId(filters.typeId, 'Invalid item type'));
     }
 
     if (filters.status?.trim()) {
-      clauses.push('ii.status = ?');
+      clauses.push('p.status = ?');
       params.push(readItemStatus(filters.status));
     }
 
@@ -241,20 +240,20 @@ export class WarehouseItemRepository {
     const [row] = await this.database.query<WarehouseItemRow[]>(
       `
       SELECT
-        ii.id,
-        ii.item_code,
-        ii.item_name,
-        ii.type_id,
-        it.item_kind,
-        it.type_name,
-        ii.default_unit,
-        ii.status,
-        ii.remark,
-        ii.created_at,
-        ii.updated_at
-      FROM item_info ii
-      INNER JOIN item_type it ON it.id = ii.type_id
-      WHERE ii.id = ?
+        p.id,
+        COALESCE(p.item_code, p.product_model) AS item_code,
+        p.product_name AS item_name,
+        p.category_id AS type_id,
+        pc.item_kind,
+        pc.product_type AS type_name,
+        COALESCE(p.default_unit, p.unit) AS default_unit,
+        p.status,
+        p.remark,
+        p.created_at,
+        p.updated_at
+      FROM products p
+      LEFT JOIN product_categories pc ON pc.id = p.category_id
+      WHERE p.id = ?
       LIMIT 1
     `,
       [id],
@@ -271,7 +270,7 @@ export class WarehouseItemRepository {
     const [row] = await this.database.query<RowDataPacket[]>(
       `
       SELECT id
-      FROM item_type
+      FROM product_categories
       WHERE id = ?
       LIMIT 1
     `,
@@ -294,7 +293,7 @@ export class WarehouseItemRepository {
     const [row] = await this.database.query<RowDataPacket[]>(
       `
       SELECT id
-      FROM item_info
+      FROM products
       WHERE item_code = ?${ignoredClause}
       LIMIT 1
     `,
@@ -311,11 +310,11 @@ const mapWarehouseItem = (row: WarehouseItemRow): WarehouseItemListItem => ({
   id: String(row.id),
   itemCode: row.item_code,
   itemName: row.item_name,
-  itemKind: row.item_kind,
+  itemKind: row.item_kind ?? 'material',
   typeId: String(row.type_id),
-  typeName: row.type_name,
-  defaultUnit: row.default_unit,
-  status: row.status,
+  typeName: row.type_name ?? '',
+  defaultUnit: row.default_unit ?? '个',
+  status: row.status as WarehouseItemStatus,
   remark: row.remark,
   createdAt: row.created_at.toISOString(),
   updatedAt: row.updated_at.toISOString(),
