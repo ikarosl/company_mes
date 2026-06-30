@@ -1,6 +1,6 @@
 # 当前数据库设计说明
 
-本文档根据 `docs/init_rbac.sql` 与 `docs/company_test_latest.sql` 整理，仅描述当前数据库表结构、字段含义与表职责，不包含任何 `INSERT` 初始化或测试数据。
+本文档为本分支方案二的数据库设计基准，仅描述当前数据库表结构、字段含义与表职责，不包含任何 `INSERT` 初始化或测试数据。
 
 特别说明：`batch_material_usages` 虽然存在于当前 SQL 中，但本分支会重做物料使用/分配模块，因此该表设计已废弃，不作为后续开发和联调依据。
 
@@ -325,7 +325,7 @@
 | `is_deleted` | `tinyint` | 软删除标记，默认 `0` |
 | `deleted_by` | `bigint unsigned` | 删除人，关联 `users.id` |
 | `deleted_at` | `datetime` | 删除时间 |
-特别说明：`docs/仓库表新方案.md` 已推翻之前的 `material_batch`、`material_demand`、`material_allocation`、`inbound_order`、`inbound_detail`、`outbound_order`、`outbound_detail` 旧仓库方案。方案二以后以统一库存对象模型为准：库存对象使用 `item_info`，库存批次使用 `item_batch`，出入库业务统一使用 `stock_order`、`stock_order_detail`，库存数量事实来源为 `inventory_transaction`。
+特别说明：旧仓库方案中的 `material_batch`、`material_demand`、`material_allocation`、`inbound_order`、`inbound_detail`、`outbound_order`、`outbound_detail` 已被推翻。方案二以后以统一库存对象模型为准：库存对象使用 `item_info`，库存批次使用 `item_batch`，出入库业务统一使用 `stock_order`、`stock_order_detail`，库存数量事实来源为 `inventory_transaction`。
 
 ## 三、生产库存管理数据库表设计｜统一库存对象版本
 
