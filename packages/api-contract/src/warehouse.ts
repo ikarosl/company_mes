@@ -41,6 +41,13 @@ export interface WarehouseItemListItem {
   updatedAt: string;
 }
 
+/** 库存对象分类选项，对应 item_type */
+export interface WarehouseItemTypeOption {
+  id: string;
+  itemKind: WarehouseItemKind;
+  typeName: string;
+}
+
 /** 创建库存对象请求参数 */
 export interface CreateWarehouseItemPayload {
   /** 库存对象编码：物料、半成品、成品统一唯一 */
@@ -89,6 +96,69 @@ export interface ItemBatchStockListItem {
 
 /** 入库单状态 */
 export type InboundOrderStatus = '待入库' | '已入库' | '已取消';
+
+/** 入库单列表项，对应 inbound_order */
+export interface InboundOrderListItem {
+  id: string;
+  inboundNo: string;
+  sourceType: WarehouseSourceType;
+  provider: string | null;
+  workOrderId: string | null;
+  productionBatchId: string | null;
+  status: InboundOrderStatus;
+  inboundAt: string | null;
+  operatorId: string | null;
+  remark: string | null;
+  createdAt: string;
+  updatedAt: string;
+  detailCount: number;
+  totalInboundNumber: string;
+}
+
+/** 入库明细请求行。batchId 为空时，后端按 batchCode 创建库存批次。 */
+export interface InboundDetailPayload {
+  itemId: string;
+  batchId?: string | null;
+  batchCode?: string | null;
+  productionDate?: string | null;
+  inboundNumber: string | number;
+  stockStatus?: WarehouseStockStatus;
+  sourceStage?: string | null;
+  remark?: string | null;
+}
+
+/** 创建入库单请求参数 */
+export interface CreateInboundOrderPayload {
+  inboundNo?: string | null;
+  sourceType: WarehouseSourceType;
+  provider?: string | null;
+  workOrderId?: string | null;
+  productionBatchId?: string | null;
+  operatorId?: string | null;
+  remark?: string | null;
+  details: InboundDetailPayload[];
+}
+
+/** 入库明细详情，对应 inbound_detail + item_info + item_batch */
+export interface InboundDetailItem {
+  id: string;
+  inboundId: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  batchId: string;
+  batchCode: string;
+  inboundNumber: string;
+  stockStatus: WarehouseStockStatus;
+  sourceStage: string | null;
+  remark: string | null;
+  createdAt: string;
+}
+
+/** 入库单详情 */
+export interface InboundOrderDetail extends InboundOrderListItem {
+  details: InboundDetailItem[];
+}
 
 /** 出库单状态 */
 export type OutboundOrderStatus = '待拣货' | '已拣货' | '部分出库' | '已出库' | '已取消';

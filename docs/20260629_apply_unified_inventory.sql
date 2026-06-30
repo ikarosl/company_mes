@@ -422,28 +422,46 @@ SELECT
   pia.item_id,
   pia.batch_id,
   pia.assigned_number,
-  COALESCE(SUM(od.outbound_number), 0) AS outbound_quantity,
-  COALESCE(SUM(rd.return_number), 0) AS returned_quantity,
-  COALESCE(SUM(CASE WHEN rd.return_stock_status = '可用' AND rd.release_after_return = 0 THEN rd.return_number ELSE 0 END), 0) AS returned_available_quantity,
-  COALESCE(SUM(CASE WHEN rd.release_after_return = 1 THEN rd.return_number ELSE 0 END), 0) AS released_return_quantity,
-  COALESCE(SUM(CASE WHEN isc.scrap_scene IN ('WAREHOUSE_ALLOCATED', 'RETURN_AFTER_OUTBOUND') AND isc.status = '已确认' THEN isc.scrap_number ELSE 0 END), 0) AS stock_scrapped_quantity,
-  COALESCE(SUM(CASE WHEN isc.scrap_scene = 'PRODUCTION_CONSUMED' AND isc.status = '已确认' THEN isc.scrap_number ELSE 0 END), 0) AS production_scrapped_quantity,
+  COALESCE(od.outbound_quantity, 0) AS outbound_quantity,
+  COALESCE(rd.returned_quantity, 0) AS returned_quantity,
+  COALESCE(rd.returned_available_quantity, 0) AS returned_available_quantity,
+  COALESCE(rd.released_return_quantity, 0) AS released_return_quantity,
+  COALESCE(isc.stock_scrapped_quantity, 0) AS stock_scrapped_quantity,
+  COALESCE(isc.production_scrapped_quantity, 0) AS production_scrapped_quantity,
   pia.assigned_number
-    - COALESCE(SUM(od.outbound_number), 0)
-    + COALESCE(SUM(CASE WHEN rd.return_stock_status = '可用' AND rd.release_after_return = 0 THEN rd.return_number ELSE 0 END), 0)
-    - COALESCE(SUM(CASE WHEN isc.scrap_scene IN ('WAREHOUSE_ALLOCATED', 'RETURN_AFTER_OUTBOUND') AND isc.status = '已确认' THEN isc.scrap_number ELSE 0 END), 0) AS available_outbound_quantity,
+    - COALESCE(od.outbound_quantity, 0)
+    + COALESCE(rd.returned_available_quantity, 0)
+    - COALESCE(isc.stock_scrapped_quantity, 0) AS available_outbound_quantity,
   CASE
     WHEN pia.assigned_number
-      - COALESCE(SUM(od.outbound_number), 0)
-      + COALESCE(SUM(CASE WHEN rd.return_stock_status = '可用' AND rd.release_after_return = 0 THEN rd.return_number ELSE 0 END), 0)
-      - COALESCE(SUM(CASE WHEN isc.scrap_scene IN ('WAREHOUSE_ALLOCATED', 'RETURN_AFTER_OUTBOUND') AND isc.status = '已确认' THEN isc.scrap_number ELSE 0 END), 0) < 0
+      - COALESCE(od.outbound_quantity, 0)
+      + COALESCE(rd.returned_available_quantity, 0)
+      - COALESCE(isc.stock_scrapped_quantity, 0) < 0
     THEN 1 ELSE 0
   END AS is_quantity_abnormal
 FROM `production_item_allocation` pia
-LEFT JOIN `outbound_detail` od ON od.allocation_id = pia.id
-LEFT JOIN `return_detail` rd ON rd.allocation_id = pia.id
-LEFT JOIN `item_scrap` isc ON isc.allocation_id = pia.id
-GROUP BY pia.id, pia.demand_id, pia.production_batch_id, pia.item_id, pia.batch_id, pia.assigned_number;
+LEFT JOIN (
+  SELECT allocation_id, SUM(outbound_number) AS outbound_quantity
+  FROM `outbound_detail`
+  GROUP BY allocation_id
+) od ON od.allocation_id = pia.id
+LEFT JOIN (
+  SELECT
+    allocation_id,
+    SUM(return_number) AS returned_quantity,
+    SUM(CASE WHEN return_stock_status = '可用' AND release_after_return = 0 THEN return_number ELSE 0 END) AS returned_available_quantity,
+    SUM(CASE WHEN release_after_return = 1 THEN return_number ELSE 0 END) AS released_return_quantity
+  FROM `return_detail`
+  GROUP BY allocation_id
+) rd ON rd.allocation_id = pia.id
+LEFT JOIN (
+  SELECT
+    allocation_id,
+    SUM(CASE WHEN scrap_scene IN ('WAREHOUSE_ALLOCATED', 'RETURN_AFTER_OUTBOUND') AND status = '已确认' THEN scrap_number ELSE 0 END) AS stock_scrapped_quantity,
+    SUM(CASE WHEN scrap_scene = 'PRODUCTION_CONSUMED' AND status = '已确认' THEN scrap_number ELSE 0 END) AS production_scrapped_quantity
+  FROM `item_scrap`
+  GROUP BY allocation_id
+) isc ON isc.allocation_id = pia.id;
 
 CREATE OR REPLACE VIEW `v_production_item_demand_summary` AS
 SELECT

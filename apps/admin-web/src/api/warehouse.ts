@@ -1,60 +1,112 @@
 import {
   BUSINESS_API,
-  type CreateMaterialBatchPayload,
-  type MaterialBatchDetail,
-  type MaterialBatchListItem,
+  type CreateInboundOrderPayload,
+  type CreateWarehouseItemPayload,
+  type InboundOrderDetail,
+  type InboundOrderListItem,
+  type ItemBatchStockListItem,
   type PageResult,
-  type StocktakeMaterialBatchPayload,
-  type UpdateMaterialBatchPayload,
+  type UpdateWarehouseItemPayload,
+  type WarehouseItemListItem,
+  type WarehouseItemTypeOption,
 } from '@company/api-contract';
 import { requestData, type QueryParams } from './shared/request-data';
 
 export const warehouseApi = {
   listInventory: (params?: QueryParams) =>
-    requestData<PageResult<MaterialBatchListItem>>({
+    requestData<PageResult<ItemBatchStockListItem>>({
       url: BUSINESS_API.warehouseInventory,
       method: 'GET',
       params,
     }),
   getInventory: (id: string) =>
-    requestData<MaterialBatchDetail>({
+    requestData<ItemBatchStockListItem>({
       url: `${BUSINESS_API.warehouseInventory}/${id}`,
       method: 'GET',
     }),
-  createInventory: (data: CreateMaterialBatchPayload) =>
-    requestData<MaterialBatchDetail>({
+  createInventory: (data: unknown) =>
+    requestData<unknown>({
       url: BUSINESS_API.warehouseInventory,
       method: 'POST',
       data,
     }),
-  updateInventory: (id: string, data: UpdateMaterialBatchPayload) =>
-    requestData<MaterialBatchDetail>({
+  updateInventory: (id: string, data: unknown) =>
+    requestData<unknown>({
       url: `${BUSINESS_API.warehouseInventory}/${id}`,
       method: 'PUT',
       data,
     }),
-  stocktakeInventory: (id: string, data: StocktakeMaterialBatchPayload) =>
-    requestData<MaterialBatchDetail>({
+  stocktakeInventory: (id: string, data: unknown) =>
+    requestData<unknown>({
       url: `${BUSINESS_API.warehouseInventory}/${id}/stocktake`,
       method: 'PUT',
       data,
     }),
   changeInventoryStatus: (id: string, disabled: boolean) =>
-    requestData<MaterialBatchDetail>({
+    requestData<unknown>({
       url: `${BUSINESS_API.warehouseInventory}/${id}/${disabled ? 'disable' : 'enable'}`,
       method: 'PUT',
     }),
   listWarehouseItems: (params?: QueryParams) =>
-    requestData<PageResult<unknown>>({
+    requestData<PageResult<WarehouseItemListItem>>({
       url: BUSINESS_API.warehouseItems,
       method: 'GET',
       params,
     }),
+  getWarehouseItem: (id: string) =>
+    requestData<WarehouseItemListItem>({
+      url: `${BUSINESS_API.warehouseItems}/${id}`,
+      method: 'GET',
+    }),
+  listWarehouseItemTypeOptions: (params?: QueryParams) =>
+    requestData<WarehouseItemTypeOption[]>({
+      url: `${BUSINESS_API.warehouseItems}/types/options`,
+      method: 'GET',
+      params,
+    }),
+  createWarehouseItem: (data: CreateWarehouseItemPayload) =>
+    requestData<WarehouseItemListItem>({
+      url: BUSINESS_API.warehouseItems,
+      method: 'POST',
+      data,
+    }),
+  updateWarehouseItem: (id: string, data: UpdateWarehouseItemPayload) =>
+    requestData<WarehouseItemListItem>({
+      url: `${BUSINESS_API.warehouseItems}/${id}`,
+      method: 'PUT',
+      data,
+    }),
+  changeWarehouseItemStatus: (id: string, disabled: boolean) =>
+    requestData<WarehouseItemListItem>({
+      url: `${BUSINESS_API.warehouseItems}/${id}/${disabled ? 'disable' : 'enable'}`,
+      method: 'PUT',
+    }),
   listInboundOrders: (params?: QueryParams) =>
-    requestData<PageResult<unknown>>({
+    requestData<PageResult<InboundOrderListItem>>({
       url: BUSINESS_API.warehouseInboundOrders,
       method: 'GET',
       params,
+    }),
+  getInboundOrder: (id: string) =>
+    requestData<InboundOrderDetail>({
+      url: `${BUSINESS_API.warehouseInboundOrders}/${id}`,
+      method: 'GET',
+    }),
+  createInboundOrder: (data: CreateInboundOrderPayload) =>
+    requestData<InboundOrderDetail>({
+      url: BUSINESS_API.warehouseInboundOrders,
+      method: 'POST',
+      data,
+    }),
+  confirmInboundOrder: (id: string) =>
+    requestData<InboundOrderDetail>({
+      url: `${BUSINESS_API.warehouseInboundOrders}/${id}/confirm`,
+      method: 'PUT',
+    }),
+  cancelInboundOrder: (id: string) =>
+    requestData<InboundOrderDetail>({
+      url: `${BUSINESS_API.warehouseInboundOrders}/${id}/cancel`,
+      method: 'PUT',
     }),
   listOutboundOrders: (params?: QueryParams) =>
     requestData<PageResult<unknown>>({
