@@ -14,6 +14,8 @@ DROP VIEW IF EXISTS `v_production_item_demand_summary`;
 DROP VIEW IF EXISTS `v_production_item_allocation_summary`;
 DROP VIEW IF EXISTS `v_item_batch_stock`;
 
+DROP TABLE IF EXISTS `stock_order_detail`;
+DROP TABLE IF EXISTS `stock_order`;
 DROP TABLE IF EXISTS `stock_check_detail`;
 DROP TABLE IF EXISTS `stock_check_order`;
 DROP TABLE IF EXISTS `item_scrap`;
@@ -117,6 +119,8 @@ CREATE TABLE `inventory_transaction` (
   `transaction_type` VARCHAR(30) NOT NULL COMMENT '库存变动类型',
   `quantity` DECIMAL(12,4) NOT NULL COMMENT '库存变动数量，正数增加，负数减少',
   `stock_status` VARCHAR(20) NOT NULL DEFAULT '可用' COMMENT '库存状态：可用/待检/冻结/不良',
+  `stock_order_id` BIGINT UNSIGNED NULL COMMENT '库存单据主表ID',
+  `stock_order_detail_id` BIGINT UNSIGNED NULL COMMENT '库存单据明细ID',
   `reference_type` VARCHAR(50) NULL COMMENT '来源明细类型',
   `reference_detail_id` BIGINT UNSIGNED NULL COMMENT '来源明细ID',
   `idempotency_key` VARCHAR(150) NOT NULL COMMENT '幂等键',
@@ -125,58 +129,13 @@ CREATE TABLE `inventory_transaction` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_inventory_transaction_idempotency` (`idempotency_key`),
   KEY `idx_inventory_transaction_item_batch` (`item_id`, `batch_id`),
+  KEY `idx_inventory_transaction_stock_order` (`stock_order_id`, `stock_order_detail_id`),
   KEY `idx_inventory_transaction_reference` (`reference_type`, `reference_detail_id`),
   CONSTRAINT `fk_inventory_transaction_item_id` FOREIGN KEY (`item_id`) REFERENCES `item_info` (`id`),
   CONSTRAINT `fk_inventory_transaction_batch_item` FOREIGN KEY (`batch_id`, `item_id`) REFERENCES `item_batch` (`id`, `item_id`),
   CONSTRAINT `chk_inventory_transaction_quantity` CHECK (`quantity` <> 0),
   CONSTRAINT `chk_inventory_transaction_stock_status` CHECK (`stock_status` IN ('可用', '待检', '冻结', '不良'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='统一库存流水表';
-
-CREATE TABLE `inbound_order` (
-  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
-  `inbound_no` VARCHAR(100) NOT NULL COMMENT '入库单号',
-  `source_type` VARCHAR(30) NOT NULL COMMENT '来源类型',
-  `provider` VARCHAR(100) NULL COMMENT '供应商、委外方或来源方',
-  `work_order_id` BIGINT UNSIGNED NULL COMMENT '来源工单ID',
-  `production_batch_id` BIGINT UNSIGNED NULL COMMENT '来源生产批次ID',
-  `status` VARCHAR(30) NOT NULL DEFAULT '待入库' COMMENT '入库单状态：待入库/已入库/已取消',
-  `inbound_at` TIMESTAMP NULL COMMENT '实际入库时间',
-  `operator_id` BIGINT UNSIGNED NULL COMMENT '操作人ID',
-  `version` INT NOT NULL DEFAULT 0 COMMENT '乐观锁版本号',
-  `remark` TEXT NULL COMMENT '备注',
-  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_inbound_order_no` (`inbound_no`),
-  UNIQUE KEY `uk_inbound_order_id_source` (`id`, `source_type`),
-  KEY `idx_inbound_order_work_order_id` (`work_order_id`),
-  KEY `idx_inbound_order_production_batch_id` (`production_batch_id`),
-  CONSTRAINT `fk_inbound_order_work_order_id` FOREIGN KEY (`work_order_id`) REFERENCES `work_orders` (`id`),
-  CONSTRAINT `fk_inbound_order_production_batch_id` FOREIGN KEY (`production_batch_id`) REFERENCES `production_batches` (`id`),
-  CONSTRAINT `fk_inbound_order_operator_id` FOREIGN KEY (`operator_id`) REFERENCES `users` (`id`),
-  CONSTRAINT `chk_inbound_order_source_type` CHECK (`source_type` IN ('自产', '外购', '委外', '退货入库', '盘点生成', '其他')),
-  CONSTRAINT `chk_inbound_order_status` CHECK (`status` IN ('待入库', '已入库', '已取消'))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='入库主单表';
-
-CREATE TABLE `inbound_detail` (
-  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
-  `inbound_id` BIGINT UNSIGNED NOT NULL COMMENT '入库主单ID',
-  `item_id` BIGINT UNSIGNED NOT NULL COMMENT '入库对象ID',
-  `batch_id` BIGINT UNSIGNED NOT NULL COMMENT '入库批次ID',
-  `inbound_number` DECIMAL(12,4) NOT NULL COMMENT '入库数量',
-  `stock_status` VARCHAR(20) NOT NULL DEFAULT '可用' COMMENT '入库后的库存状态',
-  `source_stage` VARCHAR(100) NULL COMMENT '来源工序或阶段',
-  `remark` TEXT NULL COMMENT '备注',
-  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_inbound_detail_order_batch_item` (`inbound_id`, `batch_id`, `item_id`),
-  KEY `idx_inbound_detail_item_batch` (`item_id`, `batch_id`),
-  CONSTRAINT `fk_inbound_detail_inbound_id` FOREIGN KEY (`inbound_id`) REFERENCES `inbound_order` (`id`),
-  CONSTRAINT `fk_inbound_detail_item_id` FOREIGN KEY (`item_id`) REFERENCES `item_info` (`id`),
-  CONSTRAINT `fk_inbound_detail_batch_item` FOREIGN KEY (`batch_id`, `item_id`) REFERENCES `item_batch` (`id`, `item_id`),
-  CONSTRAINT `chk_inbound_detail_number` CHECK (`inbound_number` > 0),
-  CONSTRAINT `chk_inbound_detail_stock_status` CHECK (`stock_status` IN ('可用', '待检', '冻结', '不良'))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='入库明细表';
 
 CREATE TABLE `production_item_demand` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
@@ -233,45 +192,66 @@ CREATE TABLE `production_item_allocation` (
   CONSTRAINT `chk_production_item_allocation_status` CHECK (`allocation_status` IN ('正常', '已释放', '已取消', '冻结', '异常'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='生产投入分配表';
 
-CREATE TABLE `outbound_order` (
+CREATE TABLE `stock_order` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
-  `outbound_no` VARCHAR(100) NOT NULL COMMENT '出库单号',
-  `production_batch_id` BIGINT UNSIGNED NOT NULL COMMENT '生产批次ID',
-  `work_order_id` BIGINT UNSIGNED NULL COMMENT '工单ID',
-  `status` VARCHAR(20) NOT NULL DEFAULT '待拣货' COMMENT '状态：待拣货/已拣货/部分出库/已出库/已取消',
+  `order_no` VARCHAR(100) NOT NULL COMMENT '库存单据号',
+  `order_direction` VARCHAR(20) NOT NULL COMMENT '单据方向：入库/出库',
+  `business_type` VARCHAR(30) NOT NULL COMMENT '业务类型：采购入库/生产入库/委外入库/退货入库/盘点生成/生产领料出库/销售出库/其他入库/其他出库',
+  `provider` VARCHAR(100) NULL COMMENT '供应商、委外方或来源方',
+  `work_order_id` BIGINT UNSIGNED NULL COMMENT '来源或服务工单ID',
+  `production_batch_id` BIGINT UNSIGNED NULL COMMENT '来源或服务生产批次ID',
+  `status` VARCHAR(30) NOT NULL DEFAULT '待确认' COMMENT '状态：待确认/已拣货/已完成/已取消',
+  `operated_at` TIMESTAMP NULL COMMENT '实际确认时间',
   `operator_id` BIGINT UNSIGNED NULL COMMENT '操作人ID',
   `version` INT NOT NULL DEFAULT 0 COMMENT '乐观锁版本号',
   `remark` TEXT NULL COMMENT '备注',
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `outbound_at` TIMESTAMP NULL COMMENT '实际出库时间',
+  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_outbound_order_no` (`outbound_no`),
-  UNIQUE KEY `uk_outbound_order_id_batch` (`id`, `production_batch_id`),
-  CONSTRAINT `fk_outbound_order_batch_id` FOREIGN KEY (`production_batch_id`) REFERENCES `production_batches` (`id`),
-  CONSTRAINT `fk_outbound_order_work_order_id` FOREIGN KEY (`work_order_id`) REFERENCES `work_orders` (`id`),
-  CONSTRAINT `fk_outbound_order_operator_id` FOREIGN KEY (`operator_id`) REFERENCES `users` (`id`),
-  CONSTRAINT `chk_outbound_order_status` CHECK (`status` IN ('待拣货', '已拣货', '部分出库', '已出库', '已取消'))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='生产领料出库主单表';
+  UNIQUE KEY `uk_stock_order_no` (`order_no`),
+  UNIQUE KEY `uk_stock_order_id_direction` (`id`, `order_direction`),
+  KEY `idx_stock_order_direction_status` (`order_direction`, `status`),
+  KEY `idx_stock_order_work_order_id` (`work_order_id`),
+  KEY `idx_stock_order_production_batch_id` (`production_batch_id`),
+  CONSTRAINT `fk_stock_order_work_order_id` FOREIGN KEY (`work_order_id`) REFERENCES `work_orders` (`id`),
+  CONSTRAINT `fk_stock_order_production_batch_id` FOREIGN KEY (`production_batch_id`) REFERENCES `production_batches` (`id`),
+  CONSTRAINT `fk_stock_order_operator_id` FOREIGN KEY (`operator_id`) REFERENCES `users` (`id`),
+  CONSTRAINT `chk_stock_order_direction` CHECK (`order_direction` IN ('入库', '出库')),
+  CONSTRAINT `chk_stock_order_business_type` CHECK (`business_type` IN ('采购入库', '生产入库', '委外入库', '退货入库', '盘点生成', '生产领料出库', '销售出库', '其他入库', '其他出库')),
+  CONSTRAINT `chk_stock_order_status` CHECK (`status` IN ('待确认', '已拣货', '已完成', '已取消'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='库存单据主表';
 
-CREATE TABLE `outbound_detail` (
+CREATE TABLE `stock_order_detail` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
-  `outbound_id` BIGINT UNSIGNED NOT NULL COMMENT '出库主单ID',
-  `production_batch_id` BIGINT UNSIGNED NOT NULL COMMENT '生产批次ID',
-  `demand_id` BIGINT UNSIGNED NOT NULL COMMENT '需求ID',
-  `allocation_id` BIGINT UNSIGNED NOT NULL COMMENT '分配明细ID',
-  `item_id` BIGINT UNSIGNED NOT NULL COMMENT '出库对象ID',
-  `batch_id` BIGINT UNSIGNED NOT NULL COMMENT '出库库存批次ID',
-  `outbound_number` DECIMAL(12,4) NOT NULL COMMENT '本次出库数量',
+  `order_id` BIGINT UNSIGNED NOT NULL COMMENT '库存单据主表ID',
+  `item_id` BIGINT UNSIGNED NOT NULL COMMENT '库存对象ID',
+  `batch_id` BIGINT UNSIGNED NOT NULL COMMENT '库存批次ID',
+  `quantity` DECIMAL(12,4) NOT NULL COMMENT '业务数量，始终为正数，流水表决定正负',
+  `stock_status` VARCHAR(20) NOT NULL DEFAULT '可用' COMMENT '库存状态',
+  `production_batch_id` BIGINT UNSIGNED NULL COMMENT '服务生产批次ID，生产领料出库和退料时可填',
+  `demand_id` BIGINT UNSIGNED NULL COMMENT '生产投入需求ID',
+  `allocation_id` BIGINT UNSIGNED NULL COMMENT '生产投入分配ID',
+  `source_stage` VARCHAR(100) NULL COMMENT '来源工序或阶段',
+  `release_after_return` TINYINT NOT NULL DEFAULT 0 COMMENT '退料后是否释放给公共库存',
+  `remark` TEXT NULL COMMENT '备注',
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_outbound_detail_order_allocation` (`outbound_id`, `allocation_id`),
-  KEY `idx_outbound_detail_allocation` (`allocation_id`, `demand_id`),
-  CONSTRAINT `fk_outbound_detail_order_batch` FOREIGN KEY (`outbound_id`, `production_batch_id`) REFERENCES `outbound_order` (`id`, `production_batch_id`),
-  CONSTRAINT `fk_outbound_detail_demand_batch` FOREIGN KEY (`demand_id`, `production_batch_id`) REFERENCES `production_item_demand` (`id`, `production_batch_id`),
-  CONSTRAINT `fk_outbound_detail_allocation_demand` FOREIGN KEY (`allocation_id`, `demand_id`) REFERENCES `production_item_allocation` (`id`, `demand_id`),
-  CONSTRAINT `fk_outbound_detail_batch_item` FOREIGN KEY (`batch_id`, `item_id`) REFERENCES `item_batch` (`id`, `item_id`),
-  CONSTRAINT `chk_outbound_detail_number` CHECK (`outbound_number` > 0)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='生产领料出库明细表';
+  UNIQUE KEY `uk_stock_order_detail_order_batch_item` (`order_id`, `batch_id`, `item_id`, `allocation_id`),
+  KEY `idx_stock_order_detail_item_batch` (`item_id`, `batch_id`),
+  KEY `idx_stock_order_detail_allocation` (`allocation_id`, `demand_id`),
+  CONSTRAINT `fk_stock_order_detail_order_id` FOREIGN KEY (`order_id`) REFERENCES `stock_order` (`id`),
+  CONSTRAINT `fk_stock_order_detail_item_id` FOREIGN KEY (`item_id`) REFERENCES `item_info` (`id`),
+  CONSTRAINT `fk_stock_order_detail_batch_item` FOREIGN KEY (`batch_id`, `item_id`) REFERENCES `item_batch` (`id`, `item_id`),
+  CONSTRAINT `fk_stock_order_detail_demand_batch` FOREIGN KEY (`demand_id`, `production_batch_id`) REFERENCES `production_item_demand` (`id`, `production_batch_id`),
+  CONSTRAINT `fk_stock_order_detail_allocation_demand` FOREIGN KEY (`allocation_id`, `demand_id`) REFERENCES `production_item_allocation` (`id`, `demand_id`),
+  CONSTRAINT `chk_stock_order_detail_quantity` CHECK (`quantity` > 0),
+  CONSTRAINT `chk_stock_order_detail_stock_status` CHECK (`stock_status` IN ('可用', '待检', '冻结', '不良', '报废')),
+  CONSTRAINT `chk_stock_order_detail_release` CHECK (`release_after_return` IN (0, 1))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='库存单据明细表';
+
+ALTER TABLE `inventory_transaction`
+  ADD CONSTRAINT `fk_inventory_transaction_stock_order_id` FOREIGN KEY (`stock_order_id`) REFERENCES `stock_order` (`id`),
+  ADD CONSTRAINT `fk_inventory_transaction_stock_order_detail_id` FOREIGN KEY (`stock_order_detail_id`) REFERENCES `stock_order_detail` (`id`);
 
 CREATE TABLE `return_order` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
@@ -441,9 +421,13 @@ SELECT
   END AS is_quantity_abnormal
 FROM `production_item_allocation` pia
 LEFT JOIN (
-  SELECT allocation_id, SUM(outbound_number) AS outbound_quantity
-  FROM `outbound_detail`
-  GROUP BY allocation_id
+  SELECT sod.allocation_id, SUM(sod.quantity) AS outbound_quantity
+  FROM `stock_order_detail` sod
+  INNER JOIN `stock_order` so ON so.id = sod.order_id
+  WHERE so.order_direction = '出库'
+    AND so.business_type = '生产领料出库'
+    AND so.status = '已完成'
+  GROUP BY sod.allocation_id
 ) od ON od.allocation_id = pia.id
 LEFT JOIN (
   SELECT
@@ -544,19 +528,22 @@ GROUP BY pids.production_batch_id, pids.item_id, ii.item_name;
 
 CREATE OR REPLACE VIEW `v_production_batch_output_summary` AS
 SELECT
-  io.production_batch_id,
-  io.work_order_id,
-  idt.item_id,
+  so.production_batch_id,
+  so.work_order_id,
+  sod.item_id,
   ii.item_name,
   it.item_kind,
-  idt.batch_id,
+  sod.batch_id,
   ib.batch_code,
-  idt.inbound_number AS inbound_quantity,
-  idt.stock_status,
-  idt.source_stage
-FROM `inbound_order` io
-INNER JOIN `inbound_detail` idt ON idt.inbound_id = io.id
-INNER JOIN `item_info` ii ON ii.id = idt.item_id
+  sod.quantity AS inbound_quantity,
+  sod.stock_status,
+  sod.source_stage
+FROM `stock_order` so
+INNER JOIN `stock_order_detail` sod ON sod.order_id = so.id
+INNER JOIN `item_info` ii ON ii.id = sod.item_id
 INNER JOIN `item_type` it ON it.id = ii.type_id
-INNER JOIN `item_batch` ib ON ib.id = idt.batch_id AND ib.item_id = idt.item_id
-WHERE io.source_type = '自产' AND it.item_kind IN ('semi_finished', 'finished_product');
+INNER JOIN `item_batch` ib ON ib.id = sod.batch_id AND ib.item_id = sod.item_id
+WHERE so.order_direction = '入库'
+  AND so.business_type = '生产入库'
+  AND so.status = '已完成'
+  AND it.item_kind IN ('semi_finished', 'finished_product');

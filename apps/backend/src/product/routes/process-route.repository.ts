@@ -407,7 +407,7 @@ export class ProcessRouteRepository {
     >(
       `
       SELECT
-        p.id,
+        ps.id,
         ps.step_code AS process_code,
         ps.step_name AS process_name,
         NULL AS description,

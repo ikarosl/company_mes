@@ -26,6 +26,24 @@ export type InventoryTransactionType =
   | '状态转入'
   | '状态转出';
 
+/** 库存单据方向：主单统一承载入库和出库业务，方向决定流水数量正负。 */
+export type StockOrderDirection = '入库' | '出库';
+
+/** 库存单据状态：不同业务共用基础状态，拣货只用于出库流程。 */
+export type StockOrderStatus = '待确认' | '已拣货' | '已完成' | '已取消';
+
+/** 库存单据业务类型，对应库存流水的业务语义。 */
+export type StockOrderBusinessType =
+  | '采购入库'
+  | '生产入库'
+  | '委外入库'
+  | '退货入库'
+  | '盘点生成'
+  | '生产领料出库'
+  | '销售出库'
+  | '其他入库'
+  | '其他出库';
+
 /** 库存对象列表项，对应 item_info + item_type */
 export interface WarehouseItemListItem {
   id: string;
@@ -94,14 +112,15 @@ export interface ItemBatchStockListItem {
   totalQuantity: string;
 }
 
-/** 入库单状态 */
-export type InboundOrderStatus = '待入库' | '已入库' | '已取消';
+/** 入库单状态：前端兼容名称，底层映射到 stock_order.status。 */
+export type InboundOrderStatus = '待确认' | '已完成' | '已取消';
 
-/** 入库单列表项，对应 inbound_order */
+/** 入库单列表项，对应 stock_order(order_direction=入库) */
 export interface InboundOrderListItem {
   id: string;
   inboundNo: string;
   sourceType: WarehouseSourceType;
+  businessType: StockOrderBusinessType;
   provider: string | null;
   workOrderId: string | null;
   productionBatchId: string | null;
@@ -139,7 +158,7 @@ export interface CreateInboundOrderPayload {
   details: InboundDetailPayload[];
 }
 
-/** 入库明细详情，对应 inbound_detail + item_info + item_batch */
+/** 入库明细详情，对应 stock_order_detail + item_info + item_batch */
 export interface InboundDetailItem {
   id: string;
   inboundId: string;
@@ -160,8 +179,8 @@ export interface InboundOrderDetail extends InboundOrderListItem {
   details: InboundDetailItem[];
 }
 
-/** 出库单状态 */
-export type OutboundOrderStatus = '待拣货' | '已拣货' | '部分出库' | '已出库' | '已取消';
+/** 出库单状态：前端兼容名称，底层映射到 stock_order.status。 */
+export type OutboundOrderStatus = '待确认' | '已拣货' | '已完成' | '已取消';
 
 /** 退料单状态 */
 export type ReturnOrderStatus = '待处理' | '已入库' | '已报废' | '已取消';

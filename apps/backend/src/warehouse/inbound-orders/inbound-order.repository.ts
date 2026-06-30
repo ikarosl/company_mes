@@ -5,6 +5,7 @@ import type {
   InboundOrderListItem,
   InboundOrderStatus,
   InventoryTransactionType,
+  StockOrderBusinessType,
   WarehouseSourceType,
   WarehouseStockStatus,
 } from '@company/api-contract';
@@ -16,13 +17,13 @@ import { type PaginationOptions, toPageResult } from '../../shared/request-utils
 
 interface InboundOrderRow extends RowDataPacket {
   id: number;
-  inbound_no: string;
-  source_type: WarehouseSourceType;
+  order_no: string;
+  business_type: StockOrderBusinessType;
   provider: string | null;
   work_order_id: number | null;
   production_batch_id: number | null;
   status: InboundOrderStatus;
-  inbound_at: Date | null;
+  operated_at: Date | null;
   operator_id: number | null;
   version: number;
   remark: string | null;
@@ -34,13 +35,13 @@ interface InboundOrderRow extends RowDataPacket {
 
 interface InboundDetailRow extends RowDataPacket {
   id: number;
-  inbound_id: number;
+  order_id: number;
   item_id: number;
   item_code: string;
   item_name: string;
   batch_id: number;
   batch_code: string;
-  inbound_number: string;
+  quantity: string;
   stock_status: WarehouseStockStatus;
   source_stage: string | null;
   remark: string | null;
@@ -64,19 +65,19 @@ export interface InboundOrderFilters {
 
 const SOURCE_TYPES = new Set<WarehouseSourceType>(['自产', '外购', '委外', '退货入库', '盘点生成', '其他']);
 const STOCK_STATUSES = new Set<WarehouseStockStatus>(['可用', '待检', '冻结', '不良']);
-const INBOUND_STATUSES = new Set<InboundOrderStatus>(['待入库', '已入库', '已取消']);
+const INBOUND_STATUSES = new Set<InboundOrderStatus>(['待确认', '已完成', '已取消']);
 
 @Injectable()
 export class InboundOrderRepository {
   constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
 
-  /** 查询入库主单列表，并汇总明细数量，供入库管理表格展示。 */
+  /** 查询统一库存单据中的入库主单，并汇总明细数量，供入库管理表格展示。 */
   async listInboundOrders(filters: InboundOrderFilters, pagination: PaginationOptions) {
     const { where, params } = this.buildListFilters(filters);
     const [totalRow] = await this.database.query<CountRow[]>(
       `
       SELECT COUNT(*) AS total
-      FROM inbound_order io
+      FROM stock_order io
       WHERE ${where}
     `,
       params,
@@ -86,13 +87,13 @@ export class InboundOrderRepository {
       `
       SELECT
         io.id,
-        io.inbound_no,
-        io.source_type,
+        io.order_no,
+        io.business_type,
         io.provider,
         io.work_order_id,
         io.production_batch_id,
         io.status,
-        io.inbound_at,
+        io.operated_at,
         io.operator_id,
         io.version,
         io.remark,
@@ -100,15 +101,15 @@ export class InboundOrderRepository {
         io.updated_at,
         (
           SELECT COUNT(*)
-          FROM inbound_detail idt
-          WHERE idt.inbound_id = io.id
+          FROM stock_order_detail idt
+          WHERE idt.order_id = io.id
         ) AS detail_count,
         (
-          SELECT COALESCE(SUM(idt.inbound_number), 0)
-          FROM inbound_detail idt
-          WHERE idt.inbound_id = io.id
+          SELECT COALESCE(SUM(idt.quantity), 0)
+          FROM stock_order_detail idt
+          WHERE idt.order_id = io.id
         ) AS total_inbound_number
-      FROM inbound_order io
+      FROM stock_order io
       WHERE ${where}
       ORDER BY io.id DESC
       LIMIT ? OFFSET ?
@@ -131,11 +132,12 @@ export class InboundOrderRepository {
   }
 
   /**
-   * 创建待入库单。
+   * 创建待确认入库单。
    * 明细传入已有 batchId 时直接使用该批次；否则按 itemId + batchCode 创建或复用库存批次。
    */
   async createInboundOrder(payload: CreateInboundOrderPayload) {
     const sourceType = readSourceType(payload.sourceType);
+    const businessType = toInboundBusinessType(sourceType);
     const details = readDetails(payload.details);
     const inboundNo = normalizeOptionalString(payload.inboundNo) ?? (await this.generateInboundNo());
     const provider = normalizeOptionalString(payload.provider);
@@ -154,13 +156,13 @@ export class InboundOrderRepository {
       const orderResult = await execute(
         connection,
         `
-        INSERT INTO inbound_order (
-          inbound_no, source_type, provider, work_order_id, production_batch_id,
+        INSERT INTO stock_order (
+          order_no, order_direction, business_type, provider, work_order_id, production_batch_id,
           status, operator_id, remark, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, '待入库', ?, ?, NOW(), NOW())
+        VALUES (?, '入库', ?, ?, ?, ?, '待确认', ?, ?, NOW(), NOW())
       `,
-        [inboundNo, sourceType, provider, workOrderId, productionBatchId, operatorId, remark],
+        [inboundNo, businessType, provider, workOrderId, productionBatchId, operatorId, remark],
       );
 
       const createdOrderId = (orderResult as ResultSetHeader).insertId;
@@ -184,8 +186,8 @@ export class InboundOrderRepository {
         await execute(
           connection,
           `
-          INSERT INTO inbound_detail (
-            inbound_id, item_id, batch_id, inbound_number, stock_status, source_stage, remark, created_at
+          INSERT INTO stock_order_detail (
+            order_id, item_id, batch_id, quantity, stock_status, source_stage, remark, created_at
           )
           VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
         `,
@@ -211,7 +213,7 @@ export class InboundOrderRepository {
   async confirmInboundOrder(id: number) {
     await this.database.transaction(async (connection) => {
       const order = await this.getOrderRow(id, connection, true);
-      if (order.status !== '待入库') {
+      if (order.status !== '待确认') {
         throw new BadRequestException('Only pending inbound order can be confirmed');
       }
 
@@ -220,25 +222,27 @@ export class InboundOrderRepository {
         throw new BadRequestException('Inbound order has no details');
       }
 
-      const transactionType = toInboundTransactionType(order.source_type);
+      const transactionType = toInventoryTransactionType(order.business_type);
       for (const detail of details) {
         await execute(
           connection,
           `
           INSERT INTO inventory_transaction (
-            item_id, batch_id, transaction_type, quantity, stock_status,
+            item_id, batch_id, stock_order_id, stock_order_detail_id, transaction_type, quantity, stock_status,
             reference_type, reference_detail_id, idempotency_key, remark, created_at
           )
-          VALUES (?, ?, ?, ?, ?, 'INBOUND_DETAIL', ?, ?, ?, NOW())
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'STOCK_ORDER_DETAIL', ?, ?, ?, NOW())
         `,
           [
             detail.item_id,
             detail.batch_id,
+            order.id,
+            detail.id,
             transactionType,
-            detail.inbound_number,
+            detail.quantity,
             detail.stock_status,
             detail.id,
-            `INBOUND_DETAIL:${detail.id}`,
+            `STOCK_ORDER_DETAIL:${detail.id}`,
             detail.remark,
           ],
         );
@@ -247,9 +251,9 @@ export class InboundOrderRepository {
       await execute(
         connection,
         `
-        UPDATE inbound_order
-        SET status = '已入库',
-          inbound_at = NOW(),
+        UPDATE stock_order
+        SET status = '已完成',
+          operated_at = NOW(),
           version = version + 1,
           updated_at = NOW()
         WHERE id = ?
@@ -261,18 +265,18 @@ export class InboundOrderRepository {
     return this.getInboundOrder(id);
   }
 
-  /** 取消仅允许待入库主单，已经确认的库存事实必须通过后续反向业务处理。 */
+  /** 取消仅允许待确认入库主单，已经确认的库存事实必须通过后续反向业务处理。 */
   async cancelInboundOrder(id: number) {
     await this.database.transaction(async (connection) => {
       const order = await this.getOrderRow(id, connection, true);
-      if (order.status !== '待入库') {
+      if (order.status !== '待确认') {
         throw new BadRequestException('Only pending inbound order can be canceled');
       }
 
       await execute(
         connection,
         `
-        UPDATE inbound_order
+        UPDATE stock_order
         SET status = '已取消',
           version = version + 1,
           updated_at = NOW()
@@ -290,20 +294,22 @@ export class InboundOrderRepository {
     const params: QueryParam[] = [];
 
     if (filters.keyword?.trim()) {
-      clauses.push('(io.inbound_no LIKE ? OR io.provider LIKE ?)');
+      clauses.push('(io.order_no LIKE ? OR io.provider LIKE ?)');
       const keyword = `%${filters.keyword.trim()}%`;
       params.push(keyword, keyword);
     }
 
     if (filters.sourceType?.trim()) {
-      clauses.push('io.source_type = ?');
-      params.push(readSourceType(filters.sourceType));
+      clauses.push('io.business_type = ?');
+      params.push(toInboundBusinessType(readSourceType(filters.sourceType)));
     }
 
     if (filters.status?.trim()) {
       clauses.push('io.status = ?');
       params.push(readInboundStatus(filters.status));
     }
+
+    clauses.push("io.order_direction = '入库'");
 
     return { where: clauses.join(' AND '), params };
   }
@@ -314,13 +320,13 @@ export class InboundOrderRepository {
       `
       SELECT
         io.id,
-        io.inbound_no,
-        io.source_type,
+        io.order_no,
+        io.business_type,
         io.provider,
         io.work_order_id,
         io.production_batch_id,
         io.status,
-        io.inbound_at,
+        io.operated_at,
         io.operator_id,
         io.version,
         io.remark,
@@ -328,16 +334,16 @@ export class InboundOrderRepository {
         io.updated_at,
         (
           SELECT COUNT(*)
-          FROM inbound_detail idt
-          WHERE idt.inbound_id = io.id
+          FROM stock_order_detail idt
+          WHERE idt.order_id = io.id
         ) AS detail_count,
         (
-          SELECT COALESCE(SUM(idt.inbound_number), 0)
-          FROM inbound_detail idt
-          WHERE idt.inbound_id = io.id
+          SELECT COALESCE(SUM(idt.quantity), 0)
+          FROM stock_order_detail idt
+          WHERE idt.order_id = io.id
         ) AS total_inbound_number
-      FROM inbound_order io
-      WHERE io.id = ?
+      FROM stock_order io
+      WHERE io.id = ? AND io.order_direction = '入库'
       ${lock ? 'FOR UPDATE' : ''}
     `,
       [id],
@@ -357,21 +363,21 @@ export class InboundOrderRepository {
       `
       SELECT
         idt.id,
-        idt.inbound_id,
+        idt.order_id,
         idt.item_id,
         ii.item_code,
         ii.item_name,
         idt.batch_id,
         ib.batch_code,
-        idt.inbound_number,
+        idt.quantity,
         idt.stock_status,
         idt.source_stage,
         idt.remark,
         idt.created_at
-      FROM inbound_detail idt
+      FROM stock_order_detail idt
       INNER JOIN item_info ii ON ii.id = idt.item_id
       INNER JOIN item_batch ib ON ib.id = idt.batch_id AND ib.item_id = idt.item_id
-      WHERE idt.inbound_id = ?
+      WHERE idt.order_id = ?
       ORDER BY idt.id ASC
     `,
       [id],
@@ -457,8 +463,8 @@ export class InboundOrderRepository {
     const [row] = await this.database.query<RowDataPacket[]>(
       `
       SELECT id
-      FROM inbound_order
-      WHERE inbound_no = ?
+      FROM stock_order
+      WHERE order_no = ?
       LIMIT 1
     `,
       [inboundNo],
@@ -520,15 +526,15 @@ export class InboundOrderRepository {
     const prefix = `IN${datePart}`;
     const [row] = await this.database.query<RowDataPacket[]>(
       `
-      SELECT inbound_no
-      FROM inbound_order
-      WHERE inbound_no LIKE ?
-      ORDER BY inbound_no DESC
+      SELECT order_no
+      FROM stock_order
+      WHERE order_no LIKE ?
+      ORDER BY order_no DESC
       LIMIT 1
     `,
       [`${prefix}%`],
     );
-    const lastNo = typeof row?.inbound_no === 'string' ? row.inbound_no : '';
+    const lastNo = typeof row?.order_no === 'string' ? row.order_no : '';
     const lastSequence = lastNo.startsWith(prefix) ? Number(lastNo.slice(prefix.length)) : 0;
     const nextSequence = Number.isInteger(lastSequence) ? lastSequence + 1 : 1;
 
@@ -549,13 +555,14 @@ interface NormalizedInboundDetail {
 
 const mapInboundOrder = (row: InboundOrderRow): InboundOrderListItem => ({
   id: String(row.id),
-  inboundNo: row.inbound_no,
-  sourceType: row.source_type,
+  inboundNo: row.order_no,
+  sourceType: toSourceType(row.business_type),
+  businessType: row.business_type,
   provider: row.provider,
   workOrderId: row.work_order_id === null ? null : String(row.work_order_id),
   productionBatchId: row.production_batch_id === null ? null : String(row.production_batch_id),
   status: row.status,
-  inboundAt: row.inbound_at?.toISOString() ?? null,
+  inboundAt: row.operated_at?.toISOString() ?? null,
   operatorId: row.operator_id === null ? null : String(row.operator_id),
   remark: row.remark,
   createdAt: row.created_at.toISOString(),
@@ -566,13 +573,13 @@ const mapInboundOrder = (row: InboundOrderRow): InboundOrderListItem => ({
 
 const mapInboundDetail = (row: InboundDetailRow) => ({
   id: String(row.id),
-  inboundId: String(row.inbound_id),
+  inboundId: String(row.order_id),
   itemId: String(row.item_id),
   itemCode: row.item_code,
   itemName: row.item_name,
   batchId: String(row.batch_id),
   batchCode: row.batch_code,
-  inboundNumber: String(row.inbound_number),
+  inboundNumber: String(row.quantity),
   stockStatus: row.stock_status,
   sourceStage: row.source_stage,
   remark: row.remark,
@@ -596,18 +603,55 @@ const readDetails = (details: CreateInboundOrderPayload['details']): NormalizedI
   }));
 };
 
-const toInboundTransactionType = (sourceType: WarehouseSourceType): InventoryTransactionType => {
+const toInboundBusinessType = (sourceType: WarehouseSourceType): StockOrderBusinessType => {
   if (sourceType === '自产') {
     return '生产入库';
   }
   if (sourceType === '委外') {
     return '委外入库';
   }
+  if (sourceType === '退货入库') {
+    return '退货入库';
+  }
   if (sourceType === '盘点生成') {
-    return '盘点调整';
+    return '盘点生成';
+  }
+  if (sourceType === '其他') {
+    return '其他入库';
   }
 
   return '采购入库';
+};
+
+const toSourceType = (businessType: StockOrderBusinessType): WarehouseSourceType => {
+  if (businessType === '生产入库') {
+    return '自产';
+  }
+  if (businessType === '委外入库') {
+    return '委外';
+  }
+  if (businessType === '退货入库') {
+    return '退货入库';
+  }
+  if (businessType === '盘点生成') {
+    return '盘点生成';
+  }
+  if (businessType === '其他入库') {
+    return '其他';
+  }
+
+  return '外购';
+};
+
+const toInventoryTransactionType = (businessType: StockOrderBusinessType): InventoryTransactionType => {
+  if (businessType === '盘点生成') {
+    return '盘点调整';
+  }
+  if (businessType === '其他入库') {
+    return '采购入库';
+  }
+
+  return businessType as InventoryTransactionType;
 };
 
 const readSourceType = (value: string) => {

@@ -12,7 +12,7 @@ import { InboundOrderRepository } from './inbound-order.repository.js';
 export class InboundOrderController {
   constructor(private readonly inboundOrders: InboundOrderRepository) {}
 
-  /** 查询入库单列表，读取 inbound_order 并汇总 inbound_detail。 */
+  /** 查询入库单列表，底层读取入库方向的 stock_order 并汇总 stock_order_detail。 */
   @RequirePermission(PERMISSIONS.warehouse.inboundOrders.view)
   @Get()
   listInboundOrders(
@@ -32,14 +32,14 @@ export class InboundOrderController {
     );
   }
 
-  /** 查询入库单详情，包含 inbound_detail 明细。 */
+  /** 查询入库单详情，包含 stock_order_detail 明细。 */
   @RequirePermission(PERMISSIONS.warehouse.inboundOrders.detail)
   @Get(':id')
   getInboundOrder(@Param('id') id: string) {
     return this.inboundOrders.getInboundOrder(readId(id));
   }
 
-  /** 创建入库单，写入待入库主单、明细，并按需要创建库存批次。 */
+  /** 创建入库单，写入待确认库存单据、明细，并按需要创建库存批次。 */
   @RequirePermission(PERMISSIONS.warehouse.inboundOrders.create)
   @Post()
   createInboundOrder(@Body() body: CreateInboundOrderPayload) {
@@ -53,7 +53,7 @@ export class InboundOrderController {
     return this.inboundOrders.confirmInboundOrder(readId(id));
   }
 
-  /** 取消待入库单，已入库单不允许直接取消。 */
+  /** 取消待确认入库单，已完成单据不允许直接取消。 */
   @RequirePermission(PERMISSIONS.warehouse.inboundOrders.cancel)
   @Put(':id/cancel')
   cancelInboundOrder(@Param('id') id: string) {

@@ -325,7 +325,7 @@
 | `is_deleted` | `tinyint` | 软删除标记，默认 `0` |
 | `deleted_by` | `bigint unsigned` | 删除人，关联 `users.id` |
 | `deleted_at` | `datetime` | 删除时间 |
-特别说明：`docs/仓库表新方案.md` 已推翻之前的 `material_batch`、`material_demand`、`material_allocation`、`outbound_order`、`outbound_detail` 旧仓库方案。方案二以后以统一库存对象模型为准：库存对象使用 `item_info`，库存批次使用 `item_batch`，库存数量事实来源为 `inventory_transaction`。
+特别说明：`docs/仓库表新方案.md` 已推翻之前的 `material_batch`、`material_demand`、`material_allocation`、`inbound_order`、`inbound_detail`、`outbound_order`、`outbound_detail` 旧仓库方案。方案二以后以统一库存对象模型为准：库存对象使用 `item_info`，库存批次使用 `item_batch`，出入库业务统一使用 `stock_order`、`stock_order_detail`，库存数量事实来源为 `inventory_transaction`。
 
 ## 三、生产库存管理数据库表设计｜统一库存对象版本
 
@@ -605,6 +605,8 @@
 | `transaction_type`    | `VARCHAR(30)`   | 库存变动类型                       |
 | `quantity`            | `DECIMAL(12,4)` | 库存变动数量。正数表示增加，负数表示减少，不能为 `0` |
 | `stock_status`        | `VARCHAR(20)`   | 库存状态，默认 `可用`                 |
+| `stock_order_id`      | `BIGINT`        | 库存单据主表 ID，出入库流水应填写           |
+| `stock_order_detail_id` | `BIGINT`      | 库存单据明细 ID，出入库流水应填写           |
 | `reference_type`      | `VARCHAR(50)`   | 来源明细类型                       |
 | `reference_detail_id` | `BIGINT`        | 来源明细 ID，建议指向明细行，不要只指向主单      |
 | `idempotency_key`     | `VARCHAR(150)`  | 幂等键，防止同一业务动作重复生成库存流水         |
@@ -639,8 +641,7 @@
 
 | 值                    | 说明     |
 | -------------------- | ------ |
-| `INBOUND_DETAIL`     | 入库明细   |
-| `OUTBOUND_DETAIL`    | 出库明细   |
+| `STOCK_ORDER_DETAIL` | 库存单据明细 |
 | `RETURN_DETAIL`      | 退料明细   |
 | `SCRAP`              | 报废记录   |
 | `STOCK_CHECK_DETAIL` | 盘点明细   |
@@ -659,29 +660,31 @@
 
 * 库存流水是库存数量的事实来源。
 * 入库、出库、退料、报废、盘点调整都应产生对应流水。
-* `reference_detail_id` 建议指向明细表，例如 `inbound_detail.id`、`outbound_detail.id`、`return_detail.id`。
+* 出入库流水应通过 `stock_order_id`、`stock_order_detail_id` 关联统一库存单据。
+* `reference_detail_id` 保留为兼容字段；出入库场景统一指向 `stock_order_detail.id`，`reference_type = STOCK_ORDER_DETAIL`。
 * 不建议直接修改库存余额字段来表达库存变化。
 
 ---
 
-# 四、入库表
+# 四、库存单据表
 
 ---
 
-### 8. `inbound_order`
+### 8. `stock_order`
 
-职责：维护入库主单，记录一次入库动作。入库来源可以是外购、自主生产、委外、退货入库、盘点生成等。
+职责：维护库存单据主表，统一承载入库和出库主单。入库、生产领料出库、销售出库、委外入库、生产入库等业务都使用该表表达“一次库存业务动作”。
 
 | 字段                    | 类型             | 说明                                     |
 | --------------------- | -------------- | -------------------------------------- |
 | `id`                  | `BIGINT`       | 主键                                     |
-| `inbound_no`          | `VARCHAR(100)` | 入库单号                                   |
-| `source_type`         | `VARCHAR(30)`  | 来源类型：`自产`、`外购`、`委外`、`退货入库`、`盘点生成`、`其他` |
-| `provider`            | `VARCHAR(100)` | 供应商、委外方或来源方，自产时可为空                     |
-| `work_order_id`       | `BIGINT`       | 来源工单 ID，自产或委外时可填                       |
-| `production_batch_id` | `BIGINT`       | 来源生产批次 ID，自产半成品或成品入库时可填                |
-| `status`              | `VARCHAR(30)`  | 入库单状态，默认 `待入库`                         |
-| `inbound_at`          | `TIMESTAMP`    | 实际入库时间                                 |
+| `order_no`            | `VARCHAR(100)` | 库存单据号                                  |
+| `order_direction`     | `VARCHAR(20)`  | 单据方向：`入库`、`出库`                         |
+| `business_type`       | `VARCHAR(30)`  | 业务类型：`采购入库`、`生产入库`、`委外入库`、`退货入库`、`盘点生成`、`生产领料出库`、`销售出库`、`其他入库`、`其他出库` |
+| `provider`            | `VARCHAR(100)` | 供应商、委外方或来源方                            |
+| `work_order_id`       | `BIGINT`       | 来源或服务工单 ID                              |
+| `production_batch_id` | `BIGINT`       | 来源或服务生产批次 ID                            |
+| `status`              | `VARCHAR(30)`  | 单据状态，默认 `待确认`                           |
+| `operated_at`         | `TIMESTAMP`    | 实际确认时间                                  |
 | `operator_id`         | `BIGINT`       | 操作人 ID                                 |
 | `version`             | `INT`          | 乐观锁版本号，默认 `0`                          |
 | `remark`              | `TEXT`         | 备注                                     |
@@ -691,56 +694,64 @@
 约束：
 
 * 主键：`id`
-* 唯一约束：`UNIQUE (inbound_no)`
-* 唯一约束：`UNIQUE (id, source_type)`
+* 唯一约束：`UNIQUE (order_no)`
+* 唯一约束：`UNIQUE (id, order_direction)`
 * 外键：`FOREIGN KEY (work_order_id) REFERENCES work_orders(id)`
 * 外键：`FOREIGN KEY (production_batch_id) REFERENCES production_batches(id)`
 * 外键：`FOREIGN KEY (operator_id) REFERENCES users(id)`
-* 检查约束：`CHECK (source_type IN ('自产', '外购', '委外', '退货入库', '盘点生成', '其他'))`
-* 检查约束：`CHECK (status IN ('待入库', '已入库', '已取消'))`
+* 检查约束：`CHECK (order_direction IN ('入库', '出库'))`
+* 检查约束：`CHECK (business_type IN ('采购入库', '生产入库', '委外入库', '退货入库', '盘点生成', '生产领料出库', '销售出库', '其他入库', '其他出库'))`
+* 检查约束：`CHECK (status IN ('待确认', '已拣货', '已完成', '已取消'))`
 
 说明：
 
-* 入库主单表达“这一次入库动作”。
-* 具体入库了哪些对象、哪些批次、多少数量，由 `inbound_detail` 记录。
-* 半成品入库和成品入库都可以使用该表。
-* 自产入库时，`provider` 可以为空，`production_batch_id` 应建议填写。
-* 外购入库时，`provider` 建议填写，`production_batch_id` 为空。
+* `order_direction` 决定这张单据是增加库存还是减少库存。
+* `business_type` 决定库存流水的业务类型。
+* 入库单、出库单不再拆成两套主表，统一由该表承载。
+* 对外接口可以继续按入库、出库分路由，但底层表必须统一。
 
 ---
 
-### 9. `inbound_detail`
+### 9. `stock_order_detail`
 
-职责：维护入库明细，记录本次入库的具体库存对象、库存批次、入库数量和库存状态。
+职责：维护库存单据明细，统一记录入库或出库时涉及的库存对象、库存批次、数量、库存状态和生产分配关联。
 
-| 字段               | 类型              | 说明                            |
-| ---------------- | --------------- | ----------------------------- |
-| `id`             | `BIGINT`        | 主键                            |
-| `inbound_id`     | `BIGINT`        | 入库主单 ID，关联 `inbound_order.id` |
-| `item_id`        | `BIGINT`        | 入库对象 ID，关联 `item_info.id`     |
-| `batch_id`       | `BIGINT`        | 入库批次 ID，关联 `item_batch.id`    |
-| `inbound_number` | `DECIMAL(12,4)` | 本次入库数量                        |
-| `stock_status`   | `VARCHAR(20)`   | 入库后的库存状态，默认 `可用`              |
-| `source_stage`   | `VARCHAR(100)`  | 来源工序或生产阶段，半成品入库时有用            |
-| `remark`         | `TEXT`          | 备注                            |
-| `created_at`     | `TIMESTAMP`     | 创建时间，默认 `CURRENT_TIMESTAMP`   |
+| 字段                    | 类型              | 说明                                      |
+| --------------------- | --------------- | --------------------------------------- |
+| `id`                  | `BIGINT`        | 主键                                      |
+| `order_id`            | `BIGINT`        | 库存单据主表 ID，关联 `stock_order.id`          |
+| `item_id`             | `BIGINT`        | 库存对象 ID，关联 `item_info.id`               |
+| `batch_id`            | `BIGINT`        | 库存批次 ID，关联 `item_batch.id`              |
+| `quantity`            | `DECIMAL(12,4)` | 业务数量，始终保存正数；库存增减由库存流水正负表达           |
+| `stock_status`        | `VARCHAR(20)`   | 本次入库后的库存状态或本次出库扣减的库存状态，默认 `可用`      |
+| `production_batch_id` | `BIGINT`        | 服务生产批次 ID，生产领料出库和退料时可填              |
+| `demand_id`           | `BIGINT`        | 生产投入需求 ID                              |
+| `allocation_id`       | `BIGINT`        | 生产投入分配 ID                              |
+| `source_stage`        | `VARCHAR(100)`  | 来源工序或生产阶段，半成品入库时有用                  |
+| `release_after_return` | `TINYINT`      | 退料后是否释放给公共库存，默认 `0`                  |
+| `remark`              | `TEXT`          | 备注                                      |
+| `created_at`          | `TIMESTAMP`     | 创建时间，默认 `CURRENT_TIMESTAMP`             |
 
 约束：
 
 * 主键：`id`
-* 外键：`FOREIGN KEY (inbound_id) REFERENCES inbound_order(id)`
+* 外键：`FOREIGN KEY (order_id) REFERENCES stock_order(id)`
 * 外键：`FOREIGN KEY (item_id) REFERENCES item_info(id)`
 * 外键：`FOREIGN KEY (batch_id, item_id) REFERENCES item_batch(id, item_id)`
-* 检查约束：`CHECK (inbound_number > 0)`
-* 检查约束：`CHECK (stock_status IN ('可用', '待检', '冻结', '不良'))`
-* 唯一约束：`UNIQUE (inbound_id, batch_id, item_id)`
+* 外键：`FOREIGN KEY (demand_id, production_batch_id) REFERENCES production_item_demand(id, production_batch_id)`
+* 外键：`FOREIGN KEY (allocation_id, demand_id) REFERENCES production_item_allocation(id, demand_id)`
+* 检查约束：`CHECK (quantity > 0)`
+* 检查约束：`CHECK (stock_status IN ('可用', '待检', '冻结', '不良', '报废'))`
+* 检查约束：`CHECK (release_after_return IN (0, 1))`
+* 唯一约束：`UNIQUE (order_id, batch_id, item_id, allocation_id)`
 
 说明：
 
-* `inbound_detail` 是入库事实表。
-* 每条入库明细应生成一条或多条 `inventory_transaction`。
-* 生产入库、采购入库、委外入库都可以走该表。
-* 入库数量不建议写回 `item_batch`，应通过库存流水汇总。
+* `stock_order_detail` 是出入库业务事实明细。
+* 入库时 `quantity` 仍为正数，确认后生成正数 `inventory_transaction.quantity`。
+* 出库时 `quantity` 仍为正数，确认后生成负数 `inventory_transaction.quantity`。
+* 生产领料出库应填写 `demand_id`、`allocation_id`，确保和分配明细可追溯。
+* 入库数量和出库数量不建议写回 `item_batch`，应通过库存流水汇总。
 
 ---
 
@@ -804,7 +815,7 @@
 | 删除字段                 | 删除原因                                              |
 | -------------------- | ------------------------------------------------- |
 | `allocated_quantity` | 由 `production_item_allocation.assigned_number` 汇总 |
-| `outbound_quantity`  | 由 `outbound_detail.outbound_number` 汇总            |
+| `outbound_quantity`  | 由 `stock_order_detail.quantity` 按生产领料出库汇总       |
 | `returned_quantity`  | 由 `return_detail.return_number` 汇总                |
 | `scrapped_quantity`  | 由 `item_scrap.scrap_number` 汇总                    |
 
@@ -852,7 +863,7 @@
 
 | 删除字段                | 删除原因                   |
 | ------------------- | ---------------------- |
-| `outbound_quantity` | 由 `outbound_detail` 汇总 |
+| `outbound_quantity` | 由 `stock_order_detail` 按生产领料出库汇总 |
 | `returned_quantity` | 由 `return_detail` 汇总   |
 | `scrapped_quantity` | 由 `item_scrap` 汇总      |
 
@@ -866,80 +877,21 @@
 
 ---
 
-# 六、生产领料出库表
+# 六、生产领料出库说明
 
 ---
 
-### 12. `outbound_order`
+生产领料出库不再单独创建 `outbound_order`、`outbound_detail`。
 
-职责：维护生产领料出库主单，记录库管针对某个生产批次的一次出库动作。
+统一规则：
 
-| 字段                    | 类型             | 说明                                 |
-| --------------------- | -------------- | ---------------------------------- |
-| `id`                  | `BIGINT`       | 主键                                 |
-| `outbound_no`         | `VARCHAR(100)` | 出库单号                               |
-| `production_batch_id` | `BIGINT`       | 生产批次 ID，关联 `production_batches.id` |
-| `work_order_id`       | `BIGINT`       | 工单 ID，冗余保存，便于查询                    |
-| `status`              | `VARCHAR(30)`  | 出库单状态，默认 `待拣货`                     |
-| `outbound_at`         | `TIMESTAMP`    | 实际出库时间                             |
-| `operator_id`         | `BIGINT`       | 操作人 ID                             |
-| `version`             | `INT`          | 乐观锁版本号，默认 `0`                      |
-| `remark`              | `TEXT`         | 备注                                 |
-| `created_at`          | `TIMESTAMP`    | 创建时间，默认 `CURRENT_TIMESTAMP`        |
-| `updated_at`          | `TIMESTAMP`    | 更新时间，默认 `CURRENT_TIMESTAMP`        |
-
-约束：
-
-* 主键：`id`
-* 唯一约束：`UNIQUE (outbound_no)`
-* 唯一约束：`UNIQUE (id, production_batch_id)`
-* 外键：`FOREIGN KEY (production_batch_id) REFERENCES production_batches(id)`
-* 外键：`FOREIGN KEY (work_order_id) REFERENCES work_orders(id)`
-* 外键：`FOREIGN KEY (operator_id) REFERENCES users(id)`
-* 检查约束：`CHECK (status IN ('待拣货', '已拣货', '部分出库', '已出库', '已取消'))`
-
-说明：
-
-* `outbound_order` 表示一次出库动作。
-* 一张出库单可以包含多个物料、多个需求、多个库存批次。
-* 出库单主表建议关联 `production_batch_id`，而不是单个 `demand_id`。
-* 具体出了哪些物料、哪些批次、多少数量，由 `outbound_detail` 记录。
-
----
-
-### 13. `outbound_detail`
-
-职责：维护生产领料出库明细，记录某次出库动作中每个分配行实际出库的库存对象、批次和数量。
-
-| 字段                    | 类型              | 说明                                         |
-| --------------------- | --------------- | ------------------------------------------ |
-| `id`                  | `BIGINT`        | 主键                                         |
-| `outbound_id`         | `BIGINT`        | 出库主单 ID，关联 `outbound_order.id`             |
-| `production_batch_id` | `BIGINT`        | 生产批次 ID，冗余保存，用于查询和约束                       |
-| `demand_id`           | `BIGINT`        | 需求 ID，关联 `production_item_demand.id`       |
-| `allocation_id`       | `BIGINT`        | 分配明细 ID，关联 `production_item_allocation.id` |
-| `item_id`             | `BIGINT`        | 出库对象 ID，冗余保存                               |
-| `batch_id`            | `BIGINT`        | 出库库存批次 ID，冗余保存                             |
-| `outbound_number`     | `DECIMAL(12,4)` | 本次出库数量                                     |
-| `created_at`          | `TIMESTAMP`     | 创建时间，默认 `CURRENT_TIMESTAMP`                |
-
-约束：
-
-* 主键：`id`
-* 外键：`FOREIGN KEY (outbound_id, production_batch_id) REFERENCES outbound_order(id, production_batch_id)`
-* 外键：`FOREIGN KEY (demand_id, production_batch_id) REFERENCES production_item_demand(id, production_batch_id)`
-* 外键：`FOREIGN KEY (allocation_id, demand_id) REFERENCES production_item_allocation(id, demand_id)`
-* 外键：`FOREIGN KEY (batch_id, item_id) REFERENCES item_batch(id, item_id)`
-* 检查约束：`CHECK (outbound_number > 0)`
-* 唯一约束：`UNIQUE (outbound_id, allocation_id)`
-
-说明：
-
-* `outbound_detail` 是出库事实明细表。
-* `inventory_transaction` 中的生产领料出库流水应引用 `outbound_detail.id`。
-* 出库明细用于判断某条分配是否已经出库、某条需求是否已经满足。
-* `outbound_id` 用于表达哪些明细属于同一次出库动作。
-* `production_batch_id` 是有价值的冗余字段，便于按生产批次查询出库记录。
+* 主单使用 `stock_order`。
+* 明细使用 `stock_order_detail`。
+* 生产领料出库主单：`stock_order.order_direction = '出库'`，`stock_order.business_type = '生产领料出库'`。
+* 生产领料出库明细应填写 `stock_order_detail.production_batch_id`、`demand_id`、`allocation_id`、`item_id`、`batch_id`、`quantity`。
+* `stock_order_detail.quantity` 始终为正数；确认出库时生成 `inventory_transaction.quantity` 负数流水。
+* 出库流水应填写 `inventory_transaction.stock_order_id`、`stock_order_detail_id`，同时兼容写入 `reference_type = STOCK_ORDER_DETAIL`、`reference_detail_id = stock_order_detail.id`。
+* 旧字段语义映射：`outbound_order.outbound_no` -> `stock_order.order_no`，`outbound_detail.outbound_number` -> `stock_order_detail.quantity`。
 
 ---
 
@@ -1226,7 +1178,7 @@
 
 | 字段                             | 计算来源                                                              |
 | ------------------------------ | ----------------------------------------------------------------- |
-| `outbound_quantity`            | 汇总 `outbound_detail.outbound_number`                              |
+| `outbound_quantity`            | 汇总生产领料出库对应的 `stock_order_detail.quantity`                  |
 | `returned_quantity`            | 汇总 `return_detail.return_number`                                  |
 | `returned_available_quantity`  | 汇总 `return_stock_status = 可用` 且 `release_after_return = 0` 的退料数量  |
 | `released_return_quantity`     | 汇总 `release_after_return = 1` 的退料数量                               |
@@ -1381,7 +1333,7 @@
 说明：
 
 * 该视图适合查看某个生产批次产出了哪些半成品和成品。
-* 半成品和成品都来自 `inbound_detail`。
+* 半成品和成品都来自入库方向的 `stock_order_detail`。
 * 当前库存数量不一定等于生产入库数量，因为后续可能发生销售出库、盘点调整、报废出库等。
 
 ---
@@ -1439,14 +1391,14 @@
 
 | 表                       | 职责                     |
 | ----------------------- | ---------------------- |
-| `outbound_detail`       | 记录业务上出了什么、从哪个分配行出、出了多少 |
+| `stock_order_detail`    | 记录业务上出了什么、从哪个分配行出、出了多少 |
 | `inventory_transaction` | 记录库存账面如何变化             |
 
 说明：
 
-* `inventory_transaction.reference_detail_id` 应指向 `outbound_detail.id`。
-* 一张 `outbound_order` 可以有多条 `outbound_detail`。
-* `outbound_order.production_batch_id` 表示本次出库服务哪个生产批次。
+* `inventory_transaction.stock_order_detail_id` 应指向 `stock_order_detail.id`。
+* 一张出库方向的 `stock_order` 可以有多条 `stock_order_detail`。
+* `stock_order.production_batch_id` 表示本次出库服务哪个生产批次。
 
 ---
 
@@ -1454,13 +1406,13 @@
 
 | 表                       | 职责                   |
 | ----------------------- | -------------------- |
-| `inbound_detail`        | 记录业务上入库了什么、哪个批次、多少数量 |
+| `stock_order_detail`    | 记录业务上入库了什么、哪个批次、多少数量 |
 | `inventory_transaction` | 记录库存账面如何增加           |
 
 说明：
 
-* 物料采购入库、半成品入库、成品入库都走 `inbound_order` + `inbound_detail`。
-* `inventory_transaction.reference_detail_id` 应指向 `inbound_detail.id`。
+* 物料采购入库、半成品入库、成品入库都走入库方向的 `stock_order` + `stock_order_detail`。
+* `inventory_transaction.stock_order_detail_id` 应指向 `stock_order_detail.id`。
 
 ---
 
@@ -1533,17 +1485,17 @@ production_item_demand
   ↓
 production_item_allocation
   ↓
-outbound_order
+stock_order（出库方向）
   ↓
-outbound_detail
+stock_order_detail
   ↓
 inventory_transaction
 
 production_batches
   ↓
-inbound_order
+stock_order（入库方向）
   ↓
-inbound_detail
+stock_order_detail
   ↓
 item_batch
   ↓

@@ -5,18 +5,18 @@ import { RequirePermission } from '../../auth/require-permission.decorator.js';
 import { readId, readPagination } from '../../shared/request-utils.js';
 import { plannedWarehouseEndpoint } from '../warehouse-planned-endpoint.js';
 
-/** 出库管理：生产领料出库主单与分配明细出库事实。 */
+/** 出库管理：对外保留出库路由，底层统一使用 stock_order 与 stock_order_detail。 */
 @UseGuards(PermissionGuard)
 @Controller('warehouse/outbound-orders')
 export class OutboundOrderController {
-  /** 查询出库单列表，后续读取 outbound_order。 */
+  /** 查询出库单列表，后续读取出库方向的 stock_order。 */
   @RequirePermission(PERMISSIONS.warehouse.outboundOrders.view)
   @Get()
   listOutboundOrders(@Query('page') page?: string, @Query('pageSize') pageSize?: string) {
     return plannedWarehouseEndpoint('出库单列表', readPagination(page, pageSize));
   }
 
-  /** 查询出库单详情，后续包含 outbound_detail 明细。 */
+  /** 查询出库单详情，后续包含 stock_order_detail 明细。 */
   @RequirePermission(PERMISSIONS.warehouse.outboundOrders.detail)
   @Get(':id')
   getOutboundOrder(@Param('id') id: string) {
