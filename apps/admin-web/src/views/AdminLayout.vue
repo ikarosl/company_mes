@@ -102,6 +102,11 @@ const menuGroups: MenuGroup[] = [
         permission: PERMISSIONS.warehouse.inventory.page,
       },
       {
+        title: '库存盘点台账',
+        path: '/warehouse/stocktakes',
+        permission: PERMISSIONS.warehouse.stocktakes.page,
+      },
+      {
         title: '出入库管理',
         path: '/warehouse/finished-transactions',
         permission: PERMISSIONS.warehouse.finishedTransactions.page,

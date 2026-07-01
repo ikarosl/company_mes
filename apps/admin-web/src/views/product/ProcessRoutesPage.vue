@@ -163,6 +163,16 @@
             </el-select>
           </template>
         </el-table-column>
+        <el-table-column label="是否报工" width="110" align="center">
+          <template #default="{ row }">
+            <el-switch v-model="row.needRecord" />
+          </template>
+        </el-table-column>
+        <el-table-column label="是否检验" width="110" align="center">
+          <template #default="{ row }">
+            <el-switch v-model="row.needInspection" />
+          </template>
+        </el-table-column>
         <el-table-column label="备注" min-width="160">
           <template #default="{ row }">
             <el-input v-model="row.remark" placeholder="可填写路线内备注" />
@@ -200,6 +210,20 @@
         <el-table-column label="默认负责人" min-width="120">
           <template #default="{ row }">{{ row.defaultOwnerName || '-' }}</template>
         </el-table-column>
+        <el-table-column label="是否报工" width="100" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.needRecord ? 'success' : 'info'" effect="light">
+              {{ row.needRecord ? '需要' : '不需要' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="是否检验" width="100" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.needInspection ? 'warning' : 'info'" effect="light">
+              {{ row.needInspection ? '需要' : '不需要' }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="技术文件" min-width="180">
           <template #default="{ row }">
             <el-link v-if="row.sopFileName" type="primary" :href="row.sopFileUrl || undefined" target="_blank">
@@ -233,6 +257,10 @@ type StepFormRow = {
   processId: string;
   stepOrder: number;
   defaultOwnerId: string;
+  /** 是否必须报工：生成批次工序任务时用于判断该工序是否进入现场报工流程。 */
+  needRecord: boolean;
+  /** 是否需要检验：用于标记该路线工序后续是否需要质量检验介入。 */
+  needInspection: boolean;
   status: number;
   remark: string;
 };
@@ -365,6 +393,8 @@ const openSteps = async (row: ProcessRouteListItem) => {
     processId: step.processId,
     stepOrder: step.stepOrder,
     defaultOwnerId: step.defaultOwnerId ?? '',
+    needRecord: step.needRecord,
+    needInspection: step.needInspection,
     status: step.status,
     remark: step.remark ?? '',
   }));
@@ -418,6 +448,8 @@ const addStep = () => {
     stepOrder: stepForm.steps.length + 1,
     processId: '',
     defaultOwnerId: '',
+    needRecord: true,
+    needInspection: false,
     status: 1,
     remark: '',
   });
@@ -470,6 +502,8 @@ const submitSteps = async () => {
         processId: step.processId,
         stepOrder: step.stepOrder,
         defaultOwnerId: step.defaultOwnerId || null,
+        needRecord: step.needRecord,
+        needInspection: step.needInspection,
         status: step.status,
         remark: step.remark,
       })),

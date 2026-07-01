@@ -350,6 +350,73 @@ export interface StocktakeMaterialBatchPayload {
   remark?: string | null;
 }
 
+/** 库存盘点对象类型：物料库存批次或成品/半成品库存批次。 */
+export type InventoryStocktakeInventoryType = 'material' | 'product';
+
+/** 库存盘点差异类型，由“实盘数量 - 账面数量”计算得到。 */
+export type InventoryStocktakeDifferenceType = 'surplus' | 'shortage' | 'equal';
+
+/** 库存盘点台账状态：confirmed 表示已登记，adjusted 表示已完成调账。 */
+export type InventoryStocktakeStatus = 'draft' | 'confirmed' | 'adjusted' | 'voided';
+
+/** 库存盘点目标下拉项，用于在前端选择要盘点的库存批次。 */
+export interface InventoryStocktakeTargetOption {
+  id: string;
+  inventoryType: InventoryStocktakeInventoryType;
+  batchNo: string;
+  productId: string;
+  productModel: string;
+  productName: string;
+  objectType: string | null;
+  quantity: string;
+  unit: string | null;
+  location: string | null;
+}
+
+/** 库存盘点台账列表项，记录一次盘点事实及后续调账结果。 */
+export interface InventoryStocktakeListItem {
+  id: string;
+  stocktakeNo: string | null;
+  inventoryType: InventoryStocktakeInventoryType;
+  inventoryBatchId: string;
+  batchNoSnapshot: string | null;
+  productIdSnapshot: string | null;
+  productModel: string | null;
+  productName: string | null;
+  objectType: string | null;
+  beforeQuantity: string;
+  countedQuantity: string;
+  differenceQuantity: string;
+  differenceType: InventoryStocktakeDifferenceType;
+  reasonType: string | null;
+  status: InventoryStocktakeStatus;
+  afterQuantity: string | null;
+  operatorName: string | null;
+  operatedAt: string;
+  adjustedByName: string | null;
+  adjustedAt: string | null;
+  fileUrl: string | null;
+  remark: string | null;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+/** 新增盘点台账请求：账面数量由后端锁定库存批次后读取，前端只提交实盘数量。 */
+export interface CreateInventoryStocktakePayload {
+  inventoryType: InventoryStocktakeInventoryType;
+  inventoryBatchId: string;
+  countedQuantity: string | number;
+  reasonType?: string | null;
+  operatedAt?: string | null;
+  fileUrl?: string | null;
+  remark?: string | null;
+}
+
+/** 确认盘点调账请求：可补充调账说明，不允许前端直接提交调整后库存。 */
+export interface AdjustInventoryStocktakePayload {
+  remark?: string | null;
+}
+
 /** 物料出入库整合列表的记录类型。 */
 export type MaterialTransactionType = 'inbound' | 'outbound' | 'return';
 

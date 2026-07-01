@@ -1,6 +1,10 @@
 import {
   BUSINESS_API,
   type CreateMaterialBatchPayload,
+  type CreateInventoryStocktakePayload,
+  type AdjustInventoryStocktakePayload,
+  type InventoryStocktakeListItem,
+  type InventoryStocktakeTargetOption,
   type MaterialBatchDetail,
   type MaterialBatchListItem,
   type MaterialInboundPayload,
@@ -48,6 +52,30 @@ export const warehouseApi = {
     requestData<MaterialBatchDetail>({
       url: `${BUSINESS_API.warehouseInventory}/${id}/${disabled ? 'disable' : 'enable'}`,
       method: 'PUT',
+    }),
+  listStocktakes: (params?: QueryParams) =>
+    requestData<PageResult<InventoryStocktakeListItem>>({
+      url: BUSINESS_API.warehouseStocktakes,
+      method: 'GET',
+      params,
+    }),
+  listStocktakeTargets: (params?: QueryParams) =>
+    requestData<InventoryStocktakeTargetOption[]>({
+      url: `${BUSINESS_API.warehouseStocktakes}/targets`,
+      method: 'GET',
+      params,
+    }),
+  createStocktake: (data: CreateInventoryStocktakePayload) =>
+    requestData<InventoryStocktakeListItem>({
+      url: BUSINESS_API.warehouseStocktakes,
+      method: 'POST',
+      data,
+    }),
+  adjustStocktake: (id: string, data: AdjustInventoryStocktakePayload) =>
+    requestData<InventoryStocktakeListItem>({
+      url: `${BUSINESS_API.warehouseStocktakes}/${id}/adjust`,
+      method: 'POST',
+      data,
     }),
   listFinishedTransactions: (params?: QueryParams) =>
     requestData<PageResult<unknown>>({

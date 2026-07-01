@@ -34,6 +34,7 @@ CREATE TABLE `product_flow_records` (
   KEY `idx_product_flow_records_product_id` (`product_id`),
   KEY `idx_product_flow_records_flow_type` (`flow_type`),
   KEY `idx_product_flow_records_flow_date` (`flow_date`),
+  KEY `idx_product_flow_records_related_stocktake_id` (`related_stocktake_id`),
   KEY `idx_product_flow_records_related_flow_id` (`related_flow_id`),
   KEY `idx_product_flow_records_is_deleted` (`is_deleted`),
   CONSTRAINT `fk_product_flow_records_inventory_id`
@@ -42,6 +43,8 @@ CREATE TABLE `product_flow_records` (
     FOREIGN KEY (`batch_id`) REFERENCES `production_batches` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_product_flow_records_product_id`
     FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_product_flow_records_related_stocktake_id`
+    FOREIGN KEY (`related_stocktake_id`) REFERENCES `inventory_stocktakes` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_product_flow_records_related_flow_id`
     FOREIGN KEY (`related_flow_id`) REFERENCES `product_flow_records` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `chk_product_flow_records_object_type`
@@ -50,5 +53,6 @@ CREATE TABLE `product_flow_records` (
     CHECK (`flow_type` IN ('inbound','outbound','adjustment')),
   CONSTRAINT `chk_product_flow_records_partner_type`
     CHECK (`partner_type` IS NULL OR `partner_type` IN ('customer','supplier')),
-  CONSTRAINT `chk_product_flow_records_quantity` CHECK (`quantity` > 0)
+  CONSTRAINT `chk_product_flow_records_quantity`
+    CHECK (`quantity` > 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='成品和半成品入库、出库、退回与调整流水表';

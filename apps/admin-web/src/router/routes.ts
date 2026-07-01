@@ -20,6 +20,7 @@ import ProductionTasksPage from '../views/production/ProductionTasksPage.vue';
 import WorkerTasksPage from '../views/WorkerTasksPage.vue';
 import WarehouseInventoryPage from '../views/warehouse/WarehouseInventoryPage.vue';
 import MaterialTransactionsPage from '../views/warehouse/MaterialTransactionsPage.vue';
+import InventoryStocktakesPage from '../views/warehouse/InventoryStocktakesPage.vue';
 // import ProcessTemplatesPage from '../views/ProcessTemplatesPage.vue';
 // import ProductionBatchDetailPage from '../views/ProductionBatchDetailPage.vue';
 // import ProductionBatchesPage from '../views/ProductionBatchesPage.vue';
@@ -107,6 +108,16 @@ export const routes: RouteRecordRaw[] = [
           title: '库存管理',
           section: '仓储管理',
           permission: PERMISSIONS.warehouse.inventory.page,
+        },
+      },
+      {
+        path: 'warehouse/stocktakes',
+        name: 'warehouse-stocktakes',
+        component: InventoryStocktakesPage,
+        meta: {
+          title: '库存盘点台账',
+          section: '仓储管理',
+          permission: PERMISSIONS.warehouse.stocktakes.page,
         },
       },
       plannedPage(

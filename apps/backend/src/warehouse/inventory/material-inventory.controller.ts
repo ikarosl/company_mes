@@ -5,9 +5,11 @@ import type {
   StocktakeMaterialBatchPayload,
   UpdateMaterialBatchPayload,
 } from '@company/api-contract';
+import { CurrentUser } from '../../auth/current-user.decorator.js';
 import { PermissionGuard } from '../../auth/permission.guard.js';
 import { RequirePermission } from '../../auth/require-permission.decorator.js';
 import { readId, readPagination } from '../../shared/request-utils.js';
+import { InventoryStocktakeRepository } from '../stocktakes/inventory-stocktake.repository.js';
 import { MaterialInventoryRepository } from './material-inventory.repository.js';
 
 @UseGuards(PermissionGuard)
@@ -16,6 +18,8 @@ export class MaterialInventoryController {
   constructor(
     @Inject(MaterialInventoryRepository)
     private readonly inventory: MaterialInventoryRepository,
+    @Inject(InventoryStocktakeRepository)
+    private readonly stocktakes: InventoryStocktakeRepository,
   ) {}
 
   @RequirePermission(PERMISSIONS.warehouse.inventory.view)
@@ -54,8 +58,22 @@ export class MaterialInventoryController {
 
   @RequirePermission(PERMISSIONS.warehouse.inventory.stocktake)
   @Put(':id/stocktake')
-  stocktakeMaterialBatch(@Param('id') id: string, @Body() body: StocktakeMaterialBatchPayload) {
-    return this.inventory.stocktakeMaterialBatch(readId(id), body);
+  async stocktakeMaterialBatch(
+    @Param('id') id: string,
+    @Body() body: StocktakeMaterialBatchPayload,
+    @CurrentUser('id') userId: string,
+  ) {
+    const materialBatchId = readId(id);
+    await this.stocktakes.createAndAdjust(
+      {
+        inventoryType: 'material',
+        inventoryBatchId: String(materialBatchId),
+        countedQuantity: body.quantity,
+        remark: body.remark,
+      },
+      Number(userId),
+    );
+    return this.inventory.getMaterialBatch(materialBatchId);
   }
 
   @RequirePermission(PERMISSIONS.warehouse.inventory.adjust)

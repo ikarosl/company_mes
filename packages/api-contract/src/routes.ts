@@ -24,6 +24,7 @@ export const BUSINESS_API = {
   processes: '/processes',
   routes: '/routes',
   warehouseInventory: '/warehouse/inventory',
+  warehouseStocktakes: '/warehouse/stocktakes',
   warehouseFinishedTransactions: '/warehouse/finished-transactions',
   warehouseMaterialTransactions: '/warehouse/material-transactions',
   orders: '/orders',

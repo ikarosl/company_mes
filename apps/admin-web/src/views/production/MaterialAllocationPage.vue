@@ -166,7 +166,7 @@
           </el-table-column>
           <el-table-column label="操作" width="90" fixed="right">
             <template #default="{ row }">
-              <el-button link type="danger" :disabled="!row.canClear" @click="clearAllocation(row.id)">清除</el-button>
+              <el-button link type="danger" :disabled="!row.canClear" @click="clearAllocation(row.id)">取消预留</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -336,8 +336,8 @@ const clearAllocation = async (allocationId: string) => {
     return;
   }
   try {
-    await ElMessageBox.confirm('确认清除这一条物料批次预留？', '清除分配', {
-      confirmButtonText: '确认清除',
+    await ElMessageBox.confirm('确认取消这一条物料批次预留？取消后会保留原预留记录并追加取消预留流水。', '取消预留', {
+      confirmButtonText: '确认取消',
       cancelButtonText: '取消',
       type: 'warning',
     });
@@ -355,9 +355,9 @@ const clearAllocation = async (allocationId: string) => {
     if (!activeRequirement.value?.allocations.length) {
       allocationDetailVisible.value = false;
     }
-    EMessage.success('物料分配已清除');
+    EMessage.success('物料预留已取消');
   } catch (error) {
-    EMessage.error(error, '清除物料分配失败');
+    EMessage.error(error, '取消物料预留失败');
   }
 };
 

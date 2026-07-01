@@ -219,21 +219,33 @@ export class MaterialAllocationRepository {
     const allocation = await this.getAllocationRecord(batchId, allocationId);
     this.auditContext.setBeforeData(allocation);
     if (decimalNumber(allocation.net_used_quantity) > 0) {
-      throw new BadRequestException('该预留已被领料使用，不能清除');
+      throw new BadRequestException('该预留已被领料使用，不能取消');
     }
 
+    if (decimalNumber(allocation.remaining_reserved_quantity) <= 0) {
+      throw new BadRequestException('该预留已取消，无需重复取消');
+    }
+
+    // 取消分配不删除原预留记录，而是追加 unreserve 流水，保证预留与取消预留都有事实留痕。
     await this.database.execute(
       `
-      UPDATE batch_material_usages
-      SET is_deleted = 1,
-        deleted_at = NOW(),
-        updated_at = NOW()
-      WHERE id = ?
-        AND batch_id = ?
-        AND operation_type = 'reserve'
-        AND is_deleted = 0
+      INSERT INTO batch_material_usages (
+        batch_id, require_id, material_batch_id, reserved_quantity, product_materials_id,
+        operation_type, operation_quantity, used_quantity, unit, related_usage_id,
+        recorded_at, remark, created_at, updated_at
+      )
+      VALUES (?, ?, ?, 0, ?, 'unreserve', ?, 0, ?, ?, NOW(), ?, NOW(), NOW())
     `,
-      [allocationId, batchId],
+      [
+        allocation.batch_id,
+        allocation.require_id,
+        allocation.material_batch_id,
+        allocation.product_materials_id,
+        allocation.remaining_reserved_quantity,
+        allocation.unit,
+        allocation.id,
+        '取消物料预留',
+      ],
     );
 
     await this.refreshBatchMaterialStatus(batchId);
@@ -546,7 +558,8 @@ export class MaterialAllocationRepository {
         reserve.product_materials_id AS product_material_id,
         reserve.material_batch_id,
         mb.material_batch_no,
-        reserve.reserved_quantity,
+        COALESCE(NULLIF(reserve.operation_quantity, 0), reserve.reserved_quantity, 0)
+          - COALESCE(unreserve.unreserved_quantity, 0) AS reserved_quantity,
         COALESCE(flow.issued_quantity, 0) AS issued_quantity,
         COALESCE(flow.returned_quantity, 0) AS returned_quantity,
         COALESCE(flow.issued_quantity, 0) - COALESCE(flow.returned_quantity, 0) AS used_quantity,
@@ -560,23 +573,36 @@ export class MaterialAllocationRepository {
       LEFT JOIN users recorder ON recorder.id = reserve.recorded_by
       LEFT JOIN (
         SELECT
+          related_usage_id,
+          SUM(COALESCE(NULLIF(operation_quantity, 0), reserved_quantity, 0)) AS unreserved_quantity
+        FROM batch_material_usages
+        WHERE is_deleted = 0
+          AND operation_type = 'unreserve'
+          AND related_usage_id IS NOT NULL
+        GROUP BY related_usage_id
+      ) unreserve
+        ON unreserve.related_usage_id = reserve.id
+      LEFT JOIN (
+        SELECT
           batch_id,
-          product_materials_id,
+          COALESCE(require_id, product_materials_id) AS demand_key,
           material_batch_id,
-          SUM(CASE WHEN operation_type = 'issue' THEN used_quantity ELSE 0 END)
+          SUM(CASE WHEN operation_type = 'issue' THEN COALESCE(NULLIF(operation_quantity, 0), used_quantity, 0) ELSE 0 END)
             AS issued_quantity,
-          SUM(CASE WHEN operation_type = 'return' THEN used_quantity ELSE 0 END)
+          SUM(CASE WHEN operation_type = 'return' THEN COALESCE(NULLIF(operation_quantity, 0), used_quantity, 0) ELSE 0 END)
             AS returned_quantity
         FROM batch_material_usages
         WHERE is_deleted = 0 AND operation_type IN ('issue','return')
-        GROUP BY batch_id, product_materials_id, material_batch_id
+        GROUP BY batch_id, COALESCE(require_id, product_materials_id), material_batch_id
       ) flow
         ON flow.batch_id = reserve.batch_id
-        AND flow.product_materials_id = reserve.product_materials_id
+        AND flow.demand_key = COALESCE(reserve.require_id, reserve.product_materials_id)
         AND flow.material_batch_id = reserve.material_batch_id
       WHERE reserve.batch_id IN (${placeholders})
         AND reserve.operation_type = 'reserve'
         AND reserve.is_deleted = 0
+        AND COALESCE(NULLIF(reserve.operation_quantity, 0), reserve.reserved_quantity, 0)
+          - COALESCE(unreserve.unreserved_quantity, 0) > 0
       ORDER BY reserve.batch_id DESC, reserve.product_materials_id, reserve.id ASC
       `,
       batchIds,
@@ -618,8 +644,13 @@ export class MaterialAllocationRepository {
     const [row] = await this.database.query<
       (RowDataPacket & {
         id: number;
+        batch_id: number;
+        require_id: number | null;
+        material_batch_id: number;
         product_materials_id: number;
+        unit: string | null;
         reserved_quantity: string | number;
+        remaining_reserved_quantity: string | number;
         total_reserved_quantity: string | number;
         net_used_quantity: string | number;
       })[]
@@ -627,24 +658,39 @@ export class MaterialAllocationRepository {
       `
       SELECT
         reserve.id,
+        reserve.batch_id,
+        reserve.require_id,
+        reserve.material_batch_id,
         reserve.product_materials_id,
-        reserve.reserved_quantity,
+        reserve.unit,
+        COALESCE(NULLIF(reserve.operation_quantity, 0), reserve.reserved_quantity, 0)
+          AS reserved_quantity,
+        COALESCE(NULLIF(reserve.operation_quantity, 0), reserve.reserved_quantity, 0)
+          - (
+            SELECT COALESCE(SUM(COALESCE(NULLIF(cancel_operation.operation_quantity, 0), cancel_operation.reserved_quantity, 0)), 0)
+            FROM batch_material_usages cancel_operation
+            WHERE cancel_operation.related_usage_id = reserve.id
+              AND cancel_operation.operation_type = 'unreserve'
+              AND cancel_operation.is_deleted = 0
+          ) AS remaining_reserved_quantity,
         (
-          SELECT COALESCE(SUM(other_reserve.reserved_quantity), 0)
+          SELECT COALESCE(SUM(COALESCE(NULLIF(other_reserve.operation_quantity, 0), other_reserve.reserved_quantity, 0)), 0)
           FROM batch_material_usages other_reserve
           WHERE other_reserve.batch_id = reserve.batch_id
-            AND other_reserve.product_materials_id = reserve.product_materials_id
+            AND COALESCE(other_reserve.require_id, other_reserve.product_materials_id) =
+              COALESCE(reserve.require_id, reserve.product_materials_id)
             AND other_reserve.material_batch_id = reserve.material_batch_id
             AND other_reserve.operation_type = 'reserve'
             AND other_reserve.is_deleted = 0
         ) AS total_reserved_quantity,
         (
           SELECT
-            COALESCE(SUM(CASE WHEN flow.operation_type = 'issue' THEN flow.used_quantity ELSE 0 END), 0)
-            - COALESCE(SUM(CASE WHEN flow.operation_type = 'return' THEN flow.used_quantity ELSE 0 END), 0)
+            COALESCE(SUM(CASE WHEN flow.operation_type = 'issue' THEN COALESCE(NULLIF(flow.operation_quantity, 0), flow.used_quantity, 0) ELSE 0 END), 0)
+            - COALESCE(SUM(CASE WHEN flow.operation_type = 'return' THEN COALESCE(NULLIF(flow.operation_quantity, 0), flow.used_quantity, 0) ELSE 0 END), 0)
           FROM batch_material_usages flow
           WHERE flow.batch_id = reserve.batch_id
-            AND flow.product_materials_id = reserve.product_materials_id
+            AND COALESCE(flow.require_id, flow.product_materials_id) =
+              COALESCE(reserve.require_id, reserve.product_materials_id)
             AND flow.material_batch_id = reserve.material_batch_id
             AND flow.operation_type IN ('issue','return')
             AND flow.is_deleted = 0

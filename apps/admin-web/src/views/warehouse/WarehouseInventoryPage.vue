@@ -76,13 +76,14 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="330" fixed="right">
+        <el-table-column label="操作" width="410" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">查看</el-button>
             <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
             <el-button link type="primary" @click="openReservations(row)">预留</el-button>
             <el-button link type="primary" @click="openUsages(row)">使用</el-button>
             <el-button link type="primary" @click="openStocktake(row)">盘点</el-button>
+            <el-button link type="primary" @click="openStocktakeRecords(row)">盘点记录</el-button>
             <el-button
               link
               :type="row.status === 'disabled' ? 'success' : 'danger'"
@@ -253,6 +254,56 @@
         <el-button type="primary" :loading="submitting" @click="submitStocktake">确认盘点</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="stocktakeRecordsDialogVisible" title="盘点记录" :width="DialogWidth.lg" class="business-dialog">
+      <el-descriptions v-if="stocktakeRecordBatch" class="record-summary" :column="2" border>
+        <el-descriptions-item label="物料名称">{{ stocktakeRecordBatch.productName }}</el-descriptions-item>
+        <el-descriptions-item label="物料型号">{{ stocktakeRecordBatch.productModel }}</el-descriptions-item>
+        <el-descriptions-item label="物料批次号">{{ stocktakeRecordBatch.materialBatchNo }}</el-descriptions-item>
+        <el-descriptions-item label="当前库存">{{ formatQuantity(stocktakeRecordBatch.quantity) }}</el-descriptions-item>
+      </el-descriptions>
+      <el-table v-loading="stocktakeRecordLoading" :data="stocktakeRecordRows" class="detail-table stocktake-record-table">
+        <el-table-column label="盘点单号" min-width="150">
+          <template #default="{ row }">{{ row.stocktakeNo || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="账面数量" width="120" align="right">
+          <template #default="{ row }">{{ formatQuantity(row.beforeQuantity) }}</template>
+        </el-table-column>
+        <el-table-column label="实盘数量" width="120" align="right">
+          <template #default="{ row }">{{ formatQuantity(row.countedQuantity) }}</template>
+        </el-table-column>
+        <el-table-column label="差异数量" width="120" align="right">
+          <template #default="{ row }">
+            <span :class="{ danger: Number(row.differenceQuantity) < 0 }">
+              {{ formatSignedQuantity(row.differenceQuantity) }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column label="差异类型" width="110">
+          <template #default="{ row }">
+            <el-tag :type="getStocktakeDifferenceMeta(row.differenceType).type" effect="light">
+              {{ getStocktakeDifferenceMeta(row.differenceType).label }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="100">
+          <template #default="{ row }">
+            <el-tag :type="getStocktakeStatusMeta(row.status).type" effect="light">
+              {{ getStocktakeStatusMeta(row.status).label }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="盘点人" width="120">
+          <template #default="{ row }">{{ row.operatorName || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="盘点时间" width="170">
+          <template #default="{ row }">{{ formatTime(row.operatedAt) }}</template>
+        </el-table-column>
+        <el-table-column label="备注" min-width="180">
+          <template #default="{ row }">{{ row.remark || '-' }}</template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
   </div>
 </template>
 
@@ -261,6 +312,9 @@ import { onMounted, reactive, ref } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type {
+  InventoryStocktakeDifferenceType,
+  InventoryStocktakeListItem,
+  InventoryStocktakeStatus,
   MaterialBatchDetail,
   MaterialBatchListItem,
   MaterialBatchStatus,
@@ -292,8 +346,12 @@ const detailDialogVisible = ref(false);
 const reservationDialogVisible = ref(false);
 const usageDialogVisible = ref(false);
 const stocktakeDialogVisible = ref(false);
+const stocktakeRecordsDialogVisible = ref(false);
 const editingBatchId = ref<string | null>(null);
 const stocktakeBatchId = ref<string | null>(null);
+const stocktakeRecordBatch = ref<MaterialBatchListItem | null>(null);
+const stocktakeRecordRows = ref<InventoryStocktakeListItem[]>([]);
+const stocktakeRecordLoading = ref(false);
 
 /** 库存列表查询条件，不参与库存数量计算。 */
 const query = reactive({
@@ -319,6 +377,29 @@ const stocktakeForm = reactive({
   quantity: 0,
   remark: '',
 });
+
+/** 盘点差异类型：用于库存行内盘点历史的状态标签展示。 */
+const stocktakeDifferenceOptions: Array<{
+  value: InventoryStocktakeDifferenceType;
+  label: string;
+  type: 'success' | 'warning' | 'info';
+}> = [
+  { value: 'surplus', label: '盘盈', type: 'success' },
+  { value: 'shortage', label: '盘亏', type: 'warning' },
+  { value: 'equal', label: '无差异', type: 'info' },
+];
+
+/** 盘点台账状态：用于区分已登记、已调账和作废记录。 */
+const stocktakeStatusOptions: Array<{
+  value: InventoryStocktakeStatus;
+  label: string;
+  type: 'primary' | 'success' | 'info' | 'danger';
+}> = [
+  { value: 'draft', label: '草稿', type: 'info' },
+  { value: 'confirmed', label: '已登记', type: 'primary' },
+  { value: 'adjusted', label: '已调账', type: 'success' },
+  { value: 'voided', label: '已作废', type: 'danger' },
+];
 
 const loadProductOptions = async () => {
   const page = await productApi.listProducts({ page: 1, pageSize: 100, status: 'enabled' });
@@ -437,6 +518,32 @@ const openStocktake = (row: MaterialBatchListItem) => {
   stocktakeDialogVisible.value = true;
 };
 
+/**
+ * 查看单条库存的盘点历史。
+ * 1. 记录当前库存批次用于弹窗摘要
+ * 2. 按 material + inventoryBatchId 精确查询盘点台账
+ * 3. 查询失败时给出明确反馈，避免用户误以为没有记录
+ */
+const openStocktakeRecords = async (row: MaterialBatchListItem) => {
+  stocktakeRecordBatch.value = row;
+  stocktakeRecordRows.value = [];
+  stocktakeRecordsDialogVisible.value = true;
+  stocktakeRecordLoading.value = true;
+  try {
+    const page = await warehouseApi.listStocktakes({
+      page: 1,
+      pageSize: 50,
+      inventoryType: 'material',
+      inventoryBatchId: row.id,
+    });
+    stocktakeRecordRows.value = page.items;
+  } catch (error) {
+    EMessage.error(error, '盘点记录加载失败');
+  } finally {
+    stocktakeRecordLoading.value = false;
+  }
+};
+
 const submitBatch = async () => {
   if (!batchForm.productId || !batchForm.materialBatchNo.trim()) {
     EMessage.warning('请选择物料并填写批次号');
@@ -515,6 +622,12 @@ const toggleStatus = async (row: MaterialBatchListItem) => {
 const getStatusMeta = (status: MaterialBatchStatus) =>
   statusOptions.find((item) => item.value === status) ?? statusOptions[0];
 
+const getStocktakeDifferenceMeta = (type: InventoryStocktakeDifferenceType) =>
+  stocktakeDifferenceOptions.find((item) => item.value === type) ?? stocktakeDifferenceOptions[2];
+
+const getStocktakeStatusMeta = (status: InventoryStocktakeStatus) =>
+  stocktakeStatusOptions.find((item) => item.value === status) ?? stocktakeStatusOptions[1];
+
 const formatProductOption = (product: ProductListItem) => `${product.productModel} / ${product.productName}`;
 
 const formatQuantity = (value: string | number | null) => {
@@ -527,6 +640,16 @@ const formatQuantity = (value: string | number | null) => {
     minimumFractionDigits: 0,
     maximumFractionDigits: 4,
   });
+};
+
+const formatSignedQuantity = (value: string | number | null) => {
+  const amount = Number(value ?? 0);
+  if (!Number.isFinite(amount)) {
+    return '-';
+  }
+
+  const formatted = formatQuantity(amount);
+  return amount > 0 ? `+${formatted}` : formatted;
 };
 /** 物料流水操作类型中文标签。 */
 const formatUsageType = (type: 'reserve' | 'issue' | 'return') => ({
@@ -599,6 +722,10 @@ onMounted(loadPageData);
 
 .inventory-table {
   width: 100%;
+}
+
+.record-summary {
+  margin-bottom: 16px;
 }
 
 .inventory-table :deep(.el-table__header th),

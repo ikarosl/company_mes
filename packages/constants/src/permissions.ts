@@ -100,6 +100,13 @@ export const PERMISSIONS = {
       stocktake: 'warehouse:inventory:stocktake',
       adjust: 'warehouse:inventory:adjust',
     },
+    stocktakes: {
+      page: 'warehouse:stocktakes:view',
+      view: 'warehouse:stocktakes:view',
+      targets: 'warehouse:stocktakes:targets',
+      create: 'warehouse:stocktakes:create',
+      adjust: 'warehouse:stocktakes:adjust',
+    },
     finishedTransactions: {
       page: 'warehouse:finished-transactions:view',
       view: 'warehouse:finished-transactions:view',

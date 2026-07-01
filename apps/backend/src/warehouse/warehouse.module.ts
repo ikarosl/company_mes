@@ -6,10 +6,12 @@ import { MaterialInventoryController } from './inventory/material-inventory.cont
 import { MaterialInventoryRepository } from './inventory/material-inventory.repository.js';
 import { MaterialTransactionController } from './material-transactions/material-transaction.controller.js';
 import { MaterialTransactionRepository } from './material-transactions/material-transaction.repository.js';
+import { InventoryStocktakeController } from './stocktakes/inventory-stocktake.controller.js';
+import { InventoryStocktakeRepository } from './stocktakes/inventory-stocktake.repository.js';
 
 @Module({
   imports: [AuthModule, DatabaseModule, OperationLogModule],
-  controllers: [MaterialInventoryController, MaterialTransactionController],
-  providers: [MaterialInventoryRepository, MaterialTransactionRepository],
+  controllers: [MaterialInventoryController, MaterialTransactionController, InventoryStocktakeController],
+  providers: [MaterialInventoryRepository, MaterialTransactionRepository, InventoryStocktakeRepository],
 })
 export class WarehouseModule {}

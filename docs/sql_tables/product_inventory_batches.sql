@@ -35,5 +35,6 @@ CREATE TABLE `product_inventory_batches` (
     CHECK (`source_type` IN ('production','purchase','outsourcing','stocktake','other')),
   CONSTRAINT `chk_product_inventory_batches_object_type`
     CHECK (`object_type` IN ('semi_finished','finished')),
-  CONSTRAINT `chk_product_inventory_batches_quantity` CHECK (`quantity` >= 0)
+  CONSTRAINT `chk_product_inventory_batches_quantity`
+    CHECK (`quantity` >= 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='成品和半成品当前库存批次表';

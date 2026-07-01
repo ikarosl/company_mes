@@ -12,6 +12,8 @@ export type QueryParams = PageQuery & {
   recordType?: string;
   materialBatchId?: string;
   materialBatchNo?: string;
+  /** 库存批次 ID：用于盘点台账按某条库存精确筛选。 */
+  inventoryBatchId?: string;
   materialKeyword?: string;
   materialStatus?: string;
   shortage?: string;
@@ -19,6 +21,8 @@ export type QueryParams = PageQuery & {
   supplierName?: string;
   transactionType?: string;
   productionBatchNo?: string;
+  inventoryType?: string;
+  differenceType?: string;
   batchNo?: string;
   logType?: string;
   module?: string;
