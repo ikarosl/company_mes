@@ -77,6 +77,18 @@ export interface OperationLogListItem {
   createdAt: string;
 }
 
+/** 日志模块枚举值：与后端审计写入的 module 字段保持一致，供查询下拉框复用。 */
+export const OPERATION_LOG_MODULE_OPTIONS = [
+  { label: '认证登录', value: 'auth' },
+  { label: '系统管理', value: 'system' },
+  { label: '产品资料', value: 'product' },
+  { label: '生产管理', value: 'production' },
+  { label: '生产物料分配', value: 'material-allocation' },
+  { label: '仓储管理', value: 'warehouse' },
+  { label: '质量管理', value: 'quality' },
+  { label: '未知模块', value: 'unknown' },
+] as const;
+
 export interface SystemDepartmentOption {
   id: string;
   parentId: string;
