@@ -181,7 +181,7 @@ const canShow = (permission?: string) => authStore.hasPermission(permission);
 
 const getMenuItemTitle = (item: MenuItem) => {
   const titleMap: Record<string, string> = {
-    '/warehouse/finished-transactions': '成品出入库管理',
+    '/warehouse/finished-transactions': '成/半成品出入库管理',
     '/warehouse/material-transactions': '物料出入库管理',
   };
 

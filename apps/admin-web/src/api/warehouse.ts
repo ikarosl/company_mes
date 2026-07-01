@@ -5,6 +5,10 @@ import {
   type AdjustInventoryStocktakePayload,
   type InventoryStocktakeListItem,
   type InventoryStocktakeTargetOption,
+  type FinishedInboundPayload,
+  type FinishedInventoryOption,
+  type FinishedOutboundPayload,
+  type FinishedTransactionListItem,
   type MaterialBatchDetail,
   type MaterialBatchListItem,
   type MaterialInboundPayload,
@@ -78,10 +82,28 @@ export const warehouseApi = {
       data,
     }),
   listFinishedTransactions: (params?: QueryParams) =>
-    requestData<PageResult<unknown>>({
+    requestData<PageResult<FinishedTransactionListItem>>({
       url: BUSINESS_API.warehouseFinishedTransactions,
       method: 'GET',
       params,
+    }),
+  listFinishedInventoryOptions: (params?: QueryParams) =>
+    requestData<FinishedInventoryOption[]>({
+      url: `${BUSINESS_API.warehouseFinishedTransactions}/inventory-options`,
+      method: 'GET',
+      params,
+    }),
+  finishedInbound: (data: FinishedInboundPayload) =>
+    requestData<{ inventoryId: string; flowId: string }>({
+      url: `${BUSINESS_API.warehouseFinishedTransactions}/inbound`,
+      method: 'POST',
+      data,
+    }),
+  finishedOutbound: (data: FinishedOutboundPayload) =>
+    requestData<{ success: boolean; flowId: string }>({
+      url: `${BUSINESS_API.warehouseFinishedTransactions}/outbound`,
+      method: 'POST',
+      data,
     }),
   listMaterialTransactions: (params?: QueryParams) =>
     requestData<PageResult<MaterialTransactionListItem>>({

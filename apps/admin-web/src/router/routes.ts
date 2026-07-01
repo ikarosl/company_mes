@@ -18,6 +18,7 @@ import ProductionExecutionRecordsPage from '../views/production/ProductionExecut
 import ProductionOrdersPage from '../views/production/ProductionOrdersPage.vue';
 import ProductionTasksPage from '../views/production/ProductionTasksPage.vue';
 import WorkerTasksPage from '../views/WorkerTasksPage.vue';
+import FinishedTransactionsPage from '../views/warehouse/FinishedTransactionsPage.vue';
 import WarehouseInventoryPage from '../views/warehouse/WarehouseInventoryPage.vue';
 import MaterialTransactionsPage from '../views/warehouse/MaterialTransactionsPage.vue';
 import InventoryStocktakesPage from '../views/warehouse/InventoryStocktakesPage.vue';
@@ -120,14 +121,16 @@ export const routes: RouteRecordRaw[] = [
           permission: PERMISSIONS.warehouse.stocktakes.page,
         },
       },
-      plannedPage(
-        'warehouse/finished-transactions',
-        'warehouse-finished-transactions',
-        '成品出入库管理',
-        '仓储管理',
-        ['入库', '出库', '发运', '查看成品出入库记录'],
-        PERMISSIONS.warehouse.finishedTransactions.page,
-      ),
+      {
+        path: 'warehouse/finished-transactions',
+        name: 'warehouse-finished-transactions',
+        component: FinishedTransactionsPage,
+        meta: {
+          title: '成/半成品出入库管理',
+          section: '仓储管理',
+          permission: PERMISSIONS.warehouse.finishedTransactions.page,
+        },
+      },
       {
         path: 'warehouse/material-transactions',
         name: 'warehouse-material-transactions',
