@@ -93,6 +93,12 @@ export const productionApi = {
       url: `${BUSINESS_API.executionRecords}/${id}`,
       method: 'GET',
     }),
+  updateExecutionRecordStep: (id: string, recordId: string, data: UpdateBatchStepRecordPayload) =>
+    requestData<ProductionTaskDetail>({
+      url: `${BUSINESS_API.executionRecords}/${id}/steps/${recordId}`,
+      method: 'PUT',
+      data,
+    }),
   listWorkerTasks: (params?: QueryParams) =>
     requestData<PageResult<WorkerTaskItem>>({
       url: BUSINESS_API.workerTasks,
