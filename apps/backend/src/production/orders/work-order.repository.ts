@@ -350,6 +350,9 @@ export class WorkOrderRepository {
     await this.assertRouteAvailable(routeId, order.product_id);
     await this.assertBatchNoAvailable(batchNo, batchId);
     await this.assertBatchQuantityWithinOrder(orderId, decimalNumber(plannedQuantity), batchId);
+    if (status === 'completed' && current.status !== 'completed') {
+      await this.assertBatchStepsClosable(batchId);
+    }
 
     await this.database.execute(
       `
@@ -723,6 +726,24 @@ export class WorkOrderRepository {
       decimalNumber(order.planned_quantity)
     ) {
       throw new BadRequestException('Batch quantity exceeds work order planned quantity');
+    }
+  }
+
+  private async assertBatchStepsClosable(batchId: number) {
+    const [row] = await this.database.query<(RowDataPacket & { blocking_count: number })[]>(
+      `
+      SELECT COUNT(*) AS blocking_count
+      FROM batch_step_records
+      WHERE batch_id = ?
+        AND is_deleted = 0
+        AND status IN ('pending', 'doing')
+    `,
+      [batchId],
+    );
+
+    // 工单批次编辑接口也可能直接提交 completed，必须和任务完工接口保持同一张报工表校验。
+    if (Number(row?.blocking_count ?? 0) > 0) {
+      throw new BadRequestException('仍有未开工或进行中的工序，不能完成生产任务');
     }
   }
 

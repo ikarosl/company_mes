@@ -767,6 +767,7 @@ export class ProductionTaskRepository {
 
   async finishTask(id: number) {
     this.auditContext.setBeforeData(await this.getTask(id));
+    await this.assertTaskStepsClosable(id);
     await this.database.execute(
       `
       UPDATE production_batches
@@ -1410,6 +1411,24 @@ export class ProductionTaskRepository {
 
     if (previousStep?.status !== 'completed') {
       throw new BadRequestException('前一道工序尚未完成，当前工序不能开始');
+    }
+  }
+
+  private async assertTaskStepsClosable(batchId: number) {
+    const [row] = await this.database.query<(RowDataPacket & { blocking_count: number })[]>(
+      `
+      SELECT COUNT(*) AS blocking_count
+      FROM batch_step_records
+      WHERE batch_id = ?
+        AND is_deleted = 0
+        AND status IN ('pending', 'doing')
+    `,
+      [batchId],
+    );
+
+    // 批次完工前必须确保所有工序已脱离未开工/进行中状态，避免任务提前关闭导致报工断链。
+    if (Number(row?.blocking_count ?? 0) > 0) {
+      throw new BadRequestException('仍有未开工或进行中的工序，不能完成生产任务');
     }
   }
 
