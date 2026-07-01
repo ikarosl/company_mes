@@ -258,16 +258,18 @@ export class MaterialTransactionRepository {
         connection,
         `
         INSERT INTO batch_material_usages (
-          batch_id, material_batch_id, reserved_quantity, product_materials_id,
-          operation_type, used_quantity, unit, recorded_by, recorded_at, remark,
+          batch_id, require_id, material_batch_id, reserved_quantity, product_materials_id,
+          operation_type, operation_quantity, used_quantity, unit, recorded_by, recorded_at, remark,
           created_by, created_at, updated_by, updated_at
         )
-        VALUES (?, ?, 0, ?, 'issue', ?, ?, ?, NOW(), ?, ?, NOW(), ?, NOW())
+        VALUES (?, ?, ?, 0, ?, 'issue', ?, ?, ?, ?, NOW(), ?, ?, NOW(), ?, NOW())
         `,
         [
           usage.batch_id,
+          usage.require_id,
           usage.material_batch_id,
           usage.product_materials_id,
+          quantity,
           quantity,
           usage.unit,
           userId,
@@ -310,16 +312,18 @@ export class MaterialTransactionRepository {
         connection,
         `
         INSERT INTO batch_material_usages (
-          batch_id, material_batch_id, reserved_quantity, product_materials_id,
-          operation_type, used_quantity, unit, recorded_by, recorded_at, remark,
+          batch_id, require_id, material_batch_id, reserved_quantity, product_materials_id,
+          operation_type, operation_quantity, used_quantity, unit, recorded_by, recorded_at, remark,
           created_by, created_at, updated_by, updated_at
         )
-        VALUES (?, ?, 0, ?, 'return', ?, ?, ?, NOW(), ?, ?, NOW(), ?, NOW())
+        VALUES (?, ?, ?, 0, ?, 'return', ?, ?, ?, ?, NOW(), ?, ?, NOW(), ?, NOW())
         `,
         [
           usage.batch_id,
+          usage.require_id,
           usage.material_batch_id,
           usage.product_materials_id,
+          quantity,
           quantity,
           usage.unit,
           userId,
@@ -400,6 +404,7 @@ export class MaterialTransactionRepository {
       (RowDataPacket & {
         material_batch_id: number;
         batch_id: number;
+        require_id: number | null;
         product_materials_id: number;
         reserved_quantity: string | number;
         used_quantity: string | number;
@@ -411,6 +416,7 @@ export class MaterialTransactionRepository {
       `
       SELECT
         reserve.batch_id,
+        reserve.require_id,
         reserve.product_materials_id,
         reserve.material_batch_id,
         (

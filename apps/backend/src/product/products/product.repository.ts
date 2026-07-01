@@ -450,14 +450,17 @@ export class ProductRepository {
       await execute(
         connection,
         `
-        INSERT INTO batch_material_requirements (
-          batch_id, product_materials_id, plan_quantity, unit, created_at, updated_at
+        INSERT INTO batch_material_requirement (
+          batch_id, product_materials_id, material_product_id, plan_quantity, unit, demand_type, status, created_at, updated_at
         )
         SELECT
           b.id,
           pm.id,
+          pm.material_product_id,
           pm.quantity_per_unit * b.planned_quantity,
           pm.unit,
+          'normal',
+          'normal',
           NOW(),
           NOW()
         FROM production_batches b
@@ -471,19 +474,19 @@ export class ProductRepository {
         WHERE b.is_deleted = 0
           AND EXISTS (
             SELECT 1
-            FROM batch_material_requirements generated
+            FROM batch_material_requirement generated
             WHERE generated.batch_id = b.id
               AND generated.is_deleted = 0
           )
           AND NOT EXISTS (
             SELECT 1
-            FROM batch_material_requirements current_usage
+            FROM batch_material_requirement current_usage
             WHERE current_usage.batch_id = b.id
               AND current_usage.product_materials_id = pm.id
               AND current_usage.is_deleted = 0
           )
         ON DUPLICATE KEY UPDATE
-          batch_material_requirements.plan_quantity = IF(
+          batch_material_requirement.plan_quantity = IF(
             NOT EXISTS (
               SELECT 1 FROM batch_material_usages operation
               WHERE operation.batch_id = b.id
@@ -491,9 +494,9 @@ export class ProductRepository {
                 AND operation.is_deleted = 0
             ),
             pm.quantity_per_unit * b.planned_quantity,
-            batch_material_requirements.plan_quantity
+            batch_material_requirement.plan_quantity
           ),
-          batch_material_requirements.unit = IF(
+          batch_material_requirement.unit = IF(
             NOT EXISTS (
               SELECT 1 FROM batch_material_usages operation
               WHERE operation.batch_id = b.id
@@ -501,12 +504,13 @@ export class ProductRepository {
                 AND operation.is_deleted = 0
             ),
             pm.unit,
-            batch_material_requirements.unit
+            batch_material_requirement.unit
           ),
-          batch_material_requirements.is_deleted = 0,
-          batch_material_requirements.deleted_by = NULL,
-          batch_material_requirements.deleted_at = NULL,
-          batch_material_requirements.updated_at = NOW()
+          batch_material_requirement.is_deleted = 0,
+          batch_material_requirement.status = 'normal',
+          batch_material_requirement.deleted_by = NULL,
+          batch_material_requirement.deleted_at = NULL,
+          batch_material_requirement.updated_at = NOW()
       `,
         [productId],
       );
@@ -514,7 +518,7 @@ export class ProductRepository {
       await execute(
         connection,
         `
-        UPDATE batch_material_requirements requirement
+        UPDATE batch_material_requirement requirement
         INNER JOIN product_materials pm
           ON pm.id = requirement.product_materials_id
           AND pm.product_id = ?
@@ -539,7 +543,7 @@ export class ProductRepository {
       await execute(
         connection,
         `
-        UPDATE batch_material_requirements requirement
+        UPDATE batch_material_requirement requirement
         INNER JOIN product_materials pm
           ON pm.id = requirement.product_materials_id
           AND pm.product_id = ?

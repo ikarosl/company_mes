@@ -392,6 +392,24 @@ export interface MaterialTransactionDemandOption {
   unit: string | null;
 }
 
+/** 物料入库请求：新增或累加入库同一物料批次。 */
+export interface MaterialInboundPayload {
+  /** 物料产品ID：关联 products.id。 */
+  productId: string;
+  /** 物料批次号：作为来料追溯入口。 */
+  materialBatchNo: string;
+  /** 本次入库数量，必须大于0。 */
+  quantity: string | number;
+  /** 供应商名称快照。 */
+  supplierName?: string | null;
+  /** 技术协议编码快照。 */
+  protocolCode?: string | null;
+  /** 入库日期，格式为 YYYY-MM-DD。 */
+  receivedDate?: string | null;
+  /** 入库备注。 */
+  remark?: string | null;
+}
+
 /** 生产领料出库请求。 */
 export interface MaterialOutboundPayload {
   usageId: string;

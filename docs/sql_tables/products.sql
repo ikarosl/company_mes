@@ -5,6 +5,7 @@ USE `company_test`;
 DROP TABLE IF EXISTS `products`;
 CREATE TABLE `products` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `product_code` varchar(100) DEFAULT NULL COMMENT '产品编码',
   `product_model` varchar(128) NOT NULL COMMENT '产品型号',
   `product_name` varchar(128) NOT NULL COMMENT '产品名称',
   `category_id` bigint unsigned DEFAULT NULL COMMENT '产品分类ID',
@@ -23,6 +24,7 @@ CREATE TABLE `products` (
   `deleted_by` bigint unsigned DEFAULT NULL COMMENT '删除人',
   `deleted_at` datetime DEFAULT NULL COMMENT '删除时间',
   PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_products_code_deleted` (`product_code`,`is_deleted`),
   UNIQUE KEY `uk_products_model_deleted` (`product_model`,`is_deleted`),
   KEY `idx_products_name` (`product_name`),
   KEY `idx_products_category_id` (`category_id`),

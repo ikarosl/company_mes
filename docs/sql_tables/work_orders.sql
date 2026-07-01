@@ -10,6 +10,7 @@ CREATE TABLE `work_orders` (
   `planned_quantity` decimal(12,4) NOT NULL COMMENT '计划生产数量',
   `customer_order_no` varchar(100) DEFAULT NULL COMMENT '客户订单号',
   `customer_name` varchar(255) DEFAULT NULL COMMENT '客户名称',
+  `quality_level` varchar(50) DEFAULT NULL COMMENT '质量等级：military_grade/standard_military_grade/industrial_grade',
   `owner_id` bigint unsigned DEFAULT NULL COMMENT '工单负责人',
   `status` varchar(50) NOT NULL DEFAULT 'draft' COMMENT 'draft/released/doing/completed/closed/cancelled',
   `plan_start_date` date DEFAULT NULL COMMENT '计划开始日期',
@@ -40,5 +41,7 @@ CREATE TABLE `work_orders` (
   CONSTRAINT `fk_work_orders_product_id` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`),
   CONSTRAINT `fk_work_orders_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
   CONSTRAINT `chk_work_orders_quantity` CHECK (`planned_quantity` > 0),
+  CONSTRAINT `chk_work_orders_quality_level`
+    CHECK (`quality_level` IS NULL OR `quality_level` in ('military_grade','standard_military_grade','industrial_grade')),
   CONSTRAINT `chk_work_orders_status` CHECK (`status` in ('draft','released','doing','completed','closed','cancelled'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='工单表';

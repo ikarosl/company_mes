@@ -192,17 +192,19 @@ export class MaterialAllocationRepository {
     await this.database.execute(
       `
       INSERT INTO batch_material_usages (
-        batch_id, material_batch_id, reserved_quantity, product_materials_id,
-        operation_type, used_quantity, unit, recorded_at, remark,
+        batch_id, require_id, material_batch_id, reserved_quantity, product_materials_id,
+        operation_type, operation_quantity, used_quantity, unit, recorded_at, remark,
         created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, 'reserve', 0, ?, NOW(), ?, NOW(), NOW())
+      VALUES (?, ?, ?, ?, ?, 'reserve', ?, 0, ?, NOW(), ?, NOW(), NOW())
       `,
       [
         batchId,
+        usage.usage_id,
         materialBatchId,
         reservedQuantity,
         productMaterialId,
+        reservedQuantity,
         usage.unit,
         normalizeOptionalString(payload.remark),
       ],

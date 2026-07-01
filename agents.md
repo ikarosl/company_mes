@@ -18,7 +18,8 @@
 - 报工记录
 - 检验记录
 - 返工记录
-- 成品流转记录
+- 产品/半成品库存流转记录
+- 库存盘点与报废事实记录
 - 客户审核展示所需的追溯链路
 
 核心原则：
@@ -118,14 +119,17 @@ product
   routes
 
 warehouse
-  inventory
-  transactions
+  material-batches
+  product-inventory
+  product-flows
+  stocktakes
+  scraps
 
 production
   orders
-  tasks
+  batches
+  material-demands
   material-allocation
-  dispatch
   reports
 
 quality
@@ -285,37 +289,71 @@ EMessage.error('物料可用数量不足，分配失败');
 
 ---
 
-## 6. 数据库设计依据
+## 6. 数据库与 SQL 文件规则
 
-数据库设计以最新数据库设计文档为准。
+数据库设计以**最新数据库设计文档**和当前 SQL 文件为准。  
+`agents.md` 不维护完整表清单、完整字段清单、完整视图清单或频繁变化的状态字典，避免规则文档与真实数据库不同步。
 
-关键表包括：
+### 6.1 数据库设计依据
 
-- users
-- departments
-- roles
-- permissions
-- user_roles
-- role_permissions
-- logs
-- product_categories
-- products
-- technical_files
-- process_routes
-- process_route_steps
-- product_materials
-- route_step_materials
-- material_batches
-- work_orders
-- production_batches
-- batch_step_records
-- batch_material_usages
-- inspection_records
-- rework_records
-- finished_flow_records
+开发时必须遵守以下原则：
 
-开发时不要随意新增表。  
-如确实需要新增表，必须说明新增原因、替代方案、是否会使系统变重。
+1. 以最新数据库设计文档为业务依据。
+2. 以 `docs/sql_tables` 和 `docs/sql_views` 中的 SQL 文件作为当前最终结构依据。
+3. 不要根据旧截图、旧聊天记录、旧迁移文件猜测当前表结构。
+4. 不要在 `agents.md` 中补写具体字段定义；字段变化应改数据库设计文档和对应 SQL 文件。
+5. 如确实需要新增表、删表、改字段或新增视图，必须说明业务原因、影响范围、替代方案，以及是否会使系统变重。
+
+### 6.2 SQL 目录约定
+
+SQL 文件按最终结果组织，不再用零散改动文件记录每次变化。
+
+推荐目录：
+
+```text
+docs
+  sql_legacy
+  sql_tables
+  sql_views
+
+company_test_lastest.sql
+```
+
+说明：
+
+| 路径/文件 | 用途 | 规则 |
+|---|---|---|
+| `docs/sql_legacy` | 历史备份 | 仅作为旧版本备份，不作为当前开发依据；AI 默认不要读取、修改或新增该目录文件 |
+| `docs/sql_tables` | 建表 SQL | 每个数据表一个最终版建表 SQL 文件 |
+| `docs/sql_views` | 建视图 SQL | 每个数据库视图一个最终版建视图 SQL 文件 |
+| `company_test_lastest.sql` | 最新完整测试数据 | 保留当前系统可用的完整测试数据，不再拆分多个种子或变更数据 SQL |
+
+### 6.3 SQL 输出规则
+
+生成或修改 SQL 时必须遵守：
+
+1. **只输出最终状态 SQL**，不要新增按日期命名的改动脚本。
+2. 不再生成类似 `20260622_xxx.sql`、`add_xxx.sql`、`sync_xxx.sql`、`expand_xxx.sql` 这类过程型 SQL。
+3. 建表变化只更新 `docs/sql_tables` 下对应表文件。
+4. 视图变化只更新 `docs/sql_views` 下对应视图文件。
+5. 测试数据变化只更新 `company_test_lastest.sql`。
+6. `docs/sql_legacy` 只保留备份，不参与当前 SQL 输出。
+7. 如果需要完整初始化数据库，应由当前建表 SQL、当前建视图 SQL 和 `company_test_lastest.sql` 组成，不依赖历史改动文件。
+8. SQL 文件必须使用 UTF-8 保存，并保持 `SET NAMES utf8mb4;` 或等效字符集处理。
+
+### 6.4 禁止写入本文件的内容
+
+以下内容不要放进 `agents.md`：
+
+- 完整数据表字段定义
+- 完整视图 SQL
+- 完整测试数据
+- 频繁变化的枚举字典明细
+- 临时迁移步骤
+- 按日期记录的数据库改动历史
+- 某一次开发任务的临时 SQL 文件名
+
+这些内容应分别放在数据库设计文档、`docs/sql_tables`、`docs/sql_views` 和 `company_test_lastest.sql` 中。
 
 ---
 
@@ -383,7 +421,7 @@ export const BatchStatusLabel = {
 每次生成或修改以下内容后，都必须检查乱码：
 
 ```text
-数据库 SQL / migration / seed
+数据库 SQL / 建表文件 / 视图文件 / 测试数据文件
 Vue 页面文案
 TypeScript 枚举 label
 后端错误信息
@@ -442,21 +480,51 @@ material_product_id   表示这个产品需要哪种物料
 
 不要额外新增“批次-工序关联表”。
 
-### 8.4 物料预留与使用
+### 8.4 物料需求、预留、领料与退料
 
-`batch_material_usages` 用于记录生产批次与物料批次之间的预留和实际使用。
-
-建议字段语义：
+物料需求和物料操作分开建模：
 
 ```text
-reserved_quantity   预留数量
-used_quantity       实际使用数量
-status              reserved / part_used / used / cancelled
+batch_material_requirement   记录生产批次的计划物料需求
+batch_material_usages        记录预留、取消预留、领料、退料等操作过程
+material_batches             保存物料库存批次当前数量
 ```
 
-不要为了轻量预留单独创建完整库存预留表，除非后续明确要做完整仓储。
+核心口径：
 
-### 8.5 检验与返工
+```text
+reserve    预留，不扣 material_batches.quantity
+unreserve  取消预留，不改 material_batches.quantity
+issue      领料，减少 material_batches.quantity
+return     退料，增加 material_batches.quantity
+```
+
+不要为了轻量预留单独创建完整库存预留表，除非后续明确要做完整仓储。  
+复杂统计优先通过 `docs/sql_views` 中的视图实现，不要在多个 Service 中重复手写不同口径。
+
+### 8.5 产品库存、盘点与报废
+
+产品/半成品库存和物料库存分开建模：
+
+```text
+product_inventory_batches   保存成品/半成品当前库存
+product_flow_records        记录成品/半成品入库、出库、退回、调整等流转
+inventory_stocktakes        记录物料、成品、半成品盘点与调账依据
+scrap_records               记录物料、半成品、成品报废事实
+```
+
+核心口径：
+
+```text
+库存表保存当前数量。
+操作表记录变化过程。
+盘点表作为调账依据。
+报废表记录报废事实。
+```
+
+库存调整、领料、退料、产品出入库、盘点确认、库存内报废必须由后端事务保证“写记录 + 更新库存”一致完成。
+
+### 8.6 检验与返工
 
 检测记录按生产批次产生：
 
@@ -517,7 +585,7 @@ remark
 
 ### 10.1 REST 路径
 
-建议使用模块化 REST 风格：
+建议使用模块化 REST 风格。以下路径是模块划分示例，不作为固定接口清单；具体接口以当前后端路由和 API 契约为准。
 
 ```text
 /system/users
@@ -529,13 +597,16 @@ remark
 /product/processes
 /product/routes
 
-/warehouse/inventory
-/warehouse/transactions
+/warehouse/material-batches
+/warehouse/product-inventory
+/warehouse/product-flows
+/warehouse/stocktakes
+/warehouse/scraps
 
 /production/orders
-/production/tasks
+/production/batches
+/production/material-demands
 /production/material-allocation
-/production/dispatch
 /production/reports
 
 /quality/inspections
@@ -566,11 +637,12 @@ export
 
 ```text
 POST /production/orders/:id/release
-POST /production/tasks/:id/generate-materials
-POST /production/tasks/:id/assign-materials
-POST /production/tasks/:id/dispatch
-POST /production/tasks/:id/start
-POST /production/tasks/:id/finish
+POST /production/batches/:id/generate-material-demands
+POST /production/batches/:id/reserve-materials
+POST /production/batches/:id/issue-materials
+POST /production/batches/:id/return-materials
+POST /warehouse/product-flows
+POST /warehouse/stocktakes/:id/adjust
 POST /quality/inspections/:id/create-rework
 ```
 
@@ -668,14 +740,15 @@ AI 和开发人员不要主动扩展以下功能：
 2. 新增了哪些组件或接口
 3. 影响哪些模块
 4. 是否涉及数据库变更
-5. 是否需要迁移脚本
-6. 是否符合 `design.md`
-7. 是否已添加变量/字段注释、DTO/类型注释、关键业务块注释、复杂 SQL/计算注释
-8. 是否已处理前端成功/失败 `EMessage` 提示
-9. 是否使用后端统一响应格式
-10. 是否已检查 SQL、页面、接口、导入导出中的中文编码和乱码风险
-11. 是否已搜索并排除 `�`、`æ`、`ä¸`、`å`、`ç`、`????` 等乱码特征
-12. 公共类型是否放在 `packages/api-contract`
+5. 如涉及 SQL，是否只更新 `docs/sql_tables`、`docs/sql_views` 或 `company_test_lastest.sql` 的最终版文件
+6. 是否避免新增过程型、日期型、补丁型 SQL 文件
+7. 是否符合 `design.md`
+8. 是否已添加变量/字段注释、DTO/类型注释、关键业务块注释、复杂 SQL/计算注释
+9. 是否已处理前端成功/失败 `EMessage` 提示
+10. 是否使用后端统一响应格式
+11. 是否已检查 SQL、页面、接口、导入导出中的中文编码和乱码风险
+12. 是否已搜索并排除 `�`、`æ`、`ä¸`、`å`、`ç`、`????` 等乱码特征
+13. 公共类型是否放在 `packages/api-contract`
 
 不要只给零散代码片段。
 
@@ -689,5 +762,8 @@ AI 和开发人员不要主动扩展以下功能：
 
 - 视觉颜色和页面 UI 细节，放 `design.md`
 - 数据库完整字段，放数据库设计文档
+- 建表 SQL，放 `docs/sql_tables`
+- 建视图 SQL，放 `docs/sql_views`
+- 最新完整测试数据，放 `company_test_lastest.sql`
 - 业务需求详述，放需求说明书
 - SEO 或官网内容规则，放对应 Skill
