@@ -74,6 +74,28 @@ export interface FinishedInventoryOption {
   unit: string | null;
 }
 
+/** 可办理生产入库的已完成生产批次选项。 */
+export interface FinishedProductionInboundOption {
+  /** 生产批次 ID。 */
+  id: string;
+  /** 生产批次号。 */
+  batchNo: string;
+  /** 产品 ID。 */
+  productId: string;
+  /** 产品型号。 */
+  productModel: string;
+  /** 产品名称。 */
+  productName: string;
+  /** 批次计划数量。 */
+  plannedQuantity: string;
+  /** 该生产批次已写入 product_flow_records 的入库数量合计。 */
+  inboundQuantity: string;
+  /** 剩余可入库数量：plannedQuantity - inboundQuantity。 */
+  availableQuantity: string;
+  /** 单位。 */
+  unit: string | null;
+}
+
 /** 成/半成品入库请求参数。 */
 export interface FinishedInboundPayload {
   /** 来源类型：生产、外购、外协、盘点或其他。 */

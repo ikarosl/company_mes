@@ -6,6 +6,7 @@ import type {
   FinishedInventoryOption,
   FinishedInventorySourceType,
   FinishedOutboundPayload,
+  FinishedProductionInboundOption,
   FinishedTransactionListItem,
   FinishedTransactionType,
 } from '@company/api-contract';
@@ -25,6 +26,10 @@ interface FinishedTransactionFilters {
 interface FinishedInventoryOptionFilters {
   keyword?: string;
   objectType?: string;
+}
+
+interface FinishedProductionInboundOptionFilters {
+  keyword?: string;
 }
 
 interface FinishedTransactionRow extends RowDataPacket {
@@ -60,6 +65,18 @@ interface FinishedInventoryOptionRow extends RowDataPacket {
   unit: string | null;
 }
 
+interface FinishedProductionInboundOptionRow extends RowDataPacket {
+  id: number;
+  batch_no: string;
+  product_id: number;
+  product_model: string;
+  product_name: string;
+  planned_quantity: number;
+  inbound_quantity: number;
+  available_quantity: number;
+  unit: string | null;
+}
+
 interface ProductSnapshot extends RowDataPacket {
   id: number;
   product_model: string;
@@ -71,6 +88,9 @@ interface ProductionBatchSnapshot extends ProductSnapshot {
   batch_id: number;
   batch_no: string;
   status: string;
+  planned_quantity: number;
+  inbound_quantity: number;
+  available_quantity: number;
 }
 
 interface InventoryRow extends RowDataPacket {
@@ -186,9 +206,67 @@ export class FinishedTransactionRepository {
     return rows.map(mapInventoryOption);
   }
 
+  /** 查询可办理生产入库的 completed 批次，按流水合计排除已全量入库的批次。 */
+  async listProductionInboundOptions(filters: FinishedProductionInboundOptionFilters) {
+    const params: QueryParam[] = [];
+    const keyword = filters.keyword?.trim();
+    const keywordClause = keyword
+      ? `
+        AND (
+          batch.batch_no LIKE ?
+          OR product.product_model LIKE ?
+          OR product.product_name LIKE ?
+        )
+      `
+      : '';
+    if (keyword) {
+      const like = `%${keyword}%`;
+      params.push(like, like, like);
+    }
+
+    const rows = await this.database.query<FinishedProductionInboundOptionRow[]>(
+      `
+      SELECT
+        batch.id,
+        batch.batch_no,
+        product.id AS product_id,
+        product.product_model,
+        product.product_name,
+        batch.planned_quantity,
+        COALESCE(inbound_summary.inbound_quantity, 0) AS inbound_quantity,
+        GREATEST(batch.planned_quantity - COALESCE(inbound_summary.inbound_quantity, 0), 0) AS available_quantity,
+        product.unit
+      FROM production_batches batch
+      INNER JOIN work_orders work_order
+        ON work_order.id = batch.work_order_id
+        AND work_order.is_deleted = 0
+      INNER JOIN products product
+        ON product.id = work_order.product_id
+        AND product.is_deleted = 0
+      LEFT JOIN (
+        SELECT batch_id, SUM(quantity) AS inbound_quantity
+        FROM product_flow_records
+        WHERE flow_type = 'inbound'
+          AND batch_id IS NOT NULL
+          AND is_deleted = 0
+        GROUP BY batch_id
+      ) inbound_summary ON inbound_summary.batch_id = batch.id
+      WHERE batch.status = 'completed'
+        AND batch.is_deleted = 0
+        ${keywordClause}
+        AND batch.planned_quantity > COALESCE(inbound_summary.inbound_quantity, 0)
+      ORDER BY batch.actual_end_at DESC, batch.id DESC
+      LIMIT 200
+      `,
+      params,
+    );
+
+    return rows.map(mapProductionInboundOption);
+  }
+
   /**
    * 成/半成品入库
-   * 1. production 来源锁定已完成生产批次并带出产品
+   * 1. production 来源在事务内锁定已完成生产批次，并按已入库流水校验剩余可入库数量
    * 2. 非 production 来源校验产品可用，生产批次允许为空
    * 3. 同一事务内新增/累加库存批次
    * 4. 同步写入 product_flow_records 入库流水
@@ -199,12 +277,16 @@ export class FinishedTransactionRepository {
     const quantity = readPositiveInteger(payload.quantity, '入库数量必须为大于 0 的整数');
     const flowDate = today();
 
-    const resolved =
-      sourceType === 'production'
-        ? await this.resolveProductionInbound(payload.productionBatchId)
-        : await this.resolveProductInbound(payload.productId);
+    const productResolved = sourceType === 'production' ? null : await this.resolveProductInbound(payload.productId);
 
     const result = await this.database.transaction(async (connection) => {
+      const resolved =
+        sourceType === 'production'
+          ? await this.resolveProductionInbound(connection, payload.productionBatchId, quantity)
+          : productResolved;
+      if (!resolved) {
+        throw new BadRequestException('入库产品信息不完整');
+      }
       const batchNo = optional(payload.inventoryBatchNo) ?? (await this.generateInventoryBatchNo(connection));
       const existing =
         sourceType === 'production'
@@ -307,14 +389,22 @@ export class FinishedTransactionRepository {
     return { success: true, flowId: String(result.flowId) };
   }
 
-  private async resolveProductionInbound(batchIdValue: string | number | null | undefined) {
+  private async resolveProductionInbound(
+    connection: PoolConnection,
+    batchIdValue: string | number | null | undefined,
+    inboundQuantity: number,
+  ) {
     const batchId = positiveId(batchIdValue, '请选择已完成生产批次');
-    const [row] = await this.database.query<ProductionBatchSnapshot[]>(
+    const [row] = await query<ProductionBatchSnapshot[]>(
+      connection,
       `
       SELECT
         batch.id AS batch_id,
         batch.batch_no,
         batch.status,
+        batch.planned_quantity,
+        COALESCE(inbound_summary.inbound_quantity, 0) AS inbound_quantity,
+        GREATEST(batch.planned_quantity - COALESCE(inbound_summary.inbound_quantity, 0), 0) AS available_quantity,
         product.id,
         product.product_model,
         product.product_name,
@@ -322,8 +412,17 @@ export class FinishedTransactionRepository {
       FROM production_batches batch
       INNER JOIN work_orders work_order ON work_order.id = batch.work_order_id AND work_order.is_deleted = 0
       INNER JOIN products product ON product.id = work_order.product_id AND product.is_deleted = 0
+      LEFT JOIN (
+        SELECT batch_id, SUM(quantity) AS inbound_quantity
+        FROM product_flow_records
+        WHERE flow_type = 'inbound'
+          AND batch_id IS NOT NULL
+          AND is_deleted = 0
+        GROUP BY batch_id
+      ) inbound_summary ON inbound_summary.batch_id = batch.id
       WHERE batch.id = ? AND batch.is_deleted = 0
       LIMIT 1
+      FOR UPDATE
       `,
       [batchId],
     );
@@ -333,6 +432,9 @@ export class FinishedTransactionRepository {
     }
     if (row.status !== 'completed') {
       throw new BadRequestException('只有已完成生产批次可以办理入库');
+    }
+    if (inboundQuantity > Number(row.available_quantity)) {
+      throw new BadRequestException(`入库数量不能超过该生产批次剩余可入库数量 ${formatNumber(row.available_quantity)}`);
     }
 
     return {
@@ -671,6 +773,18 @@ const mapInventoryOption = (row: FinishedInventoryOptionRow): FinishedInventoryO
   unit: row.unit,
 });
 
+const mapProductionInboundOption = (row: FinishedProductionInboundOptionRow): FinishedProductionInboundOption => ({
+  id: String(row.id),
+  batchNo: row.batch_no,
+  productId: String(row.product_id),
+  productModel: row.product_model,
+  productName: row.product_name,
+  plannedQuantity: String(row.planned_quantity),
+  inboundQuantity: String(row.inbound_quantity),
+  availableQuantity: String(row.available_quantity),
+  unit: row.unit,
+});
+
 const readSourceType = (value: string | null | undefined) => {
   if (!SOURCE_TYPES.has(value as FinishedInventorySourceType)) {
     throw new BadRequestException('请选择正确的入库类型');
@@ -715,3 +829,6 @@ const today = () => {
 const compactDate = () => today().replace(/-/g, '');
 
 const formatDate = (value: Date) => value.toISOString().slice(0, 10);
+
+const formatNumber = (value: string | number) =>
+  Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 4 });

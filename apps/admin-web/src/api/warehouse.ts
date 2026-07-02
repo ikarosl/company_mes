@@ -8,6 +8,7 @@ import {
   type FinishedInboundPayload,
   type FinishedInventoryOption,
   type FinishedOutboundPayload,
+  type FinishedProductionInboundOption,
   type FinishedTransactionListItem,
   type MaterialBatchDetail,
   type MaterialBatchListItem,
@@ -96,6 +97,12 @@ export const warehouseApi = {
   listFinishedInventoryOptions: (params?: QueryParams) =>
     requestData<FinishedInventoryOption[]>({
       url: `${BUSINESS_API.warehouseFinishedTransactions}/inventory-options`,
+      method: 'GET',
+      params,
+    }),
+  listFinishedProductionInboundOptions: (params?: QueryParams) =>
+    requestData<FinishedProductionInboundOption[]>({
+      url: `${BUSINESS_API.warehouseFinishedTransactions}/production-inbound-options`,
       method: 'GET',
       params,
     }),

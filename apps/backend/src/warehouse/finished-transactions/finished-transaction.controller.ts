@@ -40,6 +40,12 @@ export class FinishedTransactionController {
   }
 
   @RequirePermission(PERMISSIONS.warehouse.finishedTransactions.inbound)
+  @Get('production-inbound-options')
+  listProductionInboundOptions(@Query('keyword') keyword?: string) {
+    return this.transactions.listProductionInboundOptions({ keyword });
+  }
+
+  @RequirePermission(PERMISSIONS.warehouse.finishedTransactions.inbound)
   @Audit({
     module: 'warehouse',
     action: '成/半成品入库',
