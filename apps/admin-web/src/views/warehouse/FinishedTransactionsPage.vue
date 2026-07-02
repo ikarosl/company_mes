@@ -70,6 +70,12 @@
         <el-table-column label="流转原因" width="120">
           <template #default="{ row }">{{ getFlowReasonLabel(row.flowReason) }}</template>
         </el-table-column>
+        <el-table-column label="外部单号" min-width="150">
+          <template #default="{ row }">{{ row.externalDocNo || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="合作方" min-width="160">
+          <template #default="{ row }">{{ formatPartner(row.partnerName, row.partnerType) }}</template>
+        </el-table-column>
         <el-table-column label="记录人" width="120">
           <template #default="{ row }">{{ row.recordedByName || '-' }}</template>
         </el-table-column>
@@ -159,6 +165,20 @@
               :step="1"
             />
           </el-form-item>
+          <el-form-item label="合作类型">
+            <el-select v-model="inboundForm.partnerType" clearable placeholder="可选">
+              <el-option v-for="item in partnerTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="客户/供应商">
+            <el-input v-model="inboundForm.partnerName" clearable placeholder="可填写客户或供应商名称" />
+          </el-form-item>
+          <el-form-item label="外部单号">
+            <el-input v-model="inboundForm.externalDocNo" clearable placeholder="客户单号、入库单或供应商单号" />
+          </el-form-item>
+          <el-form-item label="附件地址">
+            <el-input v-model="inboundForm.fileUrl" clearable placeholder="入库单、发货单或退货单附件地址" />
+          </el-form-item>
         </div>
         <el-form-item label="备注">
           <el-input v-model="inboundForm.remark" type="textarea" :rows="3" />
@@ -194,6 +214,22 @@
         <el-form-item label="数量" required>
           <el-input-number v-model="outboundForm.quantity" :min="1" :precision="0" :step="1" />
         </el-form-item>
+        <div class="form-grid">
+          <el-form-item label="合作类型">
+            <el-select v-model="outboundForm.partnerType" clearable placeholder="可选">
+              <el-option v-for="item in partnerTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="客户/供应商">
+            <el-input v-model="outboundForm.partnerName" clearable placeholder="可填写客户或供应商名称" />
+          </el-form-item>
+          <el-form-item label="外部单号">
+            <el-input v-model="outboundForm.externalDocNo" clearable placeholder="客户单号、发货单或退货单" />
+          </el-form-item>
+          <el-form-item label="附件地址">
+            <el-input v-model="outboundForm.fileUrl" clearable placeholder="入库单、发货单或退货单附件地址" />
+          </el-form-item>
+        </div>
         <el-form-item label="备注">
           <el-input v-model="outboundForm.remark" type="textarea" :rows="3" />
         </el-form-item>
@@ -211,6 +247,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { Plus, Refresh, Upload } from '@element-plus/icons-vue';
 import type {
   FinishedInboundPayload,
+  FinishedFlowPartnerType,
   FinishedInventoryObjectType,
   FinishedInventoryOption,
   FinishedInventorySourceType,
@@ -237,6 +274,12 @@ const sourceTypeOptions: Array<{ value: FinishedInventorySourceType; label: stri
 const objectTypeOptions: Array<{ value: FinishedInventoryObjectType; label: string }> = [
   { value: 'finished', label: '成品' },
   { value: 'semi_finished', label: '半成品' },
+];
+
+/** 合作类型字典：对应 product_flow_records.partner_type，可选填写。 */
+const partnerTypeOptions: Array<{ value: FinishedFlowPartnerType; label: string }> = [
+  { value: 'customer', label: '客户' },
+  { value: 'supplier', label: '供应商' },
 ];
 
 /** 成/半成品出入库流水表格数据。 */
@@ -275,6 +318,10 @@ const inboundForm = reactive<FinishedInboundPayload>({
   productId: '',
   inventoryBatchNo: '',
   quantity: 1,
+  partnerName: '',
+  partnerType: null,
+  externalDocNo: '',
+  fileUrl: '',
   remark: '',
 });
 
@@ -282,6 +329,10 @@ const inboundForm = reactive<FinishedInboundPayload>({
 const outboundForm = reactive<FinishedOutboundPayload>({
   inventoryId: '',
   quantity: 1,
+  partnerName: '',
+  partnerType: null,
+  externalDocNo: '',
+  fileUrl: '',
   remark: '',
 });
 
@@ -410,6 +461,10 @@ const openInbound = async () => {
     productId: '',
     inventoryBatchNo: '',
     quantity: 1,
+    partnerName: '',
+    partnerType: null,
+    externalDocNo: '',
+    fileUrl: '',
     remark: '',
   });
   await Promise.all([loadCompletedBatches(), loadProductOptions()]);
@@ -418,7 +473,15 @@ const openInbound = async () => {
 
 /** 打开出库弹窗，刷新可出库库存批次。 */
 const openOutbound = async () => {
-  Object.assign(outboundForm, { inventoryId: '', quantity: 1, remark: '' });
+  Object.assign(outboundForm, {
+    inventoryId: '',
+    quantity: 1,
+    partnerName: '',
+    partnerType: null,
+    externalDocNo: '',
+    fileUrl: '',
+    remark: '',
+  });
   await loadInventoryOptions();
   outboundVisible.value = true;
 };
@@ -474,6 +537,10 @@ const submitInbound = async () => {
       productionBatchId: isProductionInbound.value ? inboundForm.productionBatchId : null,
       productId: isProductionInbound.value ? null : inboundForm.productId,
       inventoryBatchNo: inboundForm.inventoryBatchNo || null,
+      partnerName: inboundForm.partnerName || null,
+      partnerType: inboundForm.partnerType || null,
+      externalDocNo: inboundForm.externalDocNo || null,
+      fileUrl: inboundForm.fileUrl || null,
       remark: inboundForm.remark || null,
     });
     EMessage.success('成/半成品已入库');
@@ -502,6 +569,10 @@ const submitOutbound = async () => {
     await warehouseApi.finishedOutbound({
       inventoryId: outboundForm.inventoryId,
       quantity: outboundForm.quantity,
+      partnerName: outboundForm.partnerName || null,
+      partnerType: outboundForm.partnerType || null,
+      externalDocNo: outboundForm.externalDocNo || null,
+      fileUrl: outboundForm.fileUrl || null,
       remark: outboundForm.remark || null,
     });
     EMessage.success('成/半成品已出库');
@@ -531,6 +602,13 @@ const getObjectTypeLabel = (type: FinishedInventoryObjectType) =>
   type === 'finished' ? '成品' : '半成品';
 const getFlowReasonLabel = (value: string | null) =>
   sourceTypeOptions.find((item) => item.value === value)?.label ?? value ?? '-';
+const formatPartner = (name: string | null, type: FinishedFlowPartnerType | null) => {
+  const typeText = partnerTypeOptions.find((item) => item.value === type)?.label;
+  if (name && typeText) {
+    return `${typeText} / ${name}`;
+  }
+  return name || typeText || '-';
+};
 const formatQuantity = (value: string | number) =>
   Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 4 });
 
