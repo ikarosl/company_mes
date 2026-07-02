@@ -263,7 +263,38 @@
       </el-table>
     </el-dialog>
 
-    <el-dialog v-model="stocktakeDialogVisible" title="库存盘点" :width="DialogWidth.sm" class="business-dialog">
+    <el-dialog v-model="stocktakeDialogVisible" title="库存盘点" :width="DialogWidth.lg" class="business-dialog">
+      <el-descriptions v-if="stocktakeBatch" class="stocktake-summary" :column="3" border>
+        <el-descriptions-item label="库存类型">
+          <el-tag :type="getInventoryTypeTag(stocktakeBatch).type" effect="light">
+            {{ getInventoryTypeTag(stocktakeBatch).label }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="库存批次号">{{ stocktakeBatch.materialBatchNo }}</el-descriptions-item>
+        <el-descriptions-item label="状态">{{ getStatusMeta(stocktakeBatch.status).label }}</el-descriptions-item>
+        <el-descriptions-item label="库存对象">{{ stocktakeBatch.productName }}</el-descriptions-item>
+        <el-descriptions-item label="对象型号">{{ stocktakeBatch.productModel }}</el-descriptions-item>
+        <el-descriptions-item label="对象类型">{{ formatObjectType(stocktakeBatch) }}</el-descriptions-item>
+        <el-descriptions-item label="账面库存">{{ formatQuantity(stocktakeBatch.quantity) }}</el-descriptions-item>
+        <el-descriptions-item label="本次实盘">{{ formatQuantity(stocktakeForm.quantity) }}</el-descriptions-item>
+        <el-descriptions-item label="盘点差异">
+          <span :class="{ danger: getStocktakeDifference(stocktakeBatch, stocktakeForm.quantity) < 0 }">
+            {{ formatSignedQuantity(getStocktakeDifference(stocktakeBatch, stocktakeForm.quantity)) }}
+          </span>
+        </el-descriptions-item>
+        <el-descriptions-item label="可用数量">{{ formatQuantity(stocktakeBatch.availableQuantity) }}</el-descriptions-item>
+        <el-descriptions-item label="预留数量">{{ formatQuantity(stocktakeBatch.reservedQuantity) }}</el-descriptions-item>
+        <el-descriptions-item label="已用数量">{{ formatQuantity(stocktakeBatch.usedQuantity) }}</el-descriptions-item>
+        <el-descriptions-item label="初始入库">{{ formatQuantity(stocktakeBatch.initialQuantity) }}</el-descriptions-item>
+        <el-descriptions-item label="入库日期">{{ stocktakeBatch.receivedDate || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="单位">{{ stocktakeBatch.unit || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="供应商">{{ stocktakeBatch.supplierName || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="技术协议编码">{{ stocktakeBatch.protocolCode || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="产品库存来源">{{ formatProductSourceType(stocktakeBatch.sourceType) }}</el-descriptions-item>
+        <el-descriptions-item label="库位">{{ stocktakeBatch.location || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="更新时间">{{ formatTime(stocktakeBatch.updatedAt) }}</el-descriptions-item>
+        <el-descriptions-item label="批次备注">{{ stocktakeBatch.remark || '-' }}</el-descriptions-item>
+      </el-descriptions>
       <el-form class="dialog-form" label-width="92px" :model="stocktakeForm">
         <el-form-item label="盘点数量" required>
           <el-input-number v-model="stocktakeForm.quantity" :min="0" :precision="4" :step="1" />
@@ -375,6 +406,7 @@ const stocktakeRecordsDialogVisible = ref(false);
 const editingBatchId = ref<string | null>(null);
 const stocktakeBatchId = ref<string | null>(null);
 const stocktakeInventoryType = ref<InventoryStocktakeInventoryType>('material');
+const stocktakeBatch = ref<MaterialBatchListItem | null>(null);
 const stocktakeRecordBatch = ref<MaterialBatchListItem | null>(null);
 const stocktakeRecordRows = ref<InventoryStocktakeListItem[]>([]);
 const stocktakeRecordLoading = ref(false);
@@ -552,6 +584,7 @@ const openUsages = async (row: MaterialBatchListItem) => {
 const openStocktake = (row: MaterialBatchListItem) => {
   stocktakeBatchId.value = row.id;
   stocktakeInventoryType.value = getInventoryType(row);
+  stocktakeBatch.value = row;
   stocktakeForm.quantity = Number(row.quantity);
   stocktakeForm.remark = '';
   stocktakeDialogVisible.value = true;
@@ -737,6 +770,18 @@ const formatSignedQuantity = (value: string | number | null) => {
   const formatted = formatQuantity(amount);
   return amount > 0 ? `+${formatted}` : formatted;
 };
+
+/** 盘点差异：实盘数量 - 当前账面库存，用于盘点弹窗即时提示盘盈/盘亏。 */
+const getStocktakeDifference = (row: MaterialBatchListItem, countedQuantity: string | number | null) => {
+  const counted = Number(countedQuantity ?? 0);
+  const bookQuantity = Number(row.quantity ?? 0);
+
+  if (!Number.isFinite(counted) || !Number.isFinite(bookQuantity)) {
+    return 0;
+  }
+
+  return counted - bookQuantity;
+};
 /** 物料流水操作类型中文标签。 */
 const formatUsageType = (type: 'reserve' | 'unreserve' | 'issue' | 'return') => ({
   reserve: '预留',
@@ -813,6 +858,10 @@ onMounted(loadPageData);
 
 .record-summary {
   margin-bottom: 16px;
+}
+
+.stocktake-summary {
+  margin-bottom: 18px;
 }
 
 .inventory-table :deep(.el-table__header th),

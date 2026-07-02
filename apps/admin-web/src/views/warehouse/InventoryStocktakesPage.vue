@@ -192,12 +192,64 @@
         <el-descriptions-item label="说明" :span="2">{{ activeRow.remark || '-' }}</el-descriptions-item>
       </el-descriptions>
     </el-dialog>
+
+    <el-dialog v-model="adjustDialogVisible" title="确认盘点调账" :width="DialogWidth.lg" class="business-dialog">
+      <template v-if="adjustRow">
+        <el-alert
+          :title="getAdjustAlertTitle(adjustRow)"
+          :type="adjustRow.differenceType === 'equal' ? 'info' : 'warning'"
+          show-icon
+          :closable="false"
+          class="adjust-alert"
+        />
+        <el-descriptions class="adjust-summary" :column="3" border>
+          <el-descriptions-item label="盘点单号">{{ adjustRow.stocktakeNo || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="对象类型">
+            {{ formatInventoryType(adjustRow.inventoryType, adjustRow.objectType) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="状态">{{ getStatusMeta(adjustRow.status).label }}</el-descriptions-item>
+          <el-descriptions-item label="库存批次">{{ adjustRow.batchNoSnapshot || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="产品/物料">{{ formatStocktakeObject(adjustRow) }}</el-descriptions-item>
+          <el-descriptions-item label="盘点人">{{ adjustRow.operatorName || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="账面数量">{{ formatQuantity(adjustRow.beforeQuantity) }}</el-descriptions-item>
+          <el-descriptions-item label="实盘数量">{{ formatQuantity(adjustRow.countedQuantity) }}</el-descriptions-item>
+          <el-descriptions-item label="调整后数量">{{ formatQuantity(adjustRow.countedQuantity) }}</el-descriptions-item>
+          <el-descriptions-item label="差异类型">
+            <el-tag :type="getDifferenceMeta(adjustRow.differenceType).type" effect="light">
+              {{ getDifferenceMeta(adjustRow.differenceType).label }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="差异数量">
+            <span :class="getDifferenceMeta(adjustRow.differenceType).className">
+              {{ formatSignedQuantity(adjustRow.differenceQuantity) }}
+            </span>
+          </el-descriptions-item>
+          <el-descriptions-item label="调账影响">{{ getAdjustImpactText(adjustRow) }}</el-descriptions-item>
+          <el-descriptions-item label="盘点时间">{{ formatTime(adjustRow.operatedAt) }}</el-descriptions-item>
+          <el-descriptions-item label="差异原因" :span="2">{{ adjustRow.reasonType || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="原盘点说明" :span="3">{{ adjustRow.remark || '-' }}</el-descriptions-item>
+        </el-descriptions>
+        <el-form class="dialog-form" label-width="92px" :model="adjustForm">
+          <el-form-item label="调账说明">
+            <el-input
+              v-model="adjustForm.remark"
+              type="textarea"
+              :rows="3"
+              placeholder="可补充调账原因、审批依据或现场确认说明"
+            />
+          </el-form-item>
+        </el-form>
+      </template>
+      <template #footer>
+        <el-button @click="adjustDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="submitAdjust">确认调账</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
-import { ElMessageBox } from 'element-plus';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type {
   InventoryStocktakeInventoryType,
@@ -240,6 +292,7 @@ const currentPage = ref(1);
 const pageSize = ref(10);
 const createDialogVisible = ref(false);
 const detailDialogVisible = ref(false);
+const adjustDialogVisible = ref(false);
 
 /** 新增盘点表单：账面数量由所选库存批次带出，提交时只发送实盘数量和说明。 */
 const createForm = reactive({
@@ -250,6 +303,13 @@ const createForm = reactive({
   operatedAt: '',
   remark: '',
 });
+
+/** 调账确认表单：只允许补充调账说明，调整后库存由后端按盘点实盘数计算。 */
+const adjustForm = reactive({
+  remark: '',
+});
+
+const adjustRow = ref<InventoryStocktakeListItem | null>(null);
 
 const selectedTarget = computed(() =>
   targetOptions.value.find((item) => item.id === createForm.inventoryBatchId) ?? null,
@@ -361,26 +421,29 @@ const submitCreate = async () => {
   }
 };
 
-/** 确认调账：二次确认后由后端事务写台账状态并更新库存当前数量。 */
+/** 打开调账确认弹窗：先展示盘点差异和库存调整影响，再由用户确认提交。 */
 const confirmAdjust = async (row: InventoryStocktakeListItem) => {
-  try {
-    await ElMessageBox.confirm(
-      `确认将库存从 ${formatQuantity(row.beforeQuantity)} 调整为 ${formatQuantity(row.countedQuantity)}？`,
-      '确认盘点调账',
-      {
-        confirmButtonText: '确认调账',
-        cancelButtonText: '取消',
-        type: row.differenceType === 'equal' ? 'info' : 'warning',
-      },
-    );
-  } catch {
+  if (row.status !== 'confirmed') {
+    EMessage.warning('只有已登记的盘点记录可以调账');
+    return;
+  }
+
+  adjustRow.value = row;
+  adjustForm.remark = row.remark ?? '';
+  adjustDialogVisible.value = true;
+};
+
+/** 提交调账：后端事务会同时更新库存当前数量，并把盘点台账状态改为已调账。 */
+const submitAdjust = async () => {
+  if (!adjustRow.value) {
     return;
   }
 
   submitting.value = true;
   try {
-    await warehouseApi.adjustStocktake(row.id, { remark: row.remark });
+    await warehouseApi.adjustStocktake(adjustRow.value.id, { remark: adjustForm.remark || null });
     EMessage.success('库存调账已完成');
+    adjustDialogVisible.value = false;
     await loadStocktakes();
   } catch (error) {
     EMessage.error(error, '库存调账失败');
@@ -404,6 +467,18 @@ const formatInventoryType = (type: InventoryStocktakeInventoryType, objectType?:
 
 const formatTarget = (target: InventoryStocktakeTargetOption) =>
   `${target.batchNo} / ${target.productModel} / ${target.productName} / 库存 ${formatQuantity(target.quantity)}`;
+
+const formatStocktakeObject = (row: InventoryStocktakeListItem) =>
+  `${row.productModel || '-'} / ${row.productName || '-'}`;
+
+const getAdjustAlertTitle = (row: InventoryStocktakeListItem) =>
+  `本次将库存从 ${formatQuantity(row.beforeQuantity)} 调整为 ${formatQuantity(row.countedQuantity)}，差异 ${formatSignedQuantity(row.differenceQuantity)}`;
+
+const getAdjustImpactText = (row: InventoryStocktakeListItem) => {
+  if (row.differenceType === 'surplus') return '盘盈调增库存';
+  if (row.differenceType === 'shortage') return '盘亏调减库存';
+  return '库存数量不变，仅确认盘点结果';
+};
 
 const formatQuantity = (value: string | number | null | undefined) => {
   const amount = Number(value ?? 0);
@@ -479,6 +554,11 @@ onMounted(loadStocktakes);
 
 .stocktake-table {
   width: 100%;
+}
+
+.adjust-alert,
+.adjust-summary {
+  margin-bottom: 16px;
 }
 
 .stocktake-table :deep(.el-table__header th) {
