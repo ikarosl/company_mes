@@ -111,7 +111,7 @@
               v-model="inboundForm.productionBatchId"
               filterable
               :loading="batchLoading"
-              placeholder="请选择已完成生产批次"
+              placeholder="请选择仍有可入库数量的生产批次"
               @change="handleInboundBatchChange"
             >
               <el-option
@@ -140,6 +140,9 @@
           <el-form-item label="产品信息">
             <el-input :model-value="selectedInboundProductText" disabled />
           </el-form-item>
+          <el-form-item v-if="isProductionInbound" label="可入库数量">
+            <el-input :model-value="selectedInboundAvailableText" disabled />
+          </el-form-item>
           <el-form-item label="产品库存批次号">
             <el-input
               v-model="inboundForm.inventoryBatchNo"
@@ -148,7 +151,13 @@
             />
           </el-form-item>
           <el-form-item label="数量" required>
-            <el-input-number v-model="inboundForm.quantity" :min="1" :precision="0" :step="1" />
+            <el-input-number
+              v-model="inboundForm.quantity"
+              :min="1"
+              :max="inboundQuantityMax"
+              :precision="0"
+              :step="1"
+            />
           </el-form-item>
         </div>
         <el-form-item label="备注">
@@ -206,13 +215,12 @@ import type {
   FinishedInventoryOption,
   FinishedInventorySourceType,
   FinishedOutboundPayload,
+  FinishedProductionInboundOption,
   FinishedTransactionListItem,
   FinishedTransactionType,
   ProductListItem,
-  ProductionBatchItem,
 } from '@company/api-contract';
 import { productApi } from '../../api/product';
-import { productionApi } from '../../api/production';
 import { warehouseApi } from '../../api/warehouse';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
@@ -233,8 +241,8 @@ const objectTypeOptions: Array<{ value: FinishedInventoryObjectType; label: stri
 
 /** 成/半成品出入库流水表格数据。 */
 const rows = ref<FinishedTransactionListItem[]>([]);
-/** 已完成生产批次选项：仅 production 入库使用。 */
-const completedBatches = ref<ProductionBatchItem[]>([]);
+/** 可生产入库批次选项：仅包含 completed 且剩余可入库数量大于 0 的生产批次。 */
+const completedBatches = ref<FinishedProductionInboundOption[]>([]);
 /** 非 production 入库时可选择的产品列表。 */
 const productOptions = ref<ProductListItem[]>([]);
 /** 当前可出库的产品库存批次选项。 */
@@ -295,6 +303,16 @@ const selectedInboundProductText = computed(() => {
     ? `${selectedInboundProduct.value.productModel} / ${selectedInboundProduct.value.productName}`
     : '请选择产品';
 });
+const selectedInboundAvailableText = computed(() =>
+  selectedInboundBatch.value
+    ? `${formatQuantity(selectedInboundBatch.value.availableQuantity)} ${selectedInboundBatch.value.unit || ''}`
+    : '选择生产批次后自动计算',
+);
+const inboundQuantityMax = computed(() =>
+  isProductionInbound.value && selectedInboundBatch.value
+    ? Math.max(1, Number(selectedInboundBatch.value.availableQuantity))
+    : undefined,
+);
 const selectedOutboundInventory = computed(
   () => inventoryBatchOptions.value.find((item) => item.id === outboundForm.inventoryId) ?? null,
 );
@@ -322,18 +340,13 @@ const loadRows = async () => {
   }
 };
 
-/** 加载已完成生产批次，供 production 来源入库使用。 */
+/** 加载可生产入库批次：后端按生产批次计划数量减已入库流水合计，只返回剩余数量大于 0 的批次。 */
 const loadCompletedBatches = async () => {
   batchLoading.value = true;
   try {
-    const pageResult = await productionApi.listTasks({
-      page: 1,
-      pageSize: 100,
-      status: 'completed',
-    });
-    completedBatches.value = pageResult.items;
+    completedBatches.value = await warehouseApi.listFinishedProductionInboundOptions();
   } catch (error) {
-    EMessage.error(error, '已完成生产批次加载失败');
+    EMessage.error(error, '可入库生产批次加载失败');
   } finally {
     batchLoading.value = false;
   }
@@ -417,10 +430,10 @@ const handleInboundSourceChange = () => {
   inboundForm.quantity = 1;
 };
 
-/** 选择生产批次后默认带出计划数量，允许现场按实际入库数量调整。 */
+/** 选择生产批次后默认带出剩余可入库数量，允许现场按实际入库数量调小。 */
 const handleInboundBatchChange = () => {
   if (selectedInboundBatch.value) {
-    inboundForm.quantity = Number(selectedInboundBatch.value.plannedQuantity);
+    inboundForm.quantity = Number(selectedInboundBatch.value.availableQuantity);
   }
 };
 
@@ -445,6 +458,14 @@ const submitInbound = async () => {
     EMessage.warning('请填写大于 0 的整数入库数量');
     return;
   }
+  if (
+    isProductionInbound.value &&
+    selectedInboundBatch.value &&
+    Number(inboundForm.quantity) > Number(selectedInboundBatch.value.availableQuantity)
+  ) {
+    EMessage.warning(`入库数量不能超过剩余可入库数量 ${formatQuantity(selectedInboundBatch.value.availableQuantity)}`);
+    return;
+  }
 
   submitting.value = true;
   try {
@@ -457,7 +478,7 @@ const submitInbound = async () => {
     });
     EMessage.success('成/半成品已入库');
     inboundVisible.value = false;
-    await Promise.all([loadRows(), loadInventoryOptions()]);
+    await Promise.all([loadRows(), loadInventoryOptions(), loadCompletedBatches()]);
   } catch (error) {
     EMessage.error(error, '成/半成品入库失败');
   } finally {
@@ -493,8 +514,8 @@ const submitOutbound = async () => {
   }
 };
 
-const formatBatchOption = (item: ProductionBatchItem) =>
-  `${item.batchNo} / ${item.productModel} / ${item.productName} / 计划 ${formatQuantity(item.plannedQuantity)}`;
+const formatBatchOption = (item: FinishedProductionInboundOption) =>
+  `${item.batchNo} / ${item.productModel} / ${item.productName} / 计划 ${formatQuantity(item.plannedQuantity)} / 已入 ${formatQuantity(item.inboundQuantity)} / 可入 ${formatQuantity(item.availableQuantity)}`;
 const formatProductOption = (item: ProductListItem) =>
   `${item.productModel} / ${item.productName}`;
 const formatInventoryOption = (item: FinishedInventoryOption) =>
