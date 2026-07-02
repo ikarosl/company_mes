@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
+import type {  RowDataPacket } from 'mysql2/promise';
 import type {
   AdjustInventoryStocktakePayload,
   CreateInventoryStocktakePayload,
@@ -398,11 +398,14 @@ export class InventoryStocktakeRepository {
             mb.material_batch_no AS batch_no,
             NULL AS object_type,
             mb.quantity,
-            mb.unit,
-            mb.location,
+            p.unit,
+            NULL AS location,
             COALESCE(available.reserved_not_used_quantity, 0) AS reserved_quantity,
             COALESCE(available.used_quantity, 0) AS used_quantity
           FROM material_batches mb
+          INNER JOIN products p
+            ON p.id = mb.product_id
+            AND p.is_deleted = 0
           LEFT JOIN v_material_batch_available available
             ON available.material_batch_id = mb.id
           WHERE mb.id = ? AND mb.is_deleted = 0
@@ -523,8 +526,8 @@ export class InventoryStocktakeRepository {
         p.product_name,
         category.product_type AS object_type,
         mb.quantity,
-        COALESCE(mb.unit, p.unit) AS unit,
-        mb.location
+        p.unit AS unit,
+        NULL AS location
       FROM material_batches mb
       INNER JOIN products p ON p.id = mb.product_id AND p.is_deleted = 0
       LEFT JOIN product_categories category ON category.id = p.category_id AND category.is_deleted = 0

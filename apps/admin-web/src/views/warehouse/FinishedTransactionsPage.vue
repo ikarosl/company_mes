@@ -222,7 +222,6 @@ const sourceTypeOptions: Array<{ value: FinishedInventorySourceType; label: stri
   { value: 'production', label: 'production / 生产入库' },
   { value: 'purchase', label: 'purchase / 外购入库' },
   { value: 'outsourcing', label: 'outsourcing / 外协入库' },
-  { value: 'stocktake', label: 'stocktake / 盘点入库' },
   { value: 'other', label: 'other / 其他入库' },
 ];
 
