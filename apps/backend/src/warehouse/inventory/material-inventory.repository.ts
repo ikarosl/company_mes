@@ -24,6 +24,7 @@ import type {
 
 export interface MaterialInventoryFilters {
   keyword?: string;
+  inventoryType?: string;
   materialBatchNo?: string;
   supplierName?: string;
   status?: string;
@@ -45,9 +46,7 @@ export class MaterialInventoryRepository {
     const [totalRow] = await this.database.query<CountRow[]>(
       `
       SELECT COUNT(*) AS total
-      FROM material_batches mb
-      INNER JOIN products p ON p.id = mb.product_id AND p.is_deleted = 0
-      LEFT JOIN product_categories c ON c.id = p.category_id AND c.is_deleted = 0
+      FROM (${this.buildInventoryUnionSql()}) inventory
       WHERE ${where}
     `,
       params,
@@ -55,33 +54,10 @@ export class MaterialInventoryRepository {
     const rows = await this.database.query<MaterialBatchListRow[]>(
       `
       SELECT
-        mb.id,
-        mb.product_id,
-        p.product_model,
-        p.product_name,
-        c.product_attribute,
-        c.product_type,
-        mb.material_batch_no,
-        mb.supplier_name,
-        mb.protocol_code,
-        mb.received_date,
-        mb.initial_quantity,
-        mb.quantity,
-        COALESCE(u.reserved_quantity, 0) AS reserved_quantity,
-        COALESCE(u.used_quantity, 0) AS used_quantity,
-        mb.status,
-        mb.remark,
-        mb.created_at,
-        mb.updated_at
-      FROM material_batches mb
-      INNER JOIN products p ON p.id = mb.product_id AND p.is_deleted = 0
-      LEFT JOIN product_categories c ON c.id = p.category_id AND c.is_deleted = 0
-      LEFT JOIN (
-        SELECT material_batch_id, reserved_not_used_quantity AS reserved_quantity, used_quantity
-        FROM v_material_batch_available
-      ) u ON u.material_batch_id = mb.id
+        inventory.*
+      FROM (${this.buildInventoryUnionSql()}) inventory
       WHERE ${where}
-      ORDER BY mb.id DESC
+      ORDER BY inventory.created_at DESC, inventory.id DESC
       LIMIT ? OFFSET ?
     `,
       [...params, pagination.pageSize, pagination.offset],
@@ -241,36 +217,44 @@ export class MaterialInventoryRepository {
   }
 
   private buildListFilters(filters: MaterialInventoryFilters) {
-    const clauses = ['mb.is_deleted = 0'];
+    const clauses = ['inventory.is_deleted = 0'];
     const params: QueryParam[] = [];
+
+    if (filters.inventoryType?.trim()) {
+      clauses.push('inventory.inventory_type = ?');
+      params.push(readInventoryType(filters.inventoryType.trim()));
+    }
 
     if (filters.keyword?.trim()) {
       clauses.push(`(
-        p.product_model LIKE ?
-        OR p.product_name LIKE ?
-        OR c.product_attribute LIKE ?
-        OR c.product_type LIKE ?
-        OR mb.material_batch_no LIKE ?
-        OR mb.supplier_name LIKE ?
-        OR mb.protocol_code LIKE ?
-        OR mb.remark LIKE ?
+        inventory.product_model LIKE ?
+        OR inventory.product_name LIKE ?
+        OR inventory.product_attribute LIKE ?
+        OR inventory.product_type LIKE ?
+        OR inventory.material_batch_no LIKE ?
+        OR inventory.supplier_name LIKE ?
+        OR inventory.protocol_code LIKE ?
+        OR inventory.object_type LIKE ?
+        OR inventory.source_type LIKE ?
+        OR inventory.location LIKE ?
+        OR inventory.remark LIKE ?
       )`);
       const keyword = `%${filters.keyword.trim()}%`;
-      params.push(keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword);
+      params.push(keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword);
     }
 
     if (filters.materialBatchNo?.trim()) {
-      clauses.push('mb.material_batch_no LIKE ?');
+      clauses.push('inventory.material_batch_no LIKE ?');
       params.push(`%${filters.materialBatchNo.trim()}%`);
     }
 
     if (filters.supplierName?.trim()) {
-      clauses.push('mb.supplier_name LIKE ?');
+      clauses.push('inventory.supplier_name LIKE ?');
       params.push(`%${filters.supplierName.trim()}%`);
     }
 
     if (filters.status?.trim()) {
-      clauses.push('mb.status = ?');
+      clauses.push('inventory.status = ?');
       params.push(readMaterialBatchStatus(filters.status.trim()));
     }
 
@@ -278,6 +262,78 @@ export class MaterialInventoryRepository {
       where: clauses.join(' AND '),
       params,
     };
+  }
+
+  private buildInventoryUnionSql() {
+    /**
+     * 库存管理页统一展示口径：
+     * 1. material_batches 负责物料批次当前库存，预留/已用数量来自可用量视图
+     * 2. product_inventory_batches 负责成品/半成品库存批次，暂无预留口径，直接以数量作为可用量
+     * 3. 两类库存保留 inventory_type，前端据此决定是否展示物料专属操作
+     */
+    return `
+      SELECT
+        mb.id,
+        'material' AS inventory_type,
+        mb.product_id,
+        p.product_model,
+        p.product_name,
+        c.product_attribute,
+        c.product_type,
+        NULL AS object_type,
+        NULL AS source_type,
+        mb.material_batch_no,
+        mb.supplier_name,
+        mb.protocol_code,
+        mb.received_date,
+        mb.initial_quantity,
+        mb.quantity,
+        COALESCE(u.reserved_quantity, 0) AS reserved_quantity,
+        COALESCE(u.used_quantity, 0) AS used_quantity,
+        mb.status,
+        p.unit,
+        NULL AS location,
+        mb.remark,
+        mb.created_at,
+        mb.updated_at,
+        mb.is_deleted
+      FROM material_batches mb
+      INNER JOIN products p ON p.id = mb.product_id AND p.is_deleted = 0
+      LEFT JOIN product_categories c ON c.id = p.category_id AND c.is_deleted = 0
+      LEFT JOIN (
+        SELECT material_batch_id, reserved_not_used_quantity AS reserved_quantity, used_quantity
+        FROM v_material_batch_available
+      ) u ON u.material_batch_id = mb.id
+      UNION ALL
+      SELECT
+        pib.id,
+        'product' AS inventory_type,
+        pib.product_id,
+        p.product_model,
+        p.product_name,
+        c.product_attribute,
+        c.product_type,
+        pib.object_type,
+        pib.source_type,
+        pib.inventory_batch_no AS material_batch_no,
+        NULL AS supplier_name,
+        NULL AS protocol_code,
+        pib.received_date,
+        NULL AS initial_quantity,
+        pib.quantity,
+        0 AS reserved_quantity,
+        0 AS used_quantity,
+        CASE WHEN pib.quantity <= 0 THEN 'used_up' ELSE 'available' END AS status,
+        COALESCE(pib.unit, p.unit) AS unit,
+        pib.location,
+        pib.remark,
+        pib.created_at,
+        pib.updated_at,
+        pib.is_deleted
+      FROM product_inventory_batches pib
+      INNER JOIN products p ON p.id = pib.product_id AND p.is_deleted = 0
+      LEFT JOIN product_categories c ON c.id = p.category_id AND c.is_deleted = 0
+    `;
   }
 
   private async getMaterialBatchRow(id: number) {
@@ -303,11 +359,14 @@ export class MaterialInventoryRepository {
       `
       SELECT
         mb.id,
+        'material' AS inventory_type,
         mb.product_id,
         p.product_model,
         p.product_name,
         c.product_attribute,
         c.product_type,
+        NULL AS object_type,
+        NULL AS source_type,
         mb.material_batch_no,
         mb.supplier_name,
         mb.protocol_code,
@@ -317,6 +376,8 @@ export class MaterialInventoryRepository {
         COALESCE(u.reserved_quantity, 0) AS reserved_quantity,
         COALESCE(u.used_quantity, 0) AS used_quantity,
         mb.status,
+        p.unit,
+        NULL AS location,
         mb.remark,
         mb.created_at,
         mb.updated_at
@@ -410,11 +471,14 @@ export class MaterialInventoryRepository {
 
     return {
       id: String(row.id),
+      inventoryType: row.inventory_type,
       productId: String(row.product_id),
       productModel: row.product_model,
       productName: row.product_name,
       productAttribute: row.product_attribute,
       productType: row.product_type,
+      objectType: row.object_type,
+      sourceType: row.source_type,
       materialBatchNo: row.material_batch_no,
       supplierName: row.supplier_name,
       protocolCode: row.protocol_code,
@@ -428,6 +492,8 @@ export class MaterialInventoryRepository {
         row.status === 'disabled'
           ? 'disabled'
           : this.deriveStatus(quantity, reservedQuantity, usedQuantity),
+      unit: row.unit,
+      location: row.location,
       remark: row.remark,
       createdAt: row.created_at.toISOString(),
       updatedAt: row.updated_at.toISOString(),
@@ -501,6 +567,14 @@ const readMaterialBatchStatus = (value: string) => {
   }
 
   return value as MaterialBatchStatus;
+};
+
+const readInventoryType = (value: string) => {
+  if (value !== 'material' && value !== 'product') {
+    throw new BadRequestException('Invalid inventory type');
+  }
+
+  return value;
 };
 
 const readDecimal = (value: string | number | null | undefined, message: string) => {

@@ -285,11 +285,17 @@ export type MaterialBatchStatus = 'available' | 'partial_used' | 'used_up' | 'di
 /** 物料批次库存列表项，protocolCode 是该入库批次的检测依据编码。 */
 export interface MaterialBatchListItem {
   id: string;
+  /** 库存来源类型：material 来自物料批次表，product 来自产品库存批次表。 */
+  inventoryType?: InventoryStocktakeInventoryType;
   productId: string;
   productModel: string;
   productName: string;
   productAttribute: string | null;
   productType: string | null;
+  /** 产品库存对象类型：finished 成品，semi_finished 半成品；物料库存为空。 */
+  objectType?: string | null;
+  /** 产品库存来源类型：生产、采购、外协、盘点或其他；物料库存为空。 */
+  sourceType?: string | null;
   materialBatchNo: string;
   supplierName: string | null;
   protocolCode: string | null;
@@ -301,6 +307,10 @@ export interface MaterialBatchListItem {
   usedQuantity: string;
   availableQuantity: string;
   status: MaterialBatchStatus;
+  /** 库存计量单位：产品库存优先取库存批次单位，物料库存取产品主数据单位。 */
+  unit?: string | null;
+  /** 库位：当前主要用于产品库存批次展示。 */
+  location?: string | null;
   remark: string | null;
   createdAt: string;
   updatedAt: string;

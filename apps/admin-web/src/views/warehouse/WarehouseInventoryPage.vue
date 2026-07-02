@@ -2,11 +2,18 @@
   <div class="inventory-page">
     <section class="query-panel">
       <el-form class="query-form" :inline="true" :model="query">
-        <el-form-item label="物料">
-          <el-input v-model="query.keyword" clearable placeholder="物料、分类、批次、供应商或协议编码" />
+        <el-form-item label="库存类型">
+          <el-select v-model="query.inventoryType" placeholder="全部">
+            <el-option label="全部" value="" />
+            <el-option label="物料库存" value="material" />
+            <el-option label="产品库存" value="product" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="库存对象">
+          <el-input v-model="query.keyword" clearable placeholder="产品/物料、分类、批次、库位或供应商" />
         </el-form-item>
         <el-form-item label="批次号">
-          <el-input v-model="query.materialBatchNo" clearable placeholder="物料批次号" />
+          <el-input v-model="query.materialBatchNo" clearable placeholder="库存批次号" />
         </el-form-item>
         <el-form-item label="供应商">
           <el-input v-model="query.supplierName" clearable placeholder="供应商名称" />
@@ -38,18 +45,25 @@
       </div>
 
       <el-table v-loading="loading" :data="inventoryRows" class="inventory-table">
-        <el-table-column label="物料" min-width="220">
+        <el-table-column label="库存类型" width="104">
+          <template #default="{ row }">
+            <el-tag :type="getInventoryTypeTag(row).type" effect="light">
+              {{ getInventoryTypeTag(row).label }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="库存对象" min-width="220">
           <template #default="{ row }">
             <div class="material-name">{{ row.productName }}</div>
             <div class="sub-text">{{ row.productModel }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="物料类型" min-width="150">
+        <el-table-column label="对象类型" min-width="150">
           <template #default="{ row }">
-            {{ row.productAttribute && row.productType ? `${row.productAttribute} / ${row.productType}` : '-' }}
+            {{ formatObjectType(row) }}
           </template>
         </el-table-column>
-        <el-table-column prop="materialBatchNo" label="物料批次号" min-width="170" />
+        <el-table-column prop="materialBatchNo" label="库存批次号" min-width="170" />
         <el-table-column label="供应商" min-width="150">
           <template #default="{ row }">{{ row.supplierName || '-' }}</template>
         </el-table-column>
@@ -82,12 +96,13 @@
         <el-table-column label="操作" width="410" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">查看</el-button>
-            <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-button link type="primary" @click="openReservations(row)">预留</el-button>
-            <el-button link type="primary" @click="openUsages(row)">使用</el-button>
+            <el-button v-if="isMaterialInventory(row)" link type="primary" @click="openEdit(row)">编辑</el-button>
+            <el-button v-if="isMaterialInventory(row)" link type="primary" @click="openReservations(row)">预留</el-button>
+            <el-button v-if="isMaterialInventory(row)" link type="primary" @click="openUsages(row)">使用</el-button>
             <el-button link type="primary" @click="openStocktake(row)">盘点</el-button>
             <el-button link type="primary" @click="openStocktakeRecords(row)">盘点记录</el-button>
             <el-button
+              v-if="isMaterialInventory(row)"
               link
               :type="row.status === 'disabled' ? 'success' : 'danger'"
               @click="toggleStatus(row)"
@@ -176,14 +191,18 @@
 
     <el-dialog v-model="detailDialogVisible" title="库存详情" :width="DialogWidth.lg" class="business-dialog">
       <el-descriptions v-if="detailRow" :column="2" border>
-        <el-descriptions-item label="物料名称">{{ detailRow.productName }}</el-descriptions-item>
-        <el-descriptions-item label="物料型号">{{ detailRow.productModel }}</el-descriptions-item>
-        <el-descriptions-item label="物料类型">
-          {{ detailRow.productAttribute && detailRow.productType ? `${detailRow.productAttribute} / ${detailRow.productType}` : '-' }}
+        <el-descriptions-item label="库存类型">{{ getInventoryTypeTag(detailRow).label }}</el-descriptions-item>
+        <el-descriptions-item label="库存对象">{{ detailRow.productName }}</el-descriptions-item>
+        <el-descriptions-item label="对象型号">{{ detailRow.productModel }}</el-descriptions-item>
+        <el-descriptions-item label="对象类型">
+          {{ formatObjectType(detailRow) }}
         </el-descriptions-item>
-        <el-descriptions-item label="物料批次号">{{ detailRow.materialBatchNo }}</el-descriptions-item>
+        <el-descriptions-item label="库存批次号">{{ detailRow.materialBatchNo }}</el-descriptions-item>
         <el-descriptions-item label="供应商">{{ detailRow.supplierName || '-' }}</el-descriptions-item>
         <el-descriptions-item label="技术协议编码">{{ detailRow.protocolCode || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="产品库存来源">{{ formatProductSourceType(detailRow.sourceType) }}</el-descriptions-item>
+        <el-descriptions-item label="库位">{{ detailRow.location || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="单位">{{ detailRow.unit || '-' }}</el-descriptions-item>
         <el-descriptions-item label="入库日期">{{ detailRow.receivedDate || '-' }}</el-descriptions-item>
         <el-descriptions-item label="初始入库数量">{{ formatQuantity(detailRow.initialQuantity) }}</el-descriptions-item>
         <el-descriptions-item label="库存数量">{{ formatQuantity(detailRow.quantity) }}</el-descriptions-item>
@@ -261,9 +280,10 @@
 
     <el-dialog v-model="stocktakeRecordsDialogVisible" title="盘点记录" :width="DialogWidth.lg" class="business-dialog">
       <el-descriptions v-if="stocktakeRecordBatch" class="record-summary" :column="2" border>
-        <el-descriptions-item label="物料名称">{{ stocktakeRecordBatch.productName }}</el-descriptions-item>
-        <el-descriptions-item label="物料型号">{{ stocktakeRecordBatch.productModel }}</el-descriptions-item>
-        <el-descriptions-item label="物料批次号">{{ stocktakeRecordBatch.materialBatchNo }}</el-descriptions-item>
+        <el-descriptions-item label="库存类型">{{ getInventoryTypeTag(stocktakeRecordBatch).label }}</el-descriptions-item>
+        <el-descriptions-item label="库存对象">{{ stocktakeRecordBatch.productName }}</el-descriptions-item>
+        <el-descriptions-item label="对象型号">{{ stocktakeRecordBatch.productModel }}</el-descriptions-item>
+        <el-descriptions-item label="库存批次号">{{ stocktakeRecordBatch.materialBatchNo }}</el-descriptions-item>
         <el-descriptions-item label="当前库存">{{ formatQuantity(stocktakeRecordBatch.quantity) }}</el-descriptions-item>
       </el-descriptions>
       <el-table v-loading="stocktakeRecordLoading" :data="stocktakeRecordRows" class="detail-table stocktake-record-table">
@@ -317,6 +337,7 @@ import { ElMessageBox } from 'element-plus';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type {
   InventoryStocktakeDifferenceType,
+  InventoryStocktakeInventoryType,
   InventoryStocktakeListItem,
   InventoryStocktakeStatus,
   MaterialBatchDetail,
@@ -353,12 +374,14 @@ const stocktakeDialogVisible = ref(false);
 const stocktakeRecordsDialogVisible = ref(false);
 const editingBatchId = ref<string | null>(null);
 const stocktakeBatchId = ref<string | null>(null);
+const stocktakeInventoryType = ref<InventoryStocktakeInventoryType>('material');
 const stocktakeRecordBatch = ref<MaterialBatchListItem | null>(null);
 const stocktakeRecordRows = ref<InventoryStocktakeListItem[]>([]);
 const stocktakeRecordLoading = ref(false);
 
 /** 库存列表查询条件，不参与库存数量计算。 */
 const query = reactive({
+  inventoryType: '',
   keyword: '',
   materialBatchNo: '',
   supplierName: '',
@@ -416,6 +439,7 @@ const loadInventory = async () => {
     const page = await warehouseApi.listInventory({
       page: currentPage.value,
       pageSize: pageSize.value,
+      inventoryType: query.inventoryType,
       keyword: query.keyword,
       materialBatchNo: query.materialBatchNo,
       supplierName: query.supplierName,
@@ -443,6 +467,7 @@ const searchInventory = async () => {
 };
 
 const resetQuery = async () => {
+  query.inventoryType = '';
   query.keyword = '';
   query.materialBatchNo = '';
   query.supplierName = '';
@@ -479,6 +504,11 @@ const openCreate = async () => {
 };
 
 const openEdit = async (row: MaterialBatchListItem) => {
+  if (!isMaterialInventory(row)) {
+    EMessage.warning('产品库存请通过成品/半成品出入库或盘点调整');
+    return;
+  }
+
   editingBatchId.value = row.id;
   Object.assign(batchForm, {
     productId: row.productId,
@@ -502,6 +532,10 @@ const openDetail = (row: MaterialBatchListItem) => {
 };
 
 const loadDetail = async (row: MaterialBatchListItem) => {
+  if (!isMaterialInventory(row)) {
+    return;
+  }
+
   activeDetail.value = await warehouseApi.getInventory(row.id);
 };
 
@@ -517,6 +551,7 @@ const openUsages = async (row: MaterialBatchListItem) => {
 
 const openStocktake = (row: MaterialBatchListItem) => {
   stocktakeBatchId.value = row.id;
+  stocktakeInventoryType.value = getInventoryType(row);
   stocktakeForm.quantity = Number(row.quantity);
   stocktakeForm.remark = '';
   stocktakeDialogVisible.value = true;
@@ -537,7 +572,7 @@ const openStocktakeRecords = async (row: MaterialBatchListItem) => {
     const page = await warehouseApi.listStocktakes({
       page: 1,
       pageSize: 50,
-      inventoryType: 'material',
+      inventoryType: getInventoryType(row),
       inventoryBatchId: row.id,
     });
     stocktakeRecordRows.value = page.items;
@@ -591,10 +626,18 @@ const submitStocktake = async () => {
 
   submitting.value = true;
   try {
-    await warehouseApi.stocktakeInventory(stocktakeBatchId.value, {
-      quantity: stocktakeForm.quantity,
-      remark: stocktakeForm.remark,
-    });
+    if (stocktakeInventoryType.value === 'material') {
+      await warehouseApi.stocktakeInventory(stocktakeBatchId.value, {
+        quantity: stocktakeForm.quantity,
+        remark: stocktakeForm.remark,
+      });
+    } else {
+      // 产品库存盘点走库存页专用入口，由后端统一完成“登记盘点 + 调账”的事务。
+      await warehouseApi.stocktakeInventoryByType('product', stocktakeBatchId.value, {
+        quantity: stocktakeForm.quantity,
+        remark: stocktakeForm.remark,
+      });
+    }
     EMessage.success('库存盘点已保存');
     stocktakeDialogVisible.value = false;
     await loadInventory();
@@ -606,6 +649,11 @@ const submitStocktake = async () => {
 };
 
 const toggleStatus = async (row: MaterialBatchListItem) => {
+  if (!isMaterialInventory(row)) {
+    EMessage.warning('产品库存不支持物料批次启停操作');
+    return;
+  }
+
   const disabled = row.status !== 'disabled';
   const actionText = disabled ? '停用' : '启用';
   try {
@@ -621,6 +669,40 @@ const toggleStatus = async (row: MaterialBatchListItem) => {
   await warehouseApi.changeInventoryStatus(row.id, disabled);
   EMessage.success(`物料批次已${actionText}`);
   await loadInventory();
+};
+
+const getInventoryType = (row: MaterialBatchListItem): InventoryStocktakeInventoryType =>
+  row.inventoryType === 'product' ? 'product' : 'material';
+
+/** 物料库存才允许编辑、预留、使用和启停；产品库存只做库存展示和盘点。 */
+const isMaterialInventory = (row: MaterialBatchListItem) => getInventoryType(row) === 'material';
+
+const getInventoryTypeTag = (row: MaterialBatchListItem) =>
+  getInventoryType(row) === 'product'
+    ? { label: '产品库存', type: 'primary' as const }
+    : { label: '物料库存', type: 'success' as const };
+
+const formatProductObjectType = (value: string | null | undefined) => ({
+  finished: '成品',
+  semi_finished: '半成品',
+}[value ?? ''] ?? (value || '-'));
+
+const formatProductSourceType = (value: string | null | undefined) => ({
+  production: '生产入库',
+  purchase: '采购入库',
+  outsourcing: '外协入库',
+  stocktake: '盘点生成',
+  other: '其他',
+}[value ?? ''] ?? (value || '-'));
+
+const formatObjectType = (row: MaterialBatchListItem) => {
+  if (getInventoryType(row) === 'product') {
+    const objectType = formatProductObjectType(row.objectType);
+    const category = row.productAttribute && row.productType ? `${row.productAttribute} / ${row.productType}` : '';
+    return category ? `${objectType} · ${category}` : objectType;
+  }
+
+  return row.productAttribute && row.productType ? `${row.productAttribute} / ${row.productType}` : '-';
 };
 
 const getStatusMeta = (status: MaterialBatchStatus) =>

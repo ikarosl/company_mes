@@ -6,11 +6,14 @@ export interface CountRow extends RowDataPacket {
 
 export interface MaterialBatchListRow extends RowDataPacket {
   id: number;
+  inventory_type: 'material' | 'product';
   product_id: number;
   product_model: string;
   product_name: string;
   product_attribute: string | null;
   product_type: string | null;
+  object_type: string | null;
+  source_type: string | null;
   material_batch_no: string;
   supplier_name: string | null;
   protocol_code: string | null;
@@ -20,6 +23,8 @@ export interface MaterialBatchListRow extends RowDataPacket {
   reserved_quantity: string | number | null;
   used_quantity: string | number | null;
   status: string;
+  unit: string | null;
+  location: string | null;
   remark: string | null;
   created_at: Date;
   updated_at: Date;

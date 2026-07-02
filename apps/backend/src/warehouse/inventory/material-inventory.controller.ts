@@ -1,5 +1,5 @@
 import { PERMISSIONS } from '@company/constants';
-import { Body, Controller, Get, Inject, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Inject, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import type {
   CreateMaterialBatchPayload,
   StocktakeMaterialBatchPayload,
@@ -26,6 +26,7 @@ export class MaterialInventoryController {
   @Get()
   listMaterialBatches(
     @Query('keyword') keyword?: string,
+    @Query('inventoryType') inventoryType?: string,
     @Query('materialBatchNo') materialBatchNo?: string,
     @Query('supplierName') supplierName?: string,
     @Query('status') status?: string,
@@ -33,7 +34,7 @@ export class MaterialInventoryController {
     @Query('pageSize') pageSize?: string,
   ) {
     return this.inventory.listMaterialBatches(
-      { keyword, materialBatchNo, supplierName, status },
+      { keyword, inventoryType, materialBatchNo, supplierName, status },
       readPagination(page, pageSize),
     );
   }
@@ -76,6 +77,26 @@ export class MaterialInventoryController {
     return this.inventory.getMaterialBatch(materialBatchId);
   }
 
+  @RequirePermission(PERMISSIONS.warehouse.inventory.stocktake)
+  @Put(':inventoryType/:id/stocktake')
+  async stocktakeInventoryBatch(
+    @Param('inventoryType') inventoryType: string,
+    @Param('id') id: string,
+    @Body() body: StocktakeMaterialBatchPayload,
+    @CurrentUser('id') userId: string,
+  ) {
+    const normalizedType = readInventoryStocktakeType(inventoryType);
+    return this.stocktakes.createAndAdjust(
+      {
+        inventoryType: normalizedType,
+        inventoryBatchId: String(readId(id)),
+        countedQuantity: body.quantity,
+        remark: body.remark,
+      },
+      Number(userId),
+    );
+  }
+
   @RequirePermission(PERMISSIONS.warehouse.inventory.adjust)
   @Put(':id/enable')
   enableMaterialBatch(@Param('id') id: string) {
@@ -88,3 +109,11 @@ export class MaterialInventoryController {
     return this.inventory.changeMaterialBatchStatus(readId(id), true);
   }
 }
+
+const readInventoryStocktakeType = (value: string) => {
+  if (value !== 'material' && value !== 'product') {
+    throw new BadRequestException('Invalid inventory type');
+  }
+
+  return value;
+};

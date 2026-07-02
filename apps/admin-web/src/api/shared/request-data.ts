@@ -20,6 +20,8 @@ export type QueryParams = PageQuery & {
   keyMaterial?: string;
   supplierName?: string;
   transactionType?: string;
+  inventoryBatchNo?: string;
+  objectType?: string;
   productionBatchNo?: string;
   inventoryType?: string;
   differenceType?: string;
