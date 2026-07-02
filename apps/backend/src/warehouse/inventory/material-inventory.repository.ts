@@ -65,6 +65,7 @@ export class MaterialInventoryRepository {
         mb.supplier_name,
         mb.protocol_code,
         mb.received_date,
+        mb.initial_quantity,
         mb.quantity,
         COALESCE(u.reserved_quantity, 0) AS reserved_quantity,
         COALESCE(u.used_quantity, 0) AS used_quantity,
@@ -114,10 +115,10 @@ export class MaterialInventoryRepository {
     const result = (await this.database.execute(
       `
       INSERT INTO material_batches (
-        product_id, material_batch_no, supplier_name, protocol_code, received_date, quantity,
+        product_id, material_batch_no, supplier_name, protocol_code, received_date, initial_quantity, quantity,
         status, remark, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
     `,
       [
         productId,
@@ -125,6 +126,7 @@ export class MaterialInventoryRepository {
         normalizeOptionalString(payload.supplierName),
         normalizeOptionalString(payload.protocolCode),
         normalizeDate(payload.receivedDate),
+        quantity,
         quantity,
         status,
         normalizeOptionalString(payload.remark),
@@ -281,7 +283,7 @@ export class MaterialInventoryRepository {
   private async getMaterialBatchRow(id: number) {
     const [row] = await this.database.query<MaterialBatchRow[]>(
       `
-      SELECT id, product_id, material_batch_no, supplier_name, protocol_code, received_date, quantity, status, remark
+      SELECT id, product_id, material_batch_no, supplier_name, protocol_code, received_date, initial_quantity, quantity, status, remark
       FROM material_batches
       WHERE id = ? AND is_deleted = 0
       LIMIT 1
@@ -310,6 +312,7 @@ export class MaterialInventoryRepository {
         mb.supplier_name,
         mb.protocol_code,
         mb.received_date,
+        mb.initial_quantity,
         mb.quantity,
         COALESCE(u.reserved_quantity, 0) AS reserved_quantity,
         COALESCE(u.used_quantity, 0) AS used_quantity,
@@ -343,6 +346,7 @@ export class MaterialInventoryRepository {
       SELECT
         operation.id,
         operation.batch_id,
+        operation.operation_quantity,
         operation.reserved_quantity,
         operation.used_quantity,
         operation.operation_type,
@@ -415,6 +419,7 @@ export class MaterialInventoryRepository {
       supplierName: row.supplier_name,
       protocolCode: row.protocol_code,
       receivedDate: formatDate(row.received_date),
+      initialQuantity: row.initial_quantity === null ? null : decimalString(row.initial_quantity),
       quantity: formatDecimal(quantity),
       reservedQuantity: formatDecimal(reservedQuantity),
       usedQuantity: formatDecimal(usedQuantity),
@@ -453,6 +458,7 @@ export class MaterialInventoryRepository {
 const mapUsage = (row: MaterialBatchUsageRow) => ({
   id: String(row.id),
   batchId: row.batch_id === null ? null : String(row.batch_id),
+  operationQuantity: decimalString(row.operation_quantity),
   reservedQuantity: decimalString(row.reserved_quantity),
   usedQuantity: decimalString(row.used_quantity),
   operationType: row.operation_type,

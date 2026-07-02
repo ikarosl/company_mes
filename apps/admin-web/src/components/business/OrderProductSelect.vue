@@ -42,8 +42,8 @@ const emit = defineEmits<{
   change: [value: string];
 }>();
 
-/** 订单产品仅包含成品和半成品，原材料、辅料不进入工单及任务筛选。 */
-const orderProductAttributes = 'finished,semi_finished';
+/** 订单产品仅包含成品和半成品，物料、辅料不进入工单及任务筛选。 */
+const orderProductAttributes = '成品,半成品';
 /** 远程搜索结果：限制单次返回数量，避免产品很多时渲染超长下拉列表。 */
 const productOptions = ref<ProductListItem[]>([]);
 const loading = ref(false);
@@ -72,6 +72,7 @@ const searchProducts = async (keyword: string) => {
       keyword: keyword.trim(),
       status: 'enabled',
       productAttributes: orderProductAttributes,
+      acquireMethod: 'self_made',
     });
     productOptions.value = page.items;
     await ensureSelectedProduct();
@@ -89,7 +90,7 @@ const ensureSelectedProduct = async () => {
   }
 
   const product = await productApi.getProduct(props.modelValue);
-  if (product.productAttribute === 'finished' || product.productAttribute === 'semi_finished') {
+  if ((product.productAttribute === '成品' || product.productAttribute === '半成品') && product.acquireMethod === 'self_made') {
     mergeProductOption(product);
   }
 };

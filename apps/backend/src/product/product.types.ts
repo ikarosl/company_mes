@@ -78,6 +78,7 @@ export interface ProductInventoryBatchRow extends RowDataPacket {
   supplier_name: string | null;
   protocol_code: string | null;
   received_date: Date | null;
+  initial_quantity: string | number | null;
   quantity: string | number | null;
   reserved_quantity: string | number | null;
   used_quantity: string | number | null;

@@ -249,7 +249,7 @@ export class InventoryStocktakeRepository {
   ) {
     const countedQuantity = decimal(stocktake.counted_quantity);
     const nextStatus = deriveMaterialStatus(countedQuantity, inventory.reserved_quantity, inventory.used_quantity);
-    // 物料库存没有单独调整流水表，盘点台账即为调账依据，库存表保存调整后的当前数量。
+    // 物料盘点调账只更新库存当前数量，盘点事实由 inventory_stocktakes 台账追溯。
     await execute(
       executor,
       `

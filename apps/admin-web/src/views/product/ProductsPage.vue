@@ -343,6 +343,9 @@
           <el-table-column prop="receivedDate" label="入库日期" width="120">
             <template #default="{ row }">{{ row.receivedDate || '-' }}</template>
           </el-table-column>
+          <el-table-column prop="initialQuantity" label="初始入库" width="110">
+            <template #default="{ row }">{{ row.initialQuantity || '-' }}</template>
+          </el-table-column>
           <el-table-column prop="quantity" label="库存量" width="110" />
           <el-table-column prop="reservedQuantity" label="预留" width="110" />
           <el-table-column prop="usedQuantity" label="已用" width="110" />

@@ -576,12 +576,18 @@ export class WorkOrderRepository {
 
   private async assertProductAvailable(productId: number) {
     const [row] = await this.database.query<
-      (RowDataPacket & { id: number; category_id: number | null })[]
+      (RowDataPacket & {
+        id: number;
+        category_id: number | null;
+        product_attribute: string | null;
+        acquire_method: string | null;
+      })[]
     >(
       `
-      SELECT id, category_id
-      FROM products
-      WHERE id = ? AND status = 1 AND is_deleted = 0
+      SELECT p.id, p.category_id, c.product_attribute, p.acquire_method
+      FROM products p
+      LEFT JOIN product_categories c ON c.id = p.category_id AND c.is_deleted = 0
+      WHERE p.id = ? AND p.status = 1 AND p.is_deleted = 0
       LIMIT 1
     `,
       [productId],
@@ -589,6 +595,13 @@ export class WorkOrderRepository {
 
     if (!row) {
       throw new BadRequestException('Product not found or disabled');
+    }
+    // 工单只能选择成品或半成品，物料类产品只允许进入物料清单和库存批次，不允许直接建生产工单。
+    if (row.product_attribute !== '成品' && row.product_attribute !== '半成品') {
+      throw new BadRequestException('Work order product must be finished or semi-finished');
+    }
+    if (row.acquire_method !== 'self_made') {
+      throw new BadRequestException('Work order product must be self-made');
     }
 
     return row;

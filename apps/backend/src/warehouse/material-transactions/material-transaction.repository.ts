@@ -186,13 +186,14 @@ export class MaterialTransactionRepository {
       throw new ConflictException('该批次号已被其他物料使用');
     }
 
-    // 相同物料批次再次入库时累加库存，同时更新本批次的供应商和技术协议快照。
+    // 相同物料批次再次入库时累加库存与初始入库数量，同时更新本批次的供应商和技术协议快照。
     if (existing) {
       this.auditContext.setBeforeData(await this.getMaterialBatchAuditSnapshot(existing.id));
       await this.database.execute(
         `
         UPDATE material_batches
         SET quantity = quantity + ?,
+          initial_quantity = COALESCE(initial_quantity, 0) + ?,
           supplier_name = COALESCE(?, supplier_name),
           protocol_code = COALESCE(?, protocol_code),
           received_date = COALESCE(?, received_date),
@@ -203,6 +204,7 @@ export class MaterialTransactionRepository {
         WHERE id = ? AND is_deleted = 0
         `,
         [
+          quantity,
           quantity,
           optional(payload.supplierName),
           optional(payload.protocolCode),
@@ -220,9 +222,9 @@ export class MaterialTransactionRepository {
       `
       INSERT INTO material_batches (
         product_id, material_batch_no, supplier_name, protocol_code, received_date,
-        quantity, status, remark, created_by, created_at, updated_at
+        initial_quantity, quantity, status, remark, created_by, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, 'available', ?, ?, NOW(), NOW())
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'available', ?, ?, NOW(), NOW())
       `,
       [
         productId,
@@ -230,6 +232,7 @@ export class MaterialTransactionRepository {
         optional(payload.supplierName),
         optional(payload.protocolCode),
         optional(payload.receivedDate),
+        quantity,
         quantity,
         optional(payload.remark),
         userId,
@@ -347,7 +350,7 @@ export class MaterialTransactionRepository {
       `
       SELECT
         id, product_id, material_batch_no, supplier_name, protocol_code,
-        received_date, quantity, status, remark, updated_by, updated_at
+        received_date, initial_quantity, quantity, status, remark, updated_by, updated_at
       FROM material_batches
       WHERE id = ? AND is_deleted = 0
       LIMIT 1

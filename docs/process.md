@@ -177,5 +177,5 @@ batch_step_records：
   新建表：
     inventory_stocktakes 库存盘点台账
 完成情况：完成
-未完成：
+未完成：物料盘点调账未做
 存在问题：

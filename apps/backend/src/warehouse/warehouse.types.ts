@@ -15,6 +15,7 @@ export interface MaterialBatchListRow extends RowDataPacket {
   supplier_name: string | null;
   protocol_code: string | null;
   received_date: Date | null;
+  initial_quantity: string | number | null;
   quantity: string | number | null;
   reserved_quantity: string | number | null;
   used_quantity: string | number | null;
@@ -31,6 +32,7 @@ export interface MaterialBatchRow extends RowDataPacket {
   supplier_name: string | null;
   protocol_code: string | null;
   received_date: Date | null;
+  initial_quantity: string | number | null;
   quantity: string | number | null;
   status: string;
   remark: string | null;
@@ -39,9 +41,10 @@ export interface MaterialBatchRow extends RowDataPacket {
 export interface MaterialBatchUsageRow extends RowDataPacket {
   id: number;
   batch_id: number | null;
+  operation_quantity: string | number | null;
   reserved_quantity: string | number | null;
   used_quantity: string | number | null;
-  operation_type: 'reserve' | 'issue' | 'return';
+  operation_type: 'reserve' | 'unreserve' | 'issue' | 'return';
   recorded_by: number | null;
   recorded_by_name: string | null;
   recorded_at: Date | null;

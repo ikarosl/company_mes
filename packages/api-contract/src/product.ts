@@ -294,6 +294,8 @@ export interface MaterialBatchListItem {
   supplierName: string | null;
   protocolCode: string | null;
   receivedDate: string | null;
+  /** 初始入库数量：记录该批次首次入库的原始数量，后续盘点和领退料不覆盖。 */
+  initialQuantity: string | null;
   quantity: string;
   reservedQuantity: string;
   usedQuantity: string;
@@ -307,10 +309,12 @@ export interface MaterialBatchListItem {
 export interface MaterialBatchUsageItem {
   id: string;
   batchId: string | null;
+  /** 本次操作数量：用于展示领料、退料和取消预留的实际操作量。 */
+  operationQuantity: string;
   reservedQuantity: string;
   usedQuantity: string;
-  /** 物料操作类型：预留、领料或退料。 */
-  operationType: 'reserve' | 'issue' | 'return';
+  /** 物料操作类型：预留、取消预留、领料或退料。 */
+  operationType: 'reserve' | 'unreserve' | 'issue' | 'return';
   recordedBy: string | null;
   recordedByName: string | null;
   recordedAt: string | null;

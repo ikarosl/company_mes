@@ -59,6 +59,9 @@
         <el-table-column label="库存数量" width="120" align="right">
           <template #default="{ row }">{{ formatQuantity(row.quantity) }}</template>
         </el-table-column>
+        <el-table-column label="初始入库" width="120" align="right">
+          <template #default="{ row }">{{ formatQuantity(row.initialQuantity) }}</template>
+        </el-table-column>
         <el-table-column label="预留数量" width="120" align="right">
           <template #default="{ row }">{{ formatQuantity(row.reservedQuantity) }}</template>
         </el-table-column>
@@ -182,6 +185,7 @@
         <el-descriptions-item label="供应商">{{ detailRow.supplierName || '-' }}</el-descriptions-item>
         <el-descriptions-item label="技术协议编码">{{ detailRow.protocolCode || '-' }}</el-descriptions-item>
         <el-descriptions-item label="入库日期">{{ detailRow.receivedDate || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="初始入库数量">{{ formatQuantity(detailRow.initialQuantity) }}</el-descriptions-item>
         <el-descriptions-item label="库存数量">{{ formatQuantity(detailRow.quantity) }}</el-descriptions-item>
         <el-descriptions-item label="预留数量">{{ formatQuantity(detailRow.reservedQuantity) }}</el-descriptions-item>
         <el-descriptions-item label="可用数量">{{ formatQuantity(detailRow.availableQuantity) }}</el-descriptions-item>
@@ -222,8 +226,8 @@
         <el-table-column label="生产批次ID" width="120">
           <template #default="{ row }">{{ row.batchId || '-' }}</template>
         </el-table-column>
-        <el-table-column label="已用数量" width="130" align="right">
-          <template #default="{ row }">{{ formatQuantity(row.usedQuantity) }}</template>
+        <el-table-column label="操作数量" width="130" align="right">
+          <template #default="{ row }">{{ formatQuantity(row.operationQuantity) }}</template>
         </el-table-column>
         <el-table-column label="操作类型" width="120">
           <template #default="{ row }">{{ formatUsageType(row.operationType) }}</template>
@@ -652,8 +656,9 @@ const formatSignedQuantity = (value: string | number | null) => {
   return amount > 0 ? `+${formatted}` : formatted;
 };
 /** 物料流水操作类型中文标签。 */
-const formatUsageType = (type: 'reserve' | 'issue' | 'return') => ({
+const formatUsageType = (type: 'reserve' | 'unreserve' | 'issue' | 'return') => ({
   reserve: '预留',
+  unreserve: '取消预留',
   issue: '领料',
   return: '退料',
 }[type]);
