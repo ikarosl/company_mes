@@ -83,6 +83,7 @@ export interface ProductInventoryBatchRow extends RowDataPacket {
   reserved_quantity: string | number | null;
   used_quantity: string | number | null;
   status: string;
+  quality_status: 'qualified' | 'partial_qualified' | null;
   remark: string | null;
   created_at: Date;
   updated_at: Date;

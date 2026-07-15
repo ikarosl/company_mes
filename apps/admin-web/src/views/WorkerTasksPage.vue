@@ -299,6 +299,11 @@ const submitReport = async () => {
     EMessage.warning('请填写完成数量或异常数量');
     return;
   }
+  // 异常数量包含在完成数量中，不能形成负数合格数量。
+  if (reportForm.abnormalQuantity > reportForm.outputQuantity) {
+    EMessage.warning('异常数量不能超过完成数量');
+    return;
+  }
 
   submitting.value = true;
   try {
@@ -314,6 +319,8 @@ const submitReport = async () => {
     EMessage.success('报工已提交');
     reportDialogVisible.value = false;
     await loadTasks();
+  } catch (error) {
+    EMessage.error(error, '报工提交失败');
   } finally {
     submitting.value = false;
   }

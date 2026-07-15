@@ -282,6 +282,11 @@ export interface ConfigureProcessRouteStepsPayload {
 /** 物料批次库存状态。 */
 export type MaterialBatchStatus = 'available' | 'partial_used' | 'used_up' | 'disabled';
 
+/** 物料批次质量状态：库存数量与质量放行状态分开表达。 */
+export type MaterialBatchQualityStatus =
+  | 'qualified'
+  | 'partial_qualified';
+
 /** 物料批次库存列表项，protocolCode 是该入库批次的检测依据编码。 */
 export interface MaterialBatchListItem {
   id: string;
@@ -307,6 +312,8 @@ export interface MaterialBatchListItem {
   usedQuantity: string;
   availableQuantity: string;
   status: MaterialBatchStatus;
+  /** 物料质量状态；成品/半成品库存不使用该字段。 */
+  qualityStatus: MaterialBatchQualityStatus | null;
   /** 库存计量单位：产品库存优先取库存批次单位，物料库存取产品主数据单位。 */
   unit?: string | null;
   /** 库位：当前主要用于产品库存批次展示。 */
@@ -473,7 +480,33 @@ export interface MaterialTransactionDemandOption {
   unit: string | null;
 }
 
-/** 物料入库请求：新增或累加入库同一物料批次。 */
+/** 入库时可同步提交的来料检验信息。 */
+export interface MaterialInboundInspectionPayload {
+  /** 检验名称，默认使用“来料检验”。 */
+  inspectionName?: string | null;
+  /** 检验数量：允许抽检；部分合格时应填写实际放行数量。 */
+  inspectQuantity: number;
+  /** 合格数量：部分合格时作为本批次的初始合格可用数量。 */
+  passQuantity: number;
+  /** 不合格数量。 */
+  failQuantity: number;
+  /** 检验结论。 */
+  result: 'pass' | 'partial_pass';
+  /** 入库允许接收或让步接收合格部分；无合格数量时不能调用入库接口。 */
+  disposition?: 'accept' | 'conditional_accept' | null;
+  /** 检验人员 ID；为空时使用当前入库操作人。 */
+  inspectorId?: string | null;
+  /** 检验时间；为空时使用服务器当前时间。 */
+  inspectedAt?: string | null;
+  /** 检验报告或图片地址。 */
+  fileUrl?: string | null;
+  /** 检验结果摘要。 */
+  resultSummary?: string | null;
+  /** 检验补充说明。 */
+  remark?: string | null;
+}
+
+/** 物料入库请求：一个物料批次号只允许办理一次入库。 */
 export interface MaterialInboundPayload {
   /** 物料产品ID：关联 products.id。 */
   productId: string;
@@ -489,6 +522,8 @@ export interface MaterialInboundPayload {
   receivedDate?: string | null;
   /** 入库备注。 */
   remark?: string | null;
+  /** 来料检验：必填，并与物料批次在同一事务内创建。 */
+  inspection: MaterialInboundInspectionPayload;
 }
 
 /** 生产领料出库请求。 */

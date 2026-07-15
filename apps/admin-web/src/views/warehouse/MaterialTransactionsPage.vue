@@ -149,6 +149,42 @@
         <el-form-item label="备注">
           <el-input v-model="inboundForm.remark" type="textarea" :rows="3" />
         </el-form-item>
+        <el-divider content-position="left">来料检验（必填）</el-divider>
+        <div class="form-grid">
+          <el-form-item label="检验名称">
+            <el-input v-model="inboundForm.inspectionName" />
+          </el-form-item>
+          <el-form-item label="检验结果">
+            <el-tag :type="inboundInspectionResult === 'pass' ? 'success' : 'warning'">
+              {{ inboundInspectionResult === "pass" ? "合格" : "部分合格" }}
+            </el-tag>
+          </el-form-item>
+          <el-form-item label="检验数量" required>
+            <el-input-number :model-value="inboundInspectionQuantity" disabled :precision="4" />
+          </el-form-item>
+          <el-form-item label="合格/入库数量" required>
+            <el-input-number :model-value="inboundForm.quantity" disabled :precision="4" />
+          </el-form-item>
+          <el-form-item label="不合格数量" required>
+            <el-input-number v-model="inboundForm.failQuantity" :min="0" :precision="4" />
+          </el-form-item>
+          <el-form-item label="处置方式">
+            <el-select v-model="inboundForm.disposition">
+              <el-option label="接收" value="accept" />
+              <el-option
+                v-if="inboundInspectionResult === 'partial_pass'"
+                label="让步接收合格部分"
+                value="conditional_accept"
+              />
+            </el-select>
+          </el-form-item>
+        </div>
+        <el-form-item label="结果摘要">
+          <el-input v-model="inboundForm.resultSummary" type="textarea" :rows="2" />
+        </el-form-item>
+        <el-form-item label="检验备注">
+          <el-input v-model="inboundForm.inspectionRemark" type="textarea" :rows="2" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="inboundVisible = false">取消</el-button>
@@ -235,7 +271,7 @@ const query = reactive({
   transactionType: "",
   productionBatchNo: "",
 });
-/** 入库表单：技术协议编码作为该物料批次后续检测依据。 */
+/** 入库表单：库存数量只接收来料检验中的合格数量。 */
 const inboundForm = reactive({
   productId: "",
   materialBatchNo: "",
@@ -243,8 +279,21 @@ const inboundForm = reactive({
   protocolCode: "",
   receivedDate: "",
   quantity: 1,
+  inspectionName: "来料检验",
+  failQuantity: 0,
+  disposition: "accept" as "accept" | "conditional_accept",
+  resultSummary: "",
+  inspectionRemark: "",
   remark: "",
 });
+/** 检验数量公式：合格入库数量 + 不合格数量。 */
+const inboundInspectionQuantity = computed(
+  () => Number(inboundForm.quantity || 0) + Number(inboundForm.failQuantity || 0)
+);
+/** 只要存在不合格数量，本次来料检验即为部分合格。 */
+const inboundInspectionResult = computed<"pass" | "partial_pass">(() =>
+  Number(inboundForm.failQuantity || 0) > 0 ? "partial_pass" : "pass"
+);
 /** 出库/退料共用表单，usageId 指向唯一的生产批次物料需求。 */
 const flowForm = reactive({ usageId: "", quantity: 1, reason: "", remark: "" });
 const filteredDemands = computed(() =>
@@ -302,6 +351,11 @@ const openInbound = () => {
     protocolCode: "",
     receivedDate: "",
     quantity: 1,
+    inspectionName: "来料检验",
+    failQuantity: 0,
+    disposition: "accept",
+    resultSummary: "",
+    inspectionRemark: "",
     remark: "",
   });
   inboundVisible.value = true;
@@ -325,7 +379,7 @@ const syncFlowQuantity = () => {
       flowMode.value === "outbound" ? selected.remainingQuantity : selected.usedQuantity
     );
 };
-/** 物料入库：同一批次号再次入库时由后端累加当前库存。 */
+/** 物料入库：检验记录与唯一物料批次由后端在同一事务内创建。 */
 const submitInbound = async () => {
   if (
     !inboundForm.productId ||
@@ -335,11 +389,28 @@ const submitInbound = async () => {
     return EMessage.warning("请完整填写物料、批次号和入库数量");
   submitting.value = true;
   try {
+    const result = inboundInspectionResult.value;
+    const disposition = result === "pass" ? "accept" : inboundForm.disposition;
     await warehouseApi.materialInbound({
-      ...inboundForm,
+      productId: inboundForm.productId,
+      materialBatchNo: inboundForm.materialBatchNo,
+      supplierName: inboundForm.supplierName,
+      protocolCode: inboundForm.protocolCode,
       receivedDate: inboundForm.receivedDate || null,
+      quantity: inboundForm.quantity,
+      remark: inboundForm.remark,
+      inspection: {
+        inspectionName: inboundForm.inspectionName,
+        inspectQuantity: inboundInspectionQuantity.value,
+        passQuantity: inboundForm.quantity,
+        failQuantity: inboundForm.failQuantity,
+        result,
+        disposition,
+        resultSummary: inboundForm.resultSummary,
+        remark: inboundForm.inspectionRemark,
+      },
     });
-    EMessage.success("物料已入库");
+    EMessage.success("来料检验已记录，合格物料已入库");
     inboundVisible.value = false;
     await loadRows();
   } catch (error) {

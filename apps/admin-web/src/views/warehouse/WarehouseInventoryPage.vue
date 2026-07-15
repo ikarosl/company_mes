@@ -38,7 +38,7 @@
 
     <section class="table-panel">
       <div class="table-toolbar">
-        <el-button type="primary" :icon="Plus" @click="openCreate">新增物料批次</el-button>
+        <el-button type="primary" @click="openInbound">物料入库</el-button>
         <el-tooltip content="刷新" placement="top">
           <el-button :icon="Refresh" text circle :loading="loading" @click="loadInventory" />
         </el-tooltip>
@@ -91,6 +91,18 @@
             <el-tag :type="getStatusMeta(row.status).type" effect="light">
               {{ getStatusMeta(row.status).label }}
             </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="质量状态" width="112">
+          <template #default="{ row }">
+            <el-tag
+              v-if="isMaterialInventory(row)"
+              :type="row.qualityStatus === 'qualified' ? 'success' : row.qualityStatus === 'partial_qualified' ? 'warning' : 'info'"
+              effect="light"
+            >
+              {{ formatQualityStatus(row.qualityStatus) }}
+            </el-tag>
+            <span v-else>-</span>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="410" fixed="right">
@@ -165,8 +177,8 @@
               placeholder="请选择日期"
             />
           </el-form-item>
-          <el-form-item label="库存数量" required>
-            <el-input-number v-model="batchForm.quantity" :min="0" :precision="4" :step="1" />
+          <el-form-item label="库存数量">
+            <el-input-number v-model="batchForm.quantity" disabled :min="0" :precision="4" :step="1" />
           </el-form-item>
           <el-form-item label="状态">
             <el-select v-model="batchForm.status">
@@ -364,8 +376,9 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { ElMessageBox } from 'element-plus';
-import { Plus, Refresh } from '@element-plus/icons-vue';
+import { Refresh } from '@element-plus/icons-vue';
 import type {
   InventoryStocktakeDifferenceType,
   InventoryStocktakeInventoryType,
@@ -389,6 +402,7 @@ const statusOptions: Array<{ value: MaterialBatchStatus; label: string; type: 's
 ];
 
 const inventoryRows = ref<MaterialBatchListItem[]>([]);
+const router = useRouter();
 const productOptions = ref<ProductListItem[]>([]);
 const activeDetail = ref<MaterialBatchDetail | null>(null);
 const detailRow = ref<MaterialBatchListItem | null>(null);
@@ -513,27 +527,8 @@ const handlePageSizeChange = async () => {
   await loadInventory();
 };
 
-const resetBatchForm = () => {
-  Object.assign(batchForm, {
-    productId: '',
-    materialBatchNo: '',
-    supplierName: '',
-    protocolCode: '',
-    receivedDate: '',
-    quantity: 0,
-    status: 'available' as MaterialBatchStatus,
-    remark: '',
-  });
-};
-
-const openCreate = async () => {
-  editingBatchId.value = null;
-  resetBatchForm();
-  if (!productOptions.value.length) {
-    await loadProductOptions();
-  }
-  formDialogVisible.value = true;
-};
+/** 新增正库存统一跳转到带来料检验的物料入库入口。 */
+const openInbound = () => router.push('/warehouse/material-transactions');
 
 const openEdit = async (row: MaterialBatchListItem) => {
   if (!isMaterialInventory(row)) {
@@ -635,13 +630,9 @@ const submitBatch = async () => {
       remark: batchForm.remark,
     };
 
-    if (editingBatchId.value) {
-      await warehouseApi.updateInventory(editingBatchId.value, payload);
-      EMessage.success('物料批次已更新');
-    } else {
-      await warehouseApi.createInventory(payload);
-      EMessage.success('物料批次已新增');
-    }
+    if (!editingBatchId.value) return;
+    await warehouseApi.updateInventory(editingBatchId.value, payload);
+    EMessage.success('物料批次已更新');
 
     formDialogVisible.value = false;
     await loadInventory();
@@ -740,6 +731,13 @@ const formatObjectType = (row: MaterialBatchListItem) => {
 
 const getStatusMeta = (status: MaterialBatchStatus) =>
   statusOptions.find((item) => item.value === status) ?? statusOptions[0];
+
+/** 历史批次可能尚未补录来料检验，不能默认显示为已合格。 */
+const formatQualityStatus = (status: MaterialBatchListItem['qualityStatus']) => {
+  if (status === 'qualified') return '检验合格';
+  if (status === 'partial_qualified') return '部分合格';
+  return '待补录';
+};
 
 const getStocktakeDifferenceMeta = (type: InventoryStocktakeDifferenceType) =>
   stocktakeDifferenceOptions.find((item) => item.value === type) ?? stocktakeDifferenceOptions[2];

@@ -234,6 +234,7 @@ export class ProductRepository {
         COALESCE(u.reserved_quantity, 0) AS reserved_quantity,
         COALESCE(u.used_quantity, 0) AS used_quantity,
         mb.status,
+        mb.quality_status,
         mb.remark,
         mb.created_at,
         mb.updated_at
@@ -836,6 +837,7 @@ const mapProductInventoryBatch = (row: ProductInventoryBatchRow): MaterialBatchL
       row.status === 'disabled'
         ? 'disabled'
         : deriveMaterialBatchStatus(quantity, reservedQuantity, usedQuantity),
+    qualityStatus: row.quality_status,
     remark: row.remark,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),

@@ -8,6 +8,7 @@ import LoginPage from '../views/LoginPage.vue';
 // import MaterialBatchesPage from '../views/MaterialBatchesPage.vue';
 import NoPermissionPage from '../views/NoPermissionPage.vue';
 import OperationLogsPage from '../views/system/OperationLogsPage.vue';
+import ReworkRecordsPage from '../views/quality/ReworkRecordsPage.vue';
 import PlannedBlankPage from '../views/PlannedBlankPage.vue';
 import ProductCategoriesPage from '../views/product/ProductCategoriesPage.vue';
 import ProductsPage from '../views/product/ProductsPage.vue';
@@ -22,6 +23,7 @@ import FinishedTransactionsPage from '../views/warehouse/FinishedTransactionsPag
 import WarehouseInventoryPage from '../views/warehouse/WarehouseInventoryPage.vue';
 import MaterialTransactionsPage from '../views/warehouse/MaterialTransactionsPage.vue';
 import InventoryStocktakesPage from '../views/warehouse/InventoryStocktakesPage.vue';
+import InspectionRecordsPage from '../views/quality/InspectionRecordsPage.vue';
 // import ProcessTemplatesPage from '../views/ProcessTemplatesPage.vue';
 // import ProductionBatchDetailPage from '../views/ProductionBatchDetailPage.vue';
 // import ProductionBatchesPage from '../views/ProductionBatchesPage.vue';
@@ -255,22 +257,10 @@ export const routes: RouteRecordRaw[] = [
         },
       },
 
-      plannedPage(
-        'quality/inspections',
-        'quality-inspections',
-        '检验记录',
-        '质量管理',
-        ['查看', '新增', '编辑', '查看详情', '上传检测文件', '创建返工', '确认合格入库'],
-        PERMISSIONS.quality.inspections.page,
-      ),
-      plannedPage(
-        'quality/reworks',
-        'quality-reworks',
-        '返工记录',
-        '质量管理',
-        ['查看', '新增', '编辑', '分配返工负责人', '填写返工结果', '返工后重新检验'],
-        PERMISSIONS.quality.reworks.page,
-      ),
+      { path: 'quality/inspections', name: 'quality-inspections', component: InspectionRecordsPage,
+        meta: { title: '检验记录', section: '质量管理', permission: PERMISSIONS.quality.inspections.page } },
+      { path: 'quality/reworks', name: 'quality-reworks', component: ReworkRecordsPage,
+        meta: { title: '返工记录', section: '质量管理', permission: PERMISSIONS.quality.reworks.page } },
 
       plannedPage(
         'production/orders/:id/complete',

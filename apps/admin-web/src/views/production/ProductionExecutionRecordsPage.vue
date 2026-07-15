@@ -363,6 +363,11 @@ const submitCorrection = async () => {
     EMessage.warning('报工数量不能小于 0');
     return;
   }
+  // 合格数量 = 完成数量 - 异常数量，异常数量不能使合格数量变为负数。
+  if (correctionForm.abnormalQuantity > correctionForm.outputQuantity) {
+    EMessage.warning('异常数量不能超过完成数量');
+    return;
+  }
 
   try {
     await ElMessageBox.confirm('确认保存该工序的报工数量修正？', '修正报工数量', {
@@ -393,9 +398,12 @@ const submitCorrection = async () => {
   }
 };
 
-/** 已完成工序数量：仅统计状态为 completed 的工序，用于进度条。 */
+/**
+ * 已结束工序数量：completed 和 abnormal 都代表工序已报工结束。
+ * abnormal 仅提醒仍有不合格数量待管理/检验人员决定返工或报废，不阻断合格数量流转。
+ */
 const completedStepCount = (task: ProductionTaskDetail) =>
-  task.steps.filter((step) => step.status === 'completed').length;
+  task.steps.filter((step) => ['completed', 'abnormal'].includes(step.status)).length;
 
 /** 工序进度公式：已完成工序数 / 工序总数 * 100。 */
 const taskProgress = (task: ProductionTaskDetail) =>

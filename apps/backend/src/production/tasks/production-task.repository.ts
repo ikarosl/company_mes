@@ -92,7 +92,8 @@ export class ProductionTaskRepository {
         b.created_at,
         b.updated_at,
         COUNT(DISTINCT sr.id) AS step_count,
-        SUM(CASE WHEN sr.status = 'completed' THEN 1 ELSE 0 END) AS finished_step_count,
+        -- 异常报工是提醒型终态：合格数量继续流转，因此进度统计与完工状态同口径。
+        SUM(CASE WHEN sr.status IN ('completed', 'abnormal') THEN 1 ELSE 0 END) AS finished_step_count,
         COUNT(DISTINCT CASE WHEN sr.responsible_user_id IS NOT NULL THEN sr.id END) AS assigned_step_count,
         (
           SELECT COUNT(*) FROM batch_material_requirement requirement
@@ -193,7 +194,8 @@ export class ProductionTaskRepository {
         b.created_at,
         b.updated_at,
         COUNT(DISTINCT all_sr.id) AS step_count,
-        SUM(CASE WHEN all_sr.status = 'completed' THEN 1 ELSE 0 END) AS finished_step_count,
+        -- 异常只保留风险提醒，不阻断合格数量进入后续工序。
+        SUM(CASE WHEN all_sr.status IN ('completed', 'abnormal') THEN 1 ELSE 0 END) AS finished_step_count,
         sr.id AS step_record_id,
         sr.process_route_steps_id,
         prs.step_order,
@@ -213,7 +215,7 @@ export class ProductionTaskRepository {
               AND previous_prs.step_order < prs.step_order
             ORDER BY previous_prs.step_order DESC, previous_sr.id DESC
             LIMIT 1
-          ) = 'completed' THEN 1
+          ) IN ('completed', 'abnormal') THEN 1
           ELSE 0
         END AS can_start,
         sr.started_at AS step_started_at,
@@ -798,6 +800,15 @@ export class ProductionTaskRepository {
       payload.status === undefined
         ? readStepStatus(current.status)
         : readStepStatus(payload.status);
+    /** 本次保存后的完成数量与异常数量：未提交的字段沿用数据库当前值。 */
+    const outputQuantity = readNonNegativeDecimal(
+      payload.outputQuantity === undefined ? current.output_quantity : payload.outputQuantity,
+      '完成数量不能小于 0',
+    );
+    const abnormalQuantity = readNonNegativeDecimal(
+      payload.abnormalQuantity === undefined ? current.abnormal_quantity : payload.abnormalQuantity,
+      '异常数量不能小于 0',
+    );
 
     assertStepStatusTransition(current.status, status);
     if (current.status === 'pending' && status === 'doing') {
@@ -805,6 +816,12 @@ export class ProductionTaskRepository {
     }
     await this.assertUserAvailable(responsibleUserId);
     await this.assertTechnicalFileAvailable(sopFileId);
+    await this.assertStepQuantitiesWithinFlow(
+      taskId,
+      current.step_order,
+      Number(outputQuantity),
+      Number(abnormalQuantity),
+    );
 
     await this.database.execute(
       `
@@ -829,13 +846,13 @@ export class ProductionTaskRepository {
           : normalizeDateTime(payload.completedAt),
         payload.outputQuantity === undefined
           ? current.output_quantity
-          : readNullableDecimal(payload.outputQuantity, 'Invalid output quantity'),
+          : outputQuantity,
         payload.returnQuantity === undefined
           ? current.return_quantity
           : readNullableDecimal(payload.returnQuantity, 'Invalid return quantity'),
         payload.abnormalQuantity === undefined
           ? current.abnormal_quantity
-          : readNullableDecimal(payload.abnormalQuantity, 'Invalid abnormal quantity'),
+          : abnormalQuantity,
         payload.remark === undefined ? current.remark : normalizeOptionalString(payload.remark),
         recordId,
         taskId,
@@ -1057,7 +1074,8 @@ export class ProductionTaskRepository {
         b.created_at,
         b.updated_at,
         COUNT(DISTINCT sr.id) AS step_count,
-        SUM(CASE WHEN sr.status = 'completed' THEN 1 ELSE 0 END) AS finished_step_count,
+        -- completed 与 abnormal 都表示本工序已经报工结束，区别仅在于是否存在待处置数量。
+        SUM(CASE WHEN sr.status IN ('completed', 'abnormal') THEN 1 ELSE 0 END) AS finished_step_count,
         COUNT(DISTINCT CASE WHEN sr.responsible_user_id IS NOT NULL THEN sr.id END) AS assigned_step_count,
         (
           SELECT COUNT(*) FROM batch_material_requirement requirement
@@ -1409,8 +1427,74 @@ export class ProductionTaskRepository {
       [batchId, stepOrder],
     );
 
-    if (previousStep?.status !== 'completed') {
-      throw new BadRequestException('前一道工序尚未完成，当前工序不能开始');
+    // 异常报工仅用于提醒待处置数量；其合格数量仍可流转，所以 abnormal 也视为前序已结束。
+    if (!previousStep || !['completed', 'abnormal'].includes(previousStep.status)) {
+      throw new BadRequestException('前一道工序尚未报工结束，当前工序不能开始');
+    }
+  }
+
+  /**
+   * 校验工序数量沿工艺路线只能持平或减少。
+   * 1. 当前工序合格数量 = 完成数量 - 异常数量。
+   * 2. 首道工序完成数量不能超过生产批次计划数量。
+   * 3. 后续工序完成数量不能超过上一工序合格数量。
+   * 4. 修正历史报工时，当前合格数量不能低于下一工序已经报工的完成数量。
+   */
+  private async assertStepQuantitiesWithinFlow(
+    batchId: number,
+    stepOrder: number,
+    outputQuantity: number,
+    abnormalQuantity: number,
+  ) {
+    if (abnormalQuantity > outputQuantity) {
+      throw new BadRequestException('异常数量不能超过完成数量');
+    }
+
+    const [batch] = await this.database.query<
+      (RowDataPacket & { planned_quantity: string | number })[]
+    >(
+      'SELECT planned_quantity FROM production_batches WHERE id = ? AND is_deleted = 0 LIMIT 1',
+      [batchId],
+    );
+    if (!batch) {
+      throw new NotFoundException('Production task not found');
+    }
+
+    const adjacentSteps = await this.database.query<
+      (RowDataPacket & {
+        step_order: number;
+        output_quantity: string | number | null;
+        abnormal_quantity: string | number | null;
+      })[]
+    >(
+      `
+      SELECT prs.step_order, sr.output_quantity, sr.abnormal_quantity
+      FROM batch_step_records sr
+      INNER JOIN process_route_steps prs
+        ON prs.id = sr.process_route_steps_id AND prs.is_deleted = 0
+      WHERE sr.batch_id = ?
+        AND sr.is_deleted = 0
+        AND prs.step_order <> ?
+      ORDER BY prs.step_order ASC
+      `,
+      [batchId, stepOrder],
+    );
+    // 工序顺序允许不连续，因此分别取当前顺序之前的最后一道和之后的第一道。
+    const previousStep = adjacentSteps.filter((step) => step.step_order < stepOrder).at(-1);
+    const nextStep = adjacentSteps.find((step) => step.step_order > stepOrder);
+    // 数量上限：首道取批次计划数量，后续工序取上一工序的合格数量。
+    const inputLimit = previousStep
+      ? decimalNumber(previousStep.output_quantity) - decimalNumber(previousStep.abnormal_quantity)
+      : decimalNumber(batch.planned_quantity);
+    if (outputQuantity > inputLimit + 0.00005) {
+      throw new BadRequestException(`完成数量不能超过本工序可流转数量 ${inputLimit.toFixed(4)}`);
+    }
+
+    const qualifiedQuantity = outputQuantity - abnormalQuantity;
+    if (nextStep && decimalNumber(nextStep.output_quantity) > qualifiedQuantity + 0.00005) {
+      throw new BadRequestException(
+        `当前合格数量不能低于下一工序已报工数量 ${decimalNumber(nextStep.output_quantity).toFixed(4)}`,
+      );
     }
   }
 

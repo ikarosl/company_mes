@@ -22,7 +22,9 @@ export interface MaterialBatchListRow extends RowDataPacket {
   quantity: string | number | null;
   reserved_quantity: string | number | null;
   used_quantity: string | number | null;
+  available_quantity: string | number | null;
   status: string;
+  quality_status: string | null;
   unit: string | null;
   location: string | null;
   remark: string | null;
@@ -40,6 +42,7 @@ export interface MaterialBatchRow extends RowDataPacket {
   initial_quantity: string | number | null;
   quantity: string | number | null;
   status: string;
+  quality_status: string;
   remark: string | null;
 }
 

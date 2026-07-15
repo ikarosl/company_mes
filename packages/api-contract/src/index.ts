@@ -4,4 +4,5 @@ export * from './system.js';
 export * from './product.js';
 export * from './production.js';
 export * from './warehouse.js';
+export * from './quality.js';
 export * from './common.js';

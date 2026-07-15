@@ -16,6 +16,7 @@ SELECT
   mb.protocol_code,
   mb.received_date,
   mb.quantity AS stock_quantity,
+  mb.quality_status,
   COALESCE(usage_summary.reserved_quantity, 0) AS reserved_quantity,
   COALESCE(usage_summary.used_quantity, 0) AS used_quantity,
   COALESCE(usage_summary.returned_quantity, 0) AS returned_quantity,

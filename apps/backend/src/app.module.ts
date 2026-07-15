@@ -8,6 +8,7 @@ import { AuditExceptionFilter } from './operation-log/audit-exception.filter.js'
 import { OperationLogModule } from './operation-log/operation-log.module.js';
 import { ProductModule } from './product/product.module.js';
 import { ProductionModule } from './production/production.module.js';
+import { QualityModule } from './quality/quality.module.js';
 import { SystemModule } from './system/system.module.js';
 import { WarehouseModule } from './warehouse/warehouse.module.js';
 
@@ -20,6 +21,7 @@ import { WarehouseModule } from './warehouse/warehouse.module.js';
     ProductModule,
     WarehouseModule,
     ProductionModule,
+    QualityModule,
   ],
   controllers: [AppController],
   providers: [

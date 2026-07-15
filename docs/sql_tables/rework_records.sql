@@ -2,6 +2,7 @@
 SET NAMES utf8mb4;
 USE `company_test`;
 
+DROP TABLE IF EXISTS `rework_records`;
 CREATE TABLE `rework_records` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '返工记录ID',
   `rework_no` varchar(100) NOT NULL COMMENT '返工单号',
@@ -28,12 +29,21 @@ CREATE TABLE `rework_records` (
   UNIQUE KEY `uk_rework_records_no` (`rework_no`),
   KEY `idx_rework_records_source_inspection_id` (`source_inspection_id`),
   KEY `idx_rework_records_recheck_inspection_id` (`recheck_inspection_id`),
+  KEY `idx_rework_records_handler_id` (`handler_id`),
   KEY `idx_rework_records_status` (`status`),
   KEY `idx_rework_records_is_deleted` (`is_deleted`),
   CONSTRAINT `fk_rework_records_source_inspection_id`
     FOREIGN KEY (`source_inspection_id`) REFERENCES `inspection_records` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_rework_records_recheck_inspection_id`
     FOREIGN KEY (`recheck_inspection_id`) REFERENCES `inspection_records` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_rework_records_handler_id`
+    FOREIGN KEY (`handler_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_rework_records_created_by`
+    FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_rework_records_updated_by`
+    FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_rework_records_deleted_by`
+    FOREIGN KEY (`deleted_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
   CONSTRAINT `chk_rework_records_status`
     CHECK (`status` IN ('pending','doing','wait_recheck','completed','closed')),
   CONSTRAINT `chk_rework_records_result`

@@ -130,7 +130,7 @@ export const warehouseApi = {
       method: 'GET',
     }),
   materialInbound: (data: MaterialInboundPayload) =>
-    requestData<{ materialBatchId: string }>({
+    requestData<{ materialBatchId: string; inspectionId: string }>({
       url: `${BUSINESS_API.warehouseMaterialTransactions}/inbound`,
       method: 'POST',
       data,

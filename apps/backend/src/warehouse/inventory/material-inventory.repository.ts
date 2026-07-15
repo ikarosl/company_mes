@@ -5,7 +5,6 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { ResultSetHeader } from 'mysql2';
 import type { RowDataPacket } from 'mysql2/promise';
 import type {
   CreateMaterialBatchPayload,
@@ -80,36 +79,9 @@ export class MaterialInventoryRepository {
   }
 
   async createMaterialBatch(payload: CreateMaterialBatchPayload) {
-    const productId = readPositiveId(payload.productId, 'Missing material product');
-    const materialBatchNo = readRequiredString(payload.materialBatchNo, 'Missing material batch no');
-    const quantity = readDecimal(payload.quantity ?? 0, 'Invalid quantity');
-    const status = readMaterialBatchStatus(payload.status ?? this.deriveStatus(quantity, 0, 0));
-
-    await this.assertProductAvailable(productId);
-    await this.assertBatchNoAvailable(materialBatchNo);
-
-    const result = (await this.database.execute(
-      `
-      INSERT INTO material_batches (
-        product_id, material_batch_no, supplier_name, protocol_code, received_date, initial_quantity, quantity,
-        status, remark, created_at, updated_at
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
-    `,
-      [
-        productId,
-        materialBatchNo,
-        normalizeOptionalString(payload.supplierName),
-        normalizeOptionalString(payload.protocolCode),
-        normalizeDate(payload.receivedDate),
-        quantity,
-        quantity,
-        status,
-        normalizeOptionalString(payload.remark),
-      ],
-    )) as ResultSetHeader;
-
-    return this.getMaterialBatch(result.insertId);
+    // 物料正库存必须由“来料检验 + 入库”事务产生，禁止库存台账接口绕过检验直接建批次。
+    void payload;
+    throw new BadRequestException('请通过物料出入库页面办理来料检验和物料入库');
   }
 
   async updateMaterialBatch(id: number, payload: UpdateMaterialBatchPayload) {
@@ -127,6 +99,10 @@ export class MaterialInventoryRepository {
 
     await this.assertProductAvailable(productId);
     await this.assertBatchNoAvailable(materialBatchNo, id);
+    // 库存数量只能通过领退料或盘点事务变化，编辑基础资料不能直接改账。
+    if (decimalNumber(quantity) !== decimalNumber(current.quantity)) {
+      throw new BadRequestException('库存数量不能直接编辑，请通过库存盘点调整');
+    }
 
     await this.database.execute(
       `
@@ -290,7 +266,9 @@ export class MaterialInventoryRepository {
         mb.quantity,
         COALESCE(u.reserved_quantity, 0) AS reserved_quantity,
         COALESCE(u.used_quantity, 0) AS used_quantity,
+        COALESCE(u.available_quantity, 0) AS available_quantity,
         mb.status,
+        mb.quality_status,
         p.unit,
         NULL AS location,
         mb.remark,
@@ -301,7 +279,8 @@ export class MaterialInventoryRepository {
       INNER JOIN products p ON p.id = mb.product_id AND p.is_deleted = 0
       LEFT JOIN product_categories c ON c.id = p.category_id AND c.is_deleted = 0
       LEFT JOIN (
-        SELECT material_batch_id, reserved_not_used_quantity AS reserved_quantity, used_quantity
+        SELECT material_batch_id, reserved_not_used_quantity AS reserved_quantity,
+          used_quantity, available_quantity
         FROM v_material_batch_available
       ) u ON u.material_batch_id = mb.id
       UNION ALL
@@ -323,7 +302,9 @@ export class MaterialInventoryRepository {
         pib.quantity,
         0 AS reserved_quantity,
         0 AS used_quantity,
+        pib.quantity AS available_quantity,
         CASE WHEN pib.quantity <= 0 THEN 'used_up' ELSE 'available' END AS status,
+        NULL AS quality_status,
         COALESCE(pib.unit, p.unit) AS unit,
         pib.location,
         pib.remark,
@@ -339,7 +320,8 @@ export class MaterialInventoryRepository {
   private async getMaterialBatchRow(id: number) {
     const [row] = await this.database.query<MaterialBatchRow[]>(
       `
-      SELECT id, product_id, material_batch_no, supplier_name, protocol_code, received_date, initial_quantity, quantity, status, remark
+      SELECT id, product_id, material_batch_no, supplier_name, protocol_code, received_date,
+        initial_quantity, quantity, status, quality_status, remark
       FROM material_batches
       WHERE id = ? AND is_deleted = 0
       LIMIT 1
@@ -375,7 +357,9 @@ export class MaterialInventoryRepository {
         mb.quantity,
         COALESCE(u.reserved_quantity, 0) AS reserved_quantity,
         COALESCE(u.used_quantity, 0) AS used_quantity,
+        COALESCE(u.available_quantity, 0) AS available_quantity,
         mb.status,
+        mb.quality_status,
         p.unit,
         NULL AS location,
         mb.remark,
@@ -385,7 +369,8 @@ export class MaterialInventoryRepository {
       INNER JOIN products p ON p.id = mb.product_id AND p.is_deleted = 0
       LEFT JOIN product_categories c ON c.id = p.category_id AND c.is_deleted = 0
       LEFT JOIN (
-        SELECT material_batch_id, reserved_not_used_quantity AS reserved_quantity, used_quantity
+        SELECT material_batch_id, reserved_not_used_quantity AS reserved_quantity,
+          used_quantity, available_quantity
         FROM v_material_batch_available
       ) u ON u.material_batch_id = mb.id
       WHERE mb.id = ? AND mb.is_deleted = 0
@@ -467,7 +452,8 @@ export class MaterialInventoryRepository {
     const quantity = decimalNumber(row.quantity);
     const reservedQuantity = decimalNumber(row.reserved_quantity);
     const usedQuantity = decimalNumber(row.used_quantity);
-    const availableQuantity = quantity - reservedQuantity;
+    // 可用数量以后端视图口径为准，避免页面层重复计算库存预留。
+    const availableQuantity = decimalNumber(row.available_quantity);
 
     return {
       id: String(row.id),
@@ -492,6 +478,7 @@ export class MaterialInventoryRepository {
         row.status === 'disabled'
           ? 'disabled'
           : this.deriveStatus(quantity, reservedQuantity, usedQuantity),
+      qualityStatus: row.quality_status,
       unit: row.unit,
       location: row.location,
       remark: row.remark,

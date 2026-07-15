@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
+import type { RowDataPacket } from 'mysql2/promise';
 import type {
   MaterialInboundPayload,
   MaterialOutboundPayload,
@@ -176,70 +176,92 @@ export class MaterialTransactionRepository {
     const productId = positiveId(payload.productId, '请选择物料');
     const batchNo = required(payload.materialBatchNo, '请填写物料批次号');
     const quantity = positiveDecimal(payload.quantity, '入库数量必须大于0');
-    const [existing] = await this.database.query<
-      (RowDataPacket & { id: number; product_id: number })[]
-    >(
-      'SELECT id, product_id FROM material_batches WHERE material_batch_no = ? AND is_deleted = 0 LIMIT 1',
-      [batchNo],
-    );
-    if (existing && existing.product_id !== productId) {
-      throw new ConflictException('该批次号已被其他物料使用');
-    }
+    const inspection = normalizeInboundInspection(payload.inspection, quantity, userId);
 
-    // 相同物料批次再次入库时累加库存与初始入库数量，同时更新本批次的供应商和技术协议快照。
-    if (existing) {
-      this.auditContext.setBeforeData(await this.getMaterialBatchAuditSnapshot(existing.id));
-      await this.database.execute(
+    /**
+     * 检验合格后入库：
+     * 1. 在事务内确认批次号未被使用，一个批次号只允许一次入库
+     * 2. 仅把检验合格数量写入库存，不合格数量只保留在检验记录
+     * 3. 同事务创建 incoming_material 检验记录，保证每个入库批次至少有一条检验记录
+     */
+    const created = await this.database.transaction(async (connection) => {
+      const [existing] = await query<(RowDataPacket & { id: number })[]>(
+        connection,
+        'SELECT id FROM material_batches WHERE material_batch_no = ? LIMIT 1 FOR UPDATE',
+        [batchNo],
+      );
+      if (existing) {
+        throw new ConflictException('该物料批次号已办理过入库，不能重复入库');
+      }
+
+      const batchResult = await execute(
+        connection,
         `
-        UPDATE material_batches
-        SET quantity = quantity + ?,
-          initial_quantity = COALESCE(initial_quantity, 0) + ?,
-          supplier_name = COALESCE(?, supplier_name),
-          protocol_code = COALESCE(?, protocol_code),
-          received_date = COALESCE(?, received_date),
-          remark = COALESCE(?, remark),
-          status = 'available',
-          updated_by = ?,
-          updated_at = NOW()
-        WHERE id = ? AND is_deleted = 0
+        INSERT INTO material_batches (
+          product_id, material_batch_no, supplier_name, protocol_code, received_date,
+          initial_quantity, quantity, status, quality_status, remark,
+          created_by, created_at, updated_by, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'available', ?, ?, ?, NOW(), ?, NOW())
         `,
         [
-          quantity,
-          quantity,
+          productId,
+          batchNo,
           optional(payload.supplierName),
           optional(payload.protocolCode),
           optional(payload.receivedDate),
+          quantity,
+          quantity,
+          inspection.qualityStatus,
           optional(payload.remark),
           userId,
-          existing.id,
+          userId,
         ],
       );
-      this.auditContext.setAfterData(await this.getMaterialBatchAuditSnapshot(existing.id));
-      return { materialBatchId: String(existing.id) };
-    }
 
-    const result = (await this.database.execute(
-      `
-      INSERT INTO material_batches (
-        product_id, material_batch_no, supplier_name, protocol_code, received_date,
-        initial_quantity, quantity, status, remark, created_by, created_at, updated_at
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'available', ?, ?, NOW(), NOW())
-      `,
-      [
-        productId,
-        batchNo,
-        optional(payload.supplierName),
-        optional(payload.protocolCode),
-        optional(payload.receivedDate),
-        quantity,
-        quantity,
-        optional(payload.remark),
-        userId,
-      ],
-    )) as ResultSetHeader;
-    this.auditContext.setAfterData(await this.getMaterialBatchAuditSnapshot(result.insertId));
-    return { materialBatchId: String(result.insertId) };
+      const inspectionResult = await execute(
+        connection,
+        `
+        INSERT INTO inspection_records (
+          material_batch_id, product_id_snapshot, inspection_no, inspection_object_type,
+          inspection_type, inspection_name, inspect_quantity, pass_quantity, fail_quantity,
+          result, disposition, inspector_id, inspected_at, file_url, result_summary, remark,
+          created_by, created_at, updated_by, updated_at
+        )
+        VALUES (?, ?, ?, 'material_batch', 'incoming_material', ?, ?, ?, ?, ?, ?, ?,
+          COALESCE(?, NOW()), ?, ?, ?, ?, NOW(), ?, NOW())
+        `,
+        [
+          batchResult.insertId,
+          productId,
+          makeIncomingInspectionNo(),
+          inspection.inspectionName,
+          inspection.inspectQuantity,
+          inspection.passQuantity,
+          inspection.failQuantity,
+          inspection.result,
+          inspection.disposition,
+          inspection.inspectorId,
+          inspection.inspectedAt,
+          inspection.fileUrl,
+          inspection.resultSummary,
+          inspection.remark,
+          userId,
+          userId,
+        ],
+      );
+
+      return {
+        materialBatchId: batchResult.insertId,
+        inspectionId: inspectionResult.insertId,
+      };
+    });
+
+    this.auditContext.setAfterData(await this.getMaterialBatchAuditSnapshot(created.materialBatchId));
+    return {
+      materialBatchId: String(created.materialBatchId),
+      inspectionId: String(created.inspectionId),
+    };
   }
 
   async outbound(payload: MaterialOutboundPayload, userId: number) {
@@ -350,7 +372,8 @@ export class MaterialTransactionRepository {
       `
       SELECT
         id, product_id, material_batch_no, supplier_name, protocol_code,
-        received_date, initial_quantity, quantity, status, remark, updated_by, updated_at
+        received_date, initial_quantity, quantity, status, quality_status,
+        remark, updated_by, updated_at
       FROM material_batches
       WHERE id = ? AND is_deleted = 0
       LIMIT 1
@@ -606,3 +629,80 @@ const positiveDecimal = (value: string | number | null | undefined, message: str
 };
 const number = (value: string | number | null | undefined) => Number(value ?? 0);
 const decimal = (value: string | number | null | undefined) => number(value).toFixed(4);
+
+/**
+ * 校验入库携带的来料检验：入库数量必须等于检验合格数量。
+ * 不合格来料不能通过入库接口建库存；部分合格时仅合格部分形成库存数量。
+ */
+const normalizeInboundInspection = (
+  inspection: MaterialInboundPayload['inspection'],
+  inboundQuantity: string,
+  userId: number,
+) => {
+  if (!inspection) {
+    throw new BadRequestException('物料入库前必须填写来料检验记录');
+  }
+
+  const inspectQuantity = nonNegativeDecimal(inspection.inspectQuantity, '检验数量不能小于0');
+  const passQuantity = nonNegativeDecimal(inspection.passQuantity, '合格数量不能小于0');
+  const failQuantity = nonNegativeDecimal(inspection.failQuantity, '不合格数量不能小于0');
+  if (number(inspectQuantity) <= 0) {
+    throw new BadRequestException('检验数量必须大于0');
+  }
+  if (Math.abs(number(passQuantity) + number(failQuantity) - number(inspectQuantity)) > 0.00005) {
+    throw new BadRequestException('合格数量与不合格数量之和必须等于检验数量');
+  }
+  if (Math.abs(number(passQuantity) - number(inboundQuantity)) > 0.00005) {
+    throw new BadRequestException('入库数量必须等于来料检验合格数量');
+  }
+  if (number(passQuantity) <= 0) {
+    throw new BadRequestException('来料检验无合格数量，不能办理入库');
+  }
+
+  const expectedResult = number(failQuantity) > 0 ? 'partial_pass' : 'pass';
+  if (inspection.result !== expectedResult) {
+    throw new BadRequestException(
+      expectedResult === 'pass' ? '不合格数量为0时检验结果必须为合格' : '存在不合格数量时检验结果必须为部分合格',
+    );
+  }
+  const allowedDispositions = expectedResult === 'pass'
+    ? new Set(['accept'])
+    : new Set(['accept', 'conditional_accept']);
+  const disposition = inspection.disposition ?? (expectedResult === 'pass' ? 'accept' : 'conditional_accept');
+  if (!allowedDispositions.has(disposition)) {
+    throw new BadRequestException('当前来料检验处置方式不允许入库');
+  }
+
+  return {
+    inspectionName: optional(inspection.inspectionName) ?? '来料检验',
+    inspectQuantity,
+    passQuantity,
+    failQuantity,
+    result: expectedResult,
+    disposition,
+    qualityStatus: expectedResult === 'pass' ? 'qualified' : 'partial_qualified',
+    inspectorId: inspection.inspectorId
+      ? positiveId(inspection.inspectorId, '检验人员无效')
+      : userId,
+    inspectedAt: optional(inspection.inspectedAt),
+    fileUrl: optional(inspection.fileUrl),
+    resultSummary: optional(inspection.resultSummary),
+    remark: optional(inspection.remark),
+  } as const;
+};
+
+/** 来料检验单号：时间到毫秒并附加随机数，降低并发创建时的重复概率。 */
+const makeIncomingInspectionNo = () => {
+  const now = new Date();
+  const part = (value: number, length = 2) => String(value).padStart(length, '0');
+  return `IQC${now.getFullYear()}${part(now.getMonth() + 1)}${part(now.getDate())}${part(now.getHours())}${part(now.getMinutes())}${part(now.getSeconds())}${part(now.getMilliseconds(), 3)}${part(Math.floor(Math.random() * 1000), 3)}`;
+};
+
+const nonNegativeDecimal = (
+  value: string | number | null | undefined,
+  message: string,
+) => {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount < 0) throw new BadRequestException(message);
+  return amount.toFixed(4);
+};
