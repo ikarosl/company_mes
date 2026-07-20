@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Inject, Injectable, NotFoundExc
 import type { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type {
   FinishedInboundPayload,
+  FinishedFlowPartnerType,
   FinishedInventoryObjectType,
   FinishedInventoryOption,
   FinishedInventorySourceType,
@@ -47,6 +48,10 @@ interface FinishedTransactionRow extends RowDataPacket {
   flow_reason: string | null;
   quantity: number;
   unit: string | null;
+  partner_name: string | null;
+  partner_type: FinishedFlowPartnerType | null;
+  external_doc_no: string | null;
+  file_url: string | null;
   recorded_by_name: string | null;
   flow_date: Date;
   remark: string | null;
@@ -115,6 +120,8 @@ const OBJECT_TYPES = new Set<FinishedInventoryObjectType>(['semi_finished', 'fin
 
 const FLOW_TYPES = new Set<FinishedTransactionType>(['inbound', 'outbound', 'adjustment']);
 
+const PARTNER_TYPES = new Set<FinishedFlowPartnerType>(['customer', 'supplier']);
+
 @Injectable()
 export class FinishedTransactionRepository {
   constructor(
@@ -156,6 +163,10 @@ export class FinishedTransactionRepository {
         flow.flow_reason,
         flow.quantity,
         inventory.unit,
+        flow.partner_name,
+        flow.partner_type,
+        flow.external_doc_no,
+        flow.file_url,
         operator_user.display_name AS recorded_by_name,
         flow.flow_date,
         flow.remark
@@ -275,6 +286,7 @@ export class FinishedTransactionRepository {
     const sourceType = readSourceType(payload.sourceType);
     const objectType = readObjectType(payload.objectType);
     const quantity = readPositiveInteger(payload.quantity, '入库数量必须为大于 0 的整数');
+    const flowExtra = readFlowExtra(payload);
     const flowDate = today();
 
     const productResolved = sourceType === 'production' ? null : await this.resolveProductInbound(payload.productId);
@@ -327,6 +339,7 @@ export class FinishedTransactionRepository {
         flowReason: sourceType,
         quantity,
         flowDate,
+        ...flowExtra,
         remark: optional(payload.remark),
         userId,
       });
@@ -348,6 +361,7 @@ export class FinishedTransactionRepository {
   async outbound(payload: FinishedOutboundPayload, userId: number) {
     const inventoryId = positiveId(payload.inventoryId, '请选择产品库存批次');
     const quantity = readPositiveInteger(payload.quantity, '出库数量必须为大于 0 的整数');
+    const flowExtra = readFlowExtra(payload);
     const flowDate = today();
 
     const result = await this.database.transaction(async (connection) => {
@@ -378,6 +392,7 @@ export class FinishedTransactionRepository {
         flowReason: 'outbound',
         quantity,
         flowDate,
+        ...flowExtra,
         remark: optional(payload.remark),
         userId,
       });
@@ -603,6 +618,10 @@ export class FinishedTransactionRepository {
       flowReason: string;
       quantity: number;
       flowDate: string;
+      partnerName: string | null;
+      partnerType: FinishedFlowPartnerType | null;
+      externalDocNo: string | null;
+      fileUrl: string | null;
       remark: string | null;
       userId: number;
     },
@@ -613,10 +632,11 @@ export class FinishedTransactionRepository {
       `
       INSERT INTO product_flow_records (
         flow_no, inventory_id, batch_id, product_id, object_type,
-        flow_type, flow_reason, quantity, operator_id, flow_date,
+        flow_type, flow_reason, quantity, partner_name, partner_type,
+        external_doc_no, operator_id, flow_date, file_url,
         remark, created_by, created_at, updated_by, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW())
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW())
       `,
       [
         flowNo,
@@ -627,8 +647,12 @@ export class FinishedTransactionRepository {
         payload.flowType,
         payload.flowReason,
         payload.quantity,
+        payload.partnerName,
+        payload.partnerType,
+        payload.externalDocNo,
         payload.userId,
         payload.flowDate,
+        payload.fileUrl,
         payload.remark,
         payload.userId,
         payload.userId,
@@ -755,6 +779,10 @@ const mapTransaction = (row: FinishedTransactionRow): FinishedTransactionListIte
   flowReason: row.flow_reason,
   quantity: String(row.quantity),
   unit: row.unit,
+  partnerName: row.partner_name,
+  partnerType: row.partner_type,
+  externalDocNo: row.external_doc_no,
+  fileUrl: row.file_url,
   recordedByName: row.recorded_by_name,
   recordedAt: formatDate(row.flow_date),
   remark: row.remark,
@@ -817,6 +845,24 @@ const readPositiveInteger = (value: string | number | null | undefined, message:
   }
 
   return amount;
+};
+
+/** 读取产品流转记录的可选扩展字段，避免空字符串落库并校验合作类型字典值。 */
+const readFlowExtra = (payload: Pick<
+  FinishedInboundPayload & FinishedOutboundPayload,
+  'partnerName' | 'partnerType' | 'externalDocNo' | 'fileUrl'
+>) => {
+  const partnerType = optional(payload.partnerType);
+  if (partnerType && !PARTNER_TYPES.has(partnerType as FinishedFlowPartnerType)) {
+    throw new BadRequestException('请选择正确的合作类型');
+  }
+
+  return {
+    partnerName: optional(payload.partnerName),
+    partnerType: partnerType as FinishedFlowPartnerType | null,
+    externalDocNo: optional(payload.externalDocNo),
+    fileUrl: optional(payload.fileUrl),
+  };
 };
 
 const optional = (value: string | null | undefined) => value?.trim() || null;

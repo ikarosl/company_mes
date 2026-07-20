@@ -12,6 +12,9 @@ export type FinishedInventoryObjectType = 'semi_finished' | 'finished';
 /** 成/半成品流转类型：对应 product_flow_records.flow_type。 */
 export type FinishedTransactionType = 'inbound' | 'outbound' | 'adjustment';
 
+/** 成/半成品流转合作方类型：对应 product_flow_records.partner_type。 */
+export type FinishedFlowPartnerType = 'customer' | 'supplier';
+
 /** 成/半成品出入库列表项：用于管理端表格展示库存批次流转记录。 */
 export interface FinishedTransactionListItem {
   /** 流水记录 ID。 */
@@ -42,6 +45,14 @@ export interface FinishedTransactionListItem {
   quantity: string;
   /** 单位快照。 */
   unit: string | null;
+  /** 客户/供应商名称：发货、退回、外购时可填。 */
+  partnerName: string | null;
+  /** 合作类型：客户或供应商。 */
+  partnerType: FinishedFlowPartnerType | null;
+  /** 外部单号：客户单号、发货单或退货单。 */
+  externalDocNo: string | null;
+  /** 附件地址：入库单、发货单或退货单。 */
+  fileUrl: string | null;
   /** 操作人名称。 */
   recordedByName: string | null;
   /** 操作日期。 */
@@ -110,6 +121,14 @@ export interface FinishedInboundPayload {
   inventoryBatchNo?: string | null;
   /** 本次入库数量。 */
   quantity: string | number;
+  /** 客户/供应商名称：外购、外协或生产入库来源单据可填。 */
+  partnerName?: string | null;
+  /** 合作类型：客户或供应商。 */
+  partnerType?: FinishedFlowPartnerType | null;
+  /** 外部单号：供应商单号、客户单号或入库单号。 */
+  externalDocNo?: string | null;
+  /** 附件地址：入库单、发货单或退货单。 */
+  fileUrl?: string | null;
   /** 备注说明。 */
   remark?: string | null;
 }
@@ -120,6 +139,14 @@ export interface FinishedOutboundPayload {
   inventoryId: string;
   /** 本次出库数量。 */
   quantity: string | number;
+  /** 客户/供应商名称：发货、退回或其他转出时可填。 */
+  partnerName?: string | null;
+  /** 合作类型：客户或供应商。 */
+  partnerType?: FinishedFlowPartnerType | null;
+  /** 外部单号：客户单号、发货单或退货单。 */
+  externalDocNo?: string | null;
+  /** 附件地址：入库单、发货单或退货单。 */
+  fileUrl?: string | null;
   /** 备注说明。 */
   remark?: string | null;
 }
