@@ -24,6 +24,7 @@ import WarehouseInventoryPage from '../views/warehouse/WarehouseInventoryPage.vu
 import MaterialTransactionsPage from '../views/warehouse/MaterialTransactionsPage.vue';
 import InventoryStocktakesPage from '../views/warehouse/InventoryStocktakesPage.vue';
 import InspectionRecordsPage from '../views/quality/InspectionRecordsPage.vue';
+import InspectorTasksPage from '../views/quality/InspectorTasksPage.vue';
 // import ProcessTemplatesPage from '../views/ProcessTemplatesPage.vue';
 // import ProductionBatchDetailPage from '../views/ProductionBatchDetailPage.vue';
 // import ProductionBatchesPage from '../views/ProductionBatchesPage.vue';
@@ -294,14 +295,12 @@ export const routes: RouteRecordRaw[] = [
           permission: PERMISSIONS.worker.tasks.page,
         },
       },
-      plannedPage(
-        'inspector/tasks',
-        'inspector-tasks',
-        '检测任务',
-        '检测端',
-        ['查看待检测任务', '查看规格书', '填写检测结果', '上传检测文件', '创建返工记录'],
-        PERMISSIONS.inspector.tasks.page,
-      ),
+      {
+        path: 'inspector/tasks',
+        name: 'inspector-tasks',
+        component: InspectorTasksPage,
+        meta: { title: '检测任务', section: '检测端', permission: PERMISSIONS.inspector.tasks.page },
+      },
 
       // plannedPage('reports/order-progress', 'reports-order-progress', '工单进度报表', '报表管理', [
       //   '查看',

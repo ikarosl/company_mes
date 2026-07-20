@@ -813,6 +813,7 @@ export class ProductionTaskRepository {
     assertStepStatusTransition(current.status, status);
     if (current.status === 'pending' && status === 'doing') {
       await this.assertPreviousStepCompleted(taskId, current.step_order);
+      await this.assertPreviousStepInspectionReleased(taskId, current.step_order);
     }
     await this.assertUserAvailable(responsibleUserId);
     await this.assertTechnicalFileAvailable(sopFileId);
@@ -1434,6 +1435,31 @@ export class ProductionTaskRepository {
   }
 
   /**
+   * 校验上一道需检工序已经质量放行。
+   * 原过程检验不合格后允许通过返工复检记录放行，因此按工序关联的全部有效检验判断。
+   */
+  private async assertPreviousStepInspectionReleased(batchId: number, stepOrder: number) {
+    if (stepOrder === 1) return;
+    const [previousStep] = await this.database.query<(RowDataPacket & {
+      step_record_id: number; need_inspection: number; released: number;
+    })[]>(
+      `SELECT previous.step_record_id,previous.need_inspection,
+        EXISTS(SELECT 1 FROM inspection_records inspection
+          WHERE inspection.batch_step_record_id=previous.step_record_id
+            AND inspection.is_deleted=0
+            AND inspection.result IN ('pass','partial_pass')
+            AND inspection.disposition IN ('accept','conditional_accept')) released
+       FROM v_batch_step_execution_detail previous
+       WHERE previous.batch_id=? AND previous.step_order<?
+       ORDER BY previous.step_order DESC,previous.step_record_id DESC LIMIT 1`,
+      [batchId, stepOrder],
+    );
+    if (previousStep?.need_inspection === 1 && Number(previousStep.released) !== 1) {
+      throw new BadRequestException('前一道工序要求检验，尚未检验放行，当前工序不能开始');
+    }
+  }
+
+  /**
    * 校验工序数量沿工艺路线只能持平或减少。
    * 1. 当前工序合格数量 = 完成数量 - 异常数量。
    * 2. 首道工序完成数量不能超过生产批次计划数量。
@@ -1513,6 +1539,22 @@ export class ProductionTaskRepository {
     // 批次完工前必须确保所有工序已脱离未开工/进行中状态，避免任务提前关闭导致报工断链。
     if (Number(row?.blocking_count ?? 0) > 0) {
       throw new BadRequestException('仍有未开工或进行中的工序，不能完成生产任务');
+    }
+
+    const [inspection] = await this.database.query<(RowDataPacket & { blocking_count: number })[]>(
+      `SELECT COUNT(*) blocking_count
+       FROM v_batch_step_execution_detail step
+       WHERE step.batch_id=? AND step.need_inspection=1
+         AND NOT EXISTS(SELECT 1 FROM inspection_records record
+           WHERE record.batch_step_record_id=step.step_record_id
+             AND record.is_deleted=0
+             AND record.result IN ('pass','partial_pass')
+             AND record.disposition IN ('accept','conditional_accept'))`,
+      [batchId],
+    );
+    // 所有需检工序必须存在合格或有条件接收的有效检验，批次才允许完工。
+    if (Number(inspection?.blocking_count ?? 0) > 0) {
+      throw new BadRequestException('仍有需检工序尚未检验放行，不能完成生产任务');
     }
   }
 

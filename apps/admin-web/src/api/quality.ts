@@ -2,6 +2,7 @@ import {
   BUSINESS_API,
   type CreateInspectionPayload,
   type InspectionListItem,
+  type PendingProcessInspectionItem,
   type InspectionTargetOption,
   type PageResult,
   type ReworkListItem,
@@ -11,9 +12,24 @@ import {
   type SubmitReworkResultPayload,
   type CreateReworkRecheckPayload,
   type UpdateInspectionPayload,
+  type SubmitProcessInspectionPayload,
 } from '@company/api-contract';
 import { requestData, type QueryParams } from './shared/request-data';
 export const qualityApi = {
+  /** 查询检测端由需检工序动态派生的待检任务。 */
+  listPendingProcessTasks: (params?: QueryParams) =>
+    requestData<PageResult<PendingProcessInspectionItem>>({
+      url: BUSINESS_API.inspectorTasks,
+      method: 'GET',
+      params,
+    }),
+  /** 提交过程检验结果，成功后对应待检任务自动消失。 */
+  submitProcessInspection: (id: string, data: SubmitProcessInspectionPayload) =>
+    requestData<InspectionListItem>({
+      url: `${BUSINESS_API.inspectorTasks}/${id}/result`,
+      method: 'PUT',
+      data,
+    }),
   list: (params?: QueryParams) =>
     requestData<PageResult<InspectionListItem>>({
       url: BUSINESS_API.qualityInspections,

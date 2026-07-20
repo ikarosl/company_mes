@@ -2,10 +2,12 @@ import type {
   InspectionDisposition,
   InspectionListItem,
   InspectionObjectType,
+  PendingProcessInspectionItem,
   InspectionResult,
   InspectionTargetOption,
   InspectionType,
   SaveInspectionPayload,
+  SubmitProcessInspectionPayload,
 } from '@company/api-contract';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { RowDataPacket } from 'mysql2/promise';
@@ -82,6 +84,31 @@ interface TargetIdentityRow extends RowDataPacket {
   result: InspectionResult | null;
 }
 
+/** 待过程检验视图行：任务 ID 等同于批次工序记录 ID。 */
+interface PendingProcessInspectionRow extends RowDataPacket {
+  inspection_task_id: number;
+  batch_id: number;
+  batch_no: string;
+  work_order_id: number;
+  order_no: string;
+  product_id: number;
+  product_code: string | null;
+  product_model: string | null;
+  product_name: string | null;
+  product_unit: string | null;
+  step_order: number;
+  step_code: string | null;
+  step_name: string;
+  sop_file_name: string | null;
+  sop_version: string | null;
+  sop_file_url: string | null;
+  responsible_user_name: string | null;
+  output_quantity: string | number;
+  abnormal_quantity: string | number;
+  suggested_inspect_quantity: string | number;
+  completed_at: Date | null;
+}
+
 const inspectionTypes: InspectionType[] = [
   'incoming_material',
   'first_article',
@@ -112,19 +139,97 @@ export class InspectionRepository {
   async list(filters: InspectionFilters, pagination: PaginationOptions) {
     const { where, params } = this.filters(filters);
     const [count] = await this.database.query<(RowDataPacket & { total: number })[]>(
-      `SELECT COUNT(*) AS total FROM inspection_records inspection WHERE ${where}`,
+      `SELECT COUNT(*) AS total FROM v_inspection_record_detail inspection WHERE ${where}`,
       params,
     );
     const rows = await this.database.query<InspectionRow[]>(
-      `${this.source()} WHERE ${where} ORDER BY inspection.inspected_at DESC, inspection.id DESC LIMIT ? OFFSET ?`,
+      `${this.source()} WHERE ${where} ORDER BY inspection.inspected_at DESC, inspection.inspection_id DESC LIMIT ? OFFSET ?`,
       [...params, pagination.pageSize, pagination.offset],
     );
     return toPageResult(rows.map(mapInspection), Number(count?.total ?? 0), pagination);
   }
 
+  /** 查询已报工、需要检验且尚未提交过程检验结果的工序。 */
+  async listPendingProcessTasks(keyword: string | undefined, pagination: PaginationOptions) {
+    const params: QueryParam[] = [];
+    let where = '1=1';
+    if (keyword?.trim()) {
+      const like = `%${keyword.trim()}%`;
+      where = `(batch_no LIKE ? OR order_no LIKE ? OR product_code LIKE ? OR product_model LIKE ?
+        OR product_name LIKE ? OR step_code LIKE ? OR step_name LIKE ?)`;
+      params.push(like, like, like, like, like, like, like);
+    }
+    const [count] = await this.database.query<(RowDataPacket & { total: number })[]>(
+      `SELECT COUNT(*) total FROM v_pending_process_inspection WHERE ${where}`,
+      params,
+    );
+    const rows = await this.database.query<PendingProcessInspectionRow[]>(
+      `SELECT * FROM v_pending_process_inspection WHERE ${where}
+       ORDER BY completed_at ASC, inspection_task_id ASC LIMIT ? OFFSET ?`,
+      [...params, pagination.pageSize, pagination.offset],
+    );
+    return toPageResult(rows.map(mapPendingProcessInspection), Number(count?.total ?? 0), pagination);
+  }
+
+  /**
+   * 提交待检工序的过程检验结果。
+   * 1. 锁定工序，确认已报工且配置为需要检验。
+   * 2. 校验数量、结论和处置方式。
+   * 3. 防止多人同时提交同一工序的首条过程检验记录。
+   */
+  async submitPendingProcessTask(id: number, payload: SubmitProcessInspectionPayload, userId: number) {
+    const inspectQuantity = quantity(payload.inspectQuantity, '检验数量');
+    const passQuantity = quantity(payload.passQuantity, '合格数量');
+    const failQuantity = quantity(payload.failQuantity, '不合格数量');
+    const result = enumValue(payload.result, results, '检验结果无效');
+    const disposition = validateInspectionOutcome(
+      'process',
+      result,
+      payload.disposition ? enumValue(payload.disposition, dispositions, '处置方式无效') : null,
+      inspectQuantity,
+      passQuantity,
+      failQuantity,
+    );
+    const inspectionId = await this.database.transaction(async (connection) => {
+      const [stepRows] = await connection.query<(RowDataPacket & {
+        id: number; batch_id: number; product_id: number; need_inspection: number; status: string;
+      })[]>(
+        `SELECT record.id,record.batch_id,work_order.product_id,route_step.need_inspection,record.status
+         FROM batch_step_records record
+         INNER JOIN process_route_steps route_step ON route_step.id=record.process_route_steps_id
+         INNER JOIN production_batches batch ON batch.id=record.batch_id
+         INNER JOIN work_orders work_order ON work_order.id=batch.work_order_id
+         WHERE record.id=? AND record.is_deleted=0 FOR UPDATE`,
+        [id],
+      );
+      const step = stepRows[0];
+      if (!step || step.need_inspection !== 1 || !['completed', 'abnormal'].includes(step.status)) {
+        throw new BadRequestException('待检任务不存在，工序可能尚未完成或无需检验');
+      }
+      const [duplicateRows] = await connection.query<RowDataPacket[]>(
+        `SELECT id FROM inspection_records WHERE batch_step_record_id=?
+         AND inspection_type='process' AND is_deleted=0 LIMIT 1`,
+        [id],
+      );
+      if (duplicateRows[0]) throw new BadRequestException('该工序已提交过程检验，请刷新任务列表');
+      const inserted = await execute(connection, `INSERT INTO inspection_records (
+        batch_id,product_id_snapshot,inspection_no,inspection_object_type,inspection_type,inspection_name,
+        batch_step_record_id,inspect_quantity,pass_quantity,fail_quantity,result,disposition,inspector_id,
+        inspected_at,file_url,result_summary,remark,created_by,created_at,updated_by,updated_at
+      ) VALUES (?,?,?,'batch_step','process',?,?,?,?,?,?,?,?,COALESCE(?,NOW()),?,?,?,?,NOW(),?,NOW())`, [
+        step.batch_id, step.product_id, makeInspectionNo('process'), optional(payload.inspectionName) ?? '过程检验',
+        id, inspectQuantity, passQuantity, failQuantity, result, disposition, userId,
+        optional(payload.inspectedAt), optional(payload.fileUrl), optional(payload.resultSummary),
+        optional(payload.remark), userId, userId,
+      ]);
+      return inserted.insertId;
+    });
+    return this.get(inspectionId);
+  }
+
   async get(id: number) {
     const [row] = await this.database.query<InspectionRow[]>(
-      `${this.source()} WHERE inspection.id = ? AND inspection.is_deleted = 0`,
+      `${this.source()} WHERE inspection.inspection_id = ?`,
       [id],
     );
     if (!row) throw new NotFoundException('检验记录不存在');
@@ -149,35 +254,31 @@ export class InspectionRepository {
       params.push(like, like, like);
     } else if (kind === 'batch_step') {
       const id = positiveId(batchId, '请先选择生产批次');
-      sql = `SELECT bsr.id, 'batch_step' target_type, CONCAT(prs.step_order, '. ', ps.step_name) label,
-        bsr.batch_id, NULL product_id, NULL product_model, NULL product_name, ps.step_name, prs.step_order,
-        NULL quantity
-        FROM batch_step_records bsr JOIN process_route_steps prs ON prs.id=bsr.process_route_steps_id AND prs.is_deleted=0
-        JOIN process_steps ps ON ps.id=prs.process_step_id AND ps.is_deleted=0
-        WHERE bsr.is_deleted=0 AND bsr.batch_id=? ORDER BY prs.step_order`;
+      sql = `SELECT step_record_id id, 'batch_step' target_type, CONCAT(step_order, '. ', step_name) label,
+        batch_id, product_id, product_model, product_name, step_name, step_order, NULL quantity
+        FROM v_batch_step_execution_detail WHERE batch_id=? ORDER BY step_order`;
       params.push(id);
     } else if (kind === 'product_inventory') {
-      sql = `SELECT pib.id, 'product_inventory' target_type, CONCAT(COALESCE(pib.inventory_batch_no, '-'), ' / ', p.product_model, ' ', p.product_name) label,
-        pib.batch_id, p.id product_id, p.product_model, p.product_name, NULL step_name, NULL step_order,
-        pib.quantity
-        FROM product_inventory_batches pib JOIN products p ON p.id=pib.product_id AND p.is_deleted=0
-        WHERE pib.is_deleted=0 AND (COALESCE(pib.inventory_batch_no,'') LIKE ? OR p.product_model LIKE ? OR p.product_name LIKE ?) ORDER BY pib.id DESC LIMIT 100`;
+      sql = `SELECT product_inventory_id id, 'product_inventory' target_type,
+        CONCAT(COALESCE(inventory_batch_no, '-'), ' / ', product_model, ' ', product_name) label,
+        batch_id, product_id, product_model, product_name, NULL step_name, NULL step_order, stock_quantity quantity
+        FROM v_product_inventory_available
+        WHERE COALESCE(inventory_batch_no,'') LIKE ? OR product_model LIKE ? OR product_name LIKE ?
+        ORDER BY product_inventory_id DESC LIMIT 100`;
       params.push(like, like, like);
     } else if (kind === 'inspection') {
-      sql = `SELECT inspection.id, 'inspection' target_type, CONCAT(inspection.inspection_no, ' / ', inspection.inspection_type) label,
-        inspection.batch_id, inspection.product_id_snapshot product_id, p.product_model, p.product_name, NULL step_name, NULL step_order,
-        inspection.inspect_quantity quantity
-        FROM inspection_records inspection LEFT JOIN products p ON p.id=inspection.product_id_snapshot
-        WHERE inspection.is_deleted=0 AND inspection.result IN ('fail','partial_pass')
-        AND inspection.inspection_no LIKE ? ORDER BY inspection.id DESC LIMIT 100`;
+      sql = `SELECT inspection_id id, 'inspection' target_type, CONCAT(inspection_no, ' / ', inspection_type) label,
+        batch_id, product_id, product_model, product_name, step_name, step_order, inspect_quantity quantity
+        FROM v_inspection_record_detail WHERE result IN ('fail','partial_pass')
+        AND inspection_no LIKE ? ORDER BY inspection_id DESC LIMIT 100`;
       params.push(like);
     } else {
-      sql = `SELECT pb.id, 'production_batch' target_type, CONCAT(pb.batch_no, ' / ', wo.order_no, ' / ', p.product_model, ' ', p.product_name) label,
-        pb.id batch_id, p.id product_id, p.product_model, p.product_name, NULL step_name, NULL step_order,
-        pb.planned_quantity quantity
-        FROM production_batches pb JOIN work_orders wo ON wo.id=pb.work_order_id AND wo.is_deleted=0
-        JOIN products p ON p.id=wo.product_id AND p.is_deleted=0
-        WHERE pb.is_deleted=0 AND (pb.batch_no LIKE ? OR wo.order_no LIKE ? OR p.product_model LIKE ? OR p.product_name LIKE ?) ORDER BY pb.id DESC LIMIT 100`;
+      sql = `SELECT batch_id id, 'production_batch' target_type,
+        CONCAT(batch_no, ' / ', order_no, ' / ', product_model, ' ', product_name) label,
+        batch_id, product_id, product_model, product_name, NULL step_name, NULL step_order,
+        planned_quantity quantity FROM v_production_batch_overview
+        WHERE batch_no LIKE ? OR order_no LIKE ? OR product_model LIKE ? OR product_name LIKE ?
+        ORDER BY batch_id DESC LIMIT 100`;
       params.push(like, like, like, like);
     }
     const rows = await this.database.query<TargetRow[]>(sql, params);
@@ -392,7 +493,8 @@ export class InspectionRepository {
   }
 
   private filters(filters: InspectionFilters) {
-    const clauses = ['inspection.is_deleted = 0'];
+    // 详情视图已经统一排除软删除记录，这里仅追加业务筛选条件。
+    const clauses = ['1 = 1'];
     const params: QueryParam[] = [];
     if (filters.inspectionType) {
       enumValue(filters.inspectionType, inspectionTypes, '检验类型无效');
@@ -423,19 +525,9 @@ export class InspectionRepository {
   }
 
   private source() {
-    return `SELECT inspection.*, mb.material_batch_no, pb.batch_no production_batch_no,
-    wo.order_no work_order_no, p.product_model, p.product_name, ps.step_name, prs.step_order,
-    u.display_name inspector_name,
-    (SELECT COUNT(*) FROM rework_records rw WHERE rw.source_inspection_id=inspection.id AND rw.is_deleted=0) rework_count
-    FROM inspection_records inspection
-    LEFT JOIN material_batches mb ON mb.id=inspection.material_batch_id
-    LEFT JOIN production_batches pb ON pb.id=inspection.batch_id
-    LEFT JOIN work_orders wo ON wo.id=pb.work_order_id
-    LEFT JOIN products p ON p.id=inspection.product_id_snapshot
-    LEFT JOIN batch_step_records bsr ON bsr.id=inspection.batch_step_record_id
-    LEFT JOIN process_route_steps prs ON prs.id=bsr.process_route_steps_id
-    LEFT JOIN process_steps ps ON ps.id=prs.process_step_id
-    LEFT JOIN users u ON u.id=inspection.inspector_id`;
+    return `SELECT inspection.inspection_id id, inspection.*,
+      inspection.batch_no production_batch_no, inspection.order_no work_order_no
+      FROM v_inspection_record_detail inspection`;
   }
 
   /** 已生成返工单后，来源检验的对象、数量、结果和处置不可再改写。 */
@@ -489,6 +581,30 @@ const mapInspection = (r: InspectionRow): InspectionListItem => ({
   reworkCount: Number(r.rework_count ?? 0),
   createdAt: r.created_at.toISOString(),
   updatedAt: r.updated_at?.toISOString() ?? null,
+});
+/** 将待检视图的数据库字段转换为前后端公共契约。 */
+const mapPendingProcessInspection = (row: PendingProcessInspectionRow): PendingProcessInspectionItem => ({
+  id: String(row.inspection_task_id),
+  batchId: String(row.batch_id),
+  batchNo: row.batch_no,
+  workOrderId: String(row.work_order_id),
+  workOrderNo: row.order_no,
+  productId: String(row.product_id),
+  productCode: row.product_code,
+  productModel: row.product_model,
+  productName: row.product_name,
+  productUnit: row.product_unit,
+  stepOrder: Number(row.step_order),
+  stepCode: row.step_code,
+  stepName: row.step_name,
+  sopFileName: row.sop_file_name,
+  sopVersion: row.sop_version,
+  sopFileUrl: row.sop_file_url,
+  responsibleUserName: row.responsible_user_name,
+  outputQuantity: Number(row.output_quantity ?? 0),
+  abnormalQuantity: Number(row.abnormal_quantity ?? 0),
+  suggestedInspectQuantity: Number(row.suggested_inspect_quantity ?? 0),
+  completedAt: row.completed_at?.toISOString() ?? null,
 });
 const enumValue = <T extends string>(value: string, allowed: readonly T[], message: string): T => {
   if (!allowed.includes(value as T)) throw new BadRequestException(message);
