@@ -75,7 +75,7 @@
           <el-option label="50条/页" :value="50" />
         </el-select>
         <el-pagination
-          :current-page="currentPage"
+          v-model:current-page="currentPage"
           :page-size="pageSize"
           :total="total"
           layout="prev, pager, next, jumper"
@@ -97,14 +97,10 @@
           <el-input v-model="routeForm.routeName" placeholder="例如：环形器标准工艺路线" />
         </el-form-item>
         <el-form-item label="使用产品类型" required>
-          <el-select v-model="routeForm.productCategoryId" filterable placeholder="请选择产品分类">
-            <el-option
-              v-for="category in categoryOptions"
-              :key="category.id"
-              :label="formatCategory(category)"
-              :value="category.id"
-            />
-          </el-select>
+          <ProductCategorySelect
+            v-model="routeForm.productCategoryId"
+            :options="categoryOptions"
+          />
         </el-form-item>
         <el-form-item label="版本">
           <el-input v-model="routeForm.version" placeholder="例如：V1.0" />
@@ -244,16 +240,21 @@ import { Plus, Refresh } from '@element-plus/icons-vue';
 import type {
   ProcessOption,
   ProcessRouteDetail,
+  ProductAttribute,
   ProcessRouteListItem,
   ProductCategoryListItem,
   SystemUserListItem,
 } from '@company/api-contract';
+import { PRODUCT_ATTRIBUTE_LABELS } from '@company/api-contract';
 import { productApi } from '../../api/product';
 import { systemApi } from '../../api/system';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
+import ProductCategorySelect from '../../components/business/ProductCategorySelect.vue';
 
 type StepFormRow = {
+  /** 已有路线步骤 ID；新增步骤为空，保存时用于原位更新而不是重建记录。 */
+  id?: string;
   processId: string;
   stepOrder: number;
   defaultOwnerId: string;
@@ -390,6 +391,7 @@ const openSteps = async (row: ProcessRouteListItem) => {
   await loadProcessOptions();
   const detail = await productApi.getRoute(row.id);
   stepForm.steps = detail.steps.map((step) => ({
+    id: step.id,
     processId: step.processId,
     stepOrder: step.stepOrder,
     defaultOwnerId: step.defaultOwnerId ?? '',
@@ -445,6 +447,7 @@ const submitRoute = async () => {
 
 const addStep = () => {
   stepForm.steps.push({
+    id: undefined,
     stepOrder: stepForm.steps.length + 1,
     processId: '',
     defaultOwnerId: '',
@@ -499,6 +502,7 @@ const submitSteps = async () => {
   try {
     await productApi.configureRouteSteps(editingRouteId.value, {
       steps: stepForm.steps.map((step) => ({
+        id: step.id,
         processId: step.processId,
         stepOrder: step.stepOrder,
         defaultOwnerId: step.defaultOwnerId || null,
@@ -553,11 +557,14 @@ const deleteRoute = async (row: ProcessRouteListItem) => {
 const getProcessOption = (processId: string) =>
   processOptions.value.find((process) => process.id === processId);
 
-const formatCategory = (category: ProductCategoryListItem) =>
-  `${category.productAttribute} / ${category.productType}`;
+/** Convert the fixed product attribute value to its shared Chinese label. */
+const formatProductAttribute = (value: string) =>
+  PRODUCT_ATTRIBUTE_LABELS[value as ProductAttribute] ?? value;
 
 const formatRouteCategory = (route: ProcessRouteListItem | ProcessRouteDetail) =>
-  route.productAttribute && route.productType ? `${route.productAttribute} / ${route.productType}` : '-';
+  route.productAttribute && route.productType
+    ? `${formatProductAttribute(route.productAttribute)} / ${route.productType}`
+    : '-';
 
 const formatProcessOption = (process: ProcessOption) =>
   `${process.processCode} / ${process.processName}`;

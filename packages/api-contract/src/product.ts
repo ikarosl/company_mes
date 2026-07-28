@@ -1,6 +1,55 @@
+import type { ProductionBatchStatus } from './production.js';
+
+import type { ProductionBatchStatus } from './production.js';
+
+/** 产品分类的一级属性：用于区分成品、半成品、物料及其他库存对象。 */
+export type ProductAttribute =
+  | 'finished'
+  | 'semi_finished'
+  | 'material'
+  | 'auxiliary'
+  | 'other';
+
+/** 产品属性中文标签：供各业务页面统一展示固定枚举值。 */
+export const PRODUCT_ATTRIBUTE_LABELS: Record<ProductAttribute, string> = {
+  finished: '成品',
+  semi_finished: '半成品',
+  material: '物料',
+  auxiliary: '辅料',
+  other: '其他',
+};
+
+/** 历史中文属性到当前固定枚举的兼容映射，仅用于存量数据过渡。 */
+export const LEGACY_PRODUCT_ATTRIBUTE_MAP: Record<string, ProductAttribute> = {
+  成品: 'finished',
+  半成品: 'semi_finished',
+  物料: 'material',
+  原材料: 'material',
+  辅料: 'auxiliary',
+  其他: 'other',
+};
+
+/** 将接口或数据库中的产品属性统一转换为当前英文枚举。 */
+export const normalizeProductAttribute = (
+  value: string | null | undefined,
+): ProductAttribute | null => {
+  if (!value) {
+    return null;
+  }
+  const normalized = LEGACY_PRODUCT_ATTRIBUTE_MAP[value] ?? value;
+  return normalized in PRODUCT_ATTRIBUTE_LABELS ? (normalized as ProductAttribute) : null;
+};
+
+/** 判断产品属性是否允许进入生产工单。 */
+export const isProductionProductAttribute = (value: string | null | undefined) => {
+  const normalized = normalizeProductAttribute(value);
+  return normalized === 'finished' || normalized === 'semi_finished';
+};
+
 export interface ProductCategoryListItem {
   id: string;
-  productAttribute: string;
+  /** 一级产品属性，只允许使用系统约定的固定分类。 */
+  productAttribute: ProductAttribute;
   productType: string;
   status: number;
   remark: string | null;
@@ -10,7 +59,8 @@ export interface ProductCategoryListItem {
 
 export interface ProductCategoryQuery {
   keyword?: string;
-  productAttribute?: string;
+  /** 一级产品属性筛选条件。 */
+  productAttribute?: ProductAttribute | '';
   productType?: string;
   status?: string;
   page?: number;
@@ -18,14 +68,16 @@ export interface ProductCategoryQuery {
 }
 
 export interface CreateProductCategoryPayload {
-  productAttribute: string;
+  /** 一级产品属性，只允许使用系统约定的固定分类。 */
+  productAttribute: ProductAttribute;
   productType: string;
   status?: number | boolean;
   remark?: string | null;
 }
 
 export interface UpdateProductCategoryPayload {
-  productAttribute?: string;
+  /** 一级产品属性，只允许使用系统约定的固定分类。 */
+  productAttribute?: ProductAttribute;
   productType?: string;
   status?: number | boolean;
   remark?: string | null;
@@ -131,6 +183,14 @@ export interface ProductInventoryDetail {
   batches: MaterialBatchListItem[];
 }
 
+/** 工序重要参数定义：实际参数值由员工报工时填写。 */
+export interface ProcessImportantParameter {
+  /** 参数名称，例如焊接温度、驻波。 */
+  key: string;
+  /** 参数单位，例如 ℃、s、dB；无单位时为空。 */
+  unit?: string | null;
+}
+
 export interface ProcessListItem {
   id: string;
   processCode: string;
@@ -139,6 +199,8 @@ export interface ProcessListItem {
   sopFileId: string | null;
   sopFileName: string | null;
   sopFileUrl: string | null;
+  /** 工序报工时必须填写的重要参数定义。 */
+  importantParameters: ProcessImportantParameter[];
   status: number;
   remark: string | null;
   createdAt: string;
@@ -159,6 +221,8 @@ export interface CreateProcessPayload {
   sopFileId?: string | null;
   sopFileName?: string | null;
   sopFileUrl?: string | null;
+  /** 报工时需要填写的重要参数定义。 */
+  importantParameters?: ProcessImportantParameter[];
   status?: number | boolean;
   remark?: string | null;
 }
@@ -170,6 +234,8 @@ export interface UpdateProcessPayload {
   sopFileId?: string | null;
   sopFileName?: string | null;
   sopFileUrl?: string | null;
+  /** 报工时需要填写的重要参数定义。 */
+  importantParameters?: ProcessImportantParameter[];
   status?: number | boolean;
   remark?: string | null;
 }
@@ -187,6 +253,8 @@ export interface ProcessOption {
   sopFileId: string | null;
   sopFileName: string | null;
   sopFileUrl: string | null;
+  /** 报工时需要填写的重要参数定义。 */
+  importantParameters: ProcessImportantParameter[];
 }
 
 export interface ProcessRouteOption {
@@ -321,6 +389,12 @@ export interface MaterialBatchListItem {
   remark: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** 设置产品默认工艺路线请求；routeId 为空表示取消默认路线。 */
+export interface SetProductDefaultRoutePayload {
+  /** 默认工艺路线 ID，必须是启用且适用于该产品分类的路线。 */
+  routeId: string | null;
 }
 
 export interface MaterialBatchUsageItem {
@@ -467,6 +541,8 @@ export interface MaterialTransactionDemandOption {
   usageId: string;
   productionBatchId: string;
   productionBatchNo: string;
+  /** 生产任务状态：领料出库仅允许生产中的任务。 */
+  productionBatchStatus: ProductionBatchStatus;
   workOrderNo: string;
   productMaterialId: string;
   materialProductId: string;

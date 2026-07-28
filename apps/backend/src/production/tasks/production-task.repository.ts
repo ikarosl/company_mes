@@ -23,6 +23,8 @@ import {
   decimalString,
   formatDate,
   mapBatchStepRecord,
+  mergeBatchStepParameterValues,
+  normalizeBatchStepParameterValues,
   mapProductionBatch,
   mapTaskMaterialRequirement,
   mapWorkerTask,
@@ -94,7 +96,7 @@ export class ProductionTaskRepository {
         COUNT(DISTINCT sr.id) AS step_count,
         -- 异常报工是提醒型终态：合格数量继续流转，因此进度统计与完工状态同口径。
         SUM(CASE WHEN sr.status IN ('completed', 'abnormal') THEN 1 ELSE 0 END) AS finished_step_count,
-        COUNT(DISTINCT CASE WHEN sr.responsible_user_id IS NOT NULL THEN sr.id END) AS assigned_step_count,
+        COUNT(DISTINCT CASE WHEN sr.responsible_user_id IS NOT NULL OR prs.default_owner_id IS NOT NULL THEN sr.id END) AS assigned_step_count,
         (
           SELECT COUNT(*) FROM batch_material_requirement requirement
           WHERE requirement.batch_id = b.id AND requirement.is_deleted = 0
@@ -113,6 +115,7 @@ export class ProductionTaskRepository {
       LEFT JOIN process_routes r ON r.id = b.route_id AND r.is_deleted = 0
       LEFT JOIN users u ON u.id = b.owner_id
       LEFT JOIN batch_step_records sr ON sr.batch_id = b.id AND sr.is_deleted = 0
+      LEFT JOIN process_route_steps prs ON prs.id = sr.process_route_steps_id AND prs.is_deleted = 0
       WHERE ${where}
       GROUP BY b.id, b.work_order_id, wo.order_no, b.batch_no, wo.product_id, p.product_model, p.product_name,
         b.route_id, r.route_name, b.planned_quantity, b.status, b.owner_id, u.display_name, b.plan_start_date,
@@ -164,9 +167,10 @@ export class ProductionTaskRepository {
       INNER JOIN work_orders wo ON wo.id = b.work_order_id AND wo.is_deleted = 0
       INNER JOIN products p ON p.id = wo.product_id AND p.is_deleted = 0
       INNER JOIN batch_step_records sr ON sr.batch_id = b.id AND sr.is_deleted = 0
+      INNER JOIN process_route_steps prs ON prs.id = sr.process_route_steps_id AND prs.is_deleted = 0
       WHERE ${where}
         AND b.status = 'doing'
-        AND sr.responsible_user_id = ?
+        AND COALESCE(sr.responsible_user_id, prs.default_owner_id) = ?
         ${stepStatus ? 'AND sr.status = ?' : ''}
     `,
       stepStatus ? [...params, userIdNumber, stepStatus] : [...params, userIdNumber],
@@ -215,7 +219,25 @@ export class ProductionTaskRepository {
               AND previous_prs.step_order < prs.step_order
             ORDER BY previous_prs.step_order DESC, previous_sr.id DESC
             LIMIT 1
-          ) IN ('completed', 'abnormal') THEN 1
+          ) IN ('completed', 'abnormal')
+          AND NOT EXISTS (
+            SELECT 1
+            FROM batch_step_records inspection_sr
+            INNER JOIN process_route_steps inspection_prs
+              ON inspection_prs.id = inspection_sr.process_route_steps_id
+              AND inspection_prs.is_deleted = 0
+            WHERE inspection_sr.batch_id = b.id
+              AND inspection_sr.is_deleted = 0
+              AND inspection_prs.step_order < prs.step_order
+              AND inspection_prs.need_inspection = 1
+              AND NOT EXISTS (
+                SELECT 1 FROM inspection_records inspection
+                WHERE inspection.batch_step_record_id = inspection_sr.id
+                  AND inspection.is_deleted = 0
+                  AND inspection.result IN ('pass', 'partial_pass')
+                  AND inspection.disposition IN ('accept', 'conditional_accept')
+              )
+          ) THEN 1
           ELSE 0
         END AS can_start,
         sr.started_at AS step_started_at,
@@ -223,8 +245,8 @@ export class ProductionTaskRepository {
         sr.output_quantity,
         sr.return_quantity,
         sr.abnormal_quantity,
-        sr.responsible_user_id,
-        ru.display_name AS responsible_user_name
+        COALESCE(sr.responsible_user_id, prs.default_owner_id) AS responsible_user_id,
+        COALESCE(ru.display_name, default_owner.display_name) AS responsible_user_name
       FROM production_batches b
       INNER JOIN work_orders wo ON wo.id = b.work_order_id AND wo.is_deleted = 0
       INNER JOIN products p ON p.id = wo.product_id AND p.is_deleted = 0
@@ -234,16 +256,17 @@ export class ProductionTaskRepository {
       LEFT JOIN process_routes r ON r.id = b.route_id AND r.is_deleted = 0
       LEFT JOIN users u ON u.id = b.owner_id
       LEFT JOIN users ru ON ru.id = sr.responsible_user_id
+      LEFT JOIN users default_owner ON default_owner.id = prs.default_owner_id
       LEFT JOIN batch_step_records all_sr ON all_sr.batch_id = b.id AND all_sr.is_deleted = 0
       WHERE ${where}
         AND b.status = 'doing'
-        AND sr.responsible_user_id = ?
+        AND COALESCE(sr.responsible_user_id, prs.default_owner_id) = ?
         ${stepStatus ? 'AND sr.status = ?' : ''}
       GROUP BY b.id, b.work_order_id, wo.order_no, b.batch_no, wo.product_id, p.product_model, p.product_name,
         b.route_id, r.route_name, b.planned_quantity, b.status, b.owner_id, u.display_name, b.plan_start_date,
         b.plan_end_date, b.remark, b.created_at, b.updated_at, sr.id, sr.process_route_steps_id, prs.step_order,
         ps.step_name, sr.status, sr.started_at, sr.completed_at, sr.output_quantity, sr.return_quantity,
-        sr.abnormal_quantity, sr.responsible_user_id, ru.display_name
+        sr.abnormal_quantity, sr.responsible_user_id, prs.default_owner_id, ru.display_name, default_owner.display_name
       ORDER BY b.id DESC, prs.step_order ASC
       LIMIT ? OFFSET ?
     `,
@@ -278,10 +301,11 @@ export class ProductionTaskRepository {
   ) {
     const task = await this.getTaskRowForWorker(taskId, userId);
     const current = await this.getStepRecordRow(taskId, recordId);
+    const effectiveResponsibleUserId = current.responsible_user_id ?? current.default_responsible_user_id;
 
     if (
-      current.responsible_user_id !== null &&
-      current.responsible_user_id !== Number(userId) &&
+      effectiveResponsibleUserId !== null &&
+      effectiveResponsibleUserId !== Number(userId) &&
       task.owner_id !== Number(userId)
     ) {
       throw new BadRequestException('You are not allowed to update this step record');
@@ -294,8 +318,9 @@ export class ProductionTaskRepository {
     const orderId = readPositiveId(payload.workOrderId, 'Missing work order');
     const order = await this.getWorkOrderRow(orderId);
 
-    if (!['released', 'doing'].includes(order.status)) {
-      throw new BadRequestException('Only released or doing work orders can create tasks');
+    // 未完成工单可直接创建任务；草稿工单创建后会自动进入已下达状态。
+    if (!['draft', 'released', 'doing'].includes(order.status)) {
+      throw new BadRequestException('只能为未完成的工单创建任务');
     }
 
     const plannedQuantity = readDecimal(payload.plannedQuantity, 'Invalid task quantity');
@@ -346,10 +371,10 @@ export class ProductionTaskRepository {
           const assignment = assignmentMap.get(step.id);
           const responsibleUserId = assignmentMap.has(step.id)
             ? (assignment?.responsibleUserId ?? null)
-            : step.default_owner_id;
+            : null;
           const sopFileId = assignmentMap.has(step.id)
             ? (assignment?.sopFileId ?? null)
-            : step.sop_file_id;
+            : null;
           await this.assertUserAvailable(responsibleUserId);
           await this.assertTechnicalFileAvailable(sopFileId);
           await execute(
@@ -357,11 +382,11 @@ export class ProductionTaskRepository {
             `
             INSERT INTO batch_step_records (
               batch_id, process_route_steps_id,
-              responsible_user_id, status, created_at, updated_at
+              responsible_user_id, sop_file_id, parameter_definitions, status, created_at, updated_at
             )
-            VALUES (?, ?, ?, 'pending', NOW(), NOW())
+            VALUES (?, ?, ?, ?, CAST(? AS JSON), 'pending', NOW(), NOW())
           `,
-            [insertResult.insertId, step.id, responsibleUserId],
+            [insertResult.insertId, step.id, responsibleUserId, sopFileId, JSON.stringify(step.important_parameters ?? [])],
           );
         }
       }
@@ -401,9 +426,16 @@ export class ProductionTaskRepository {
         process_route_steps_id: step.id,
         step_order: step.step_order,
         step_name: step.process_name,
-        sop_file_id: step.sop_file_id,
-        responsible_user_id: step.default_owner_id,
-        responsible_user_name: step.default_owner_name,
+        sop_file_id: null,
+        sop_file_name: null,
+        sop_file_url: null,
+        default_sop_file_id: step.sop_file_id,
+        default_sop_file_name: step.sop_file_name,
+        default_sop_file_url: step.sop_file_url,
+        responsible_user_id: null,
+        responsible_user_name: null,
+        default_responsible_user_id: step.default_owner_id,
+        default_responsible_user_name: step.default_owner_name,
         status: 'pending',
         started_at: null,
         completed_at: null,
@@ -491,10 +523,10 @@ export class ProductionTaskRepository {
           const assignment = assignmentMap.get(step.id);
           const responsibleUserId = assignmentMap.has(step.id)
             ? (assignment?.responsibleUserId ?? null)
-            : step.default_owner_id;
+            : null;
           const sopFileId = assignmentMap.has(step.id)
             ? (assignment?.sopFileId ?? null)
-            : step.sop_file_id;
+            : null;
           await this.assertUserAvailable(responsibleUserId);
           await this.assertTechnicalFileAvailable(sopFileId);
           await execute(
@@ -502,11 +534,11 @@ export class ProductionTaskRepository {
             `
             INSERT INTO batch_step_records (
               batch_id, process_route_steps_id,
-              responsible_user_id, status, created_at, updated_at
+              responsible_user_id, sop_file_id, parameter_definitions, status, created_at, updated_at
             )
-            VALUES (?, ?, ?, 'pending', NOW(), NOW())
+            VALUES (?, ?, ?, ?, CAST(? AS JSON), 'pending', NOW(), NOW())
           `,
-            [id, step.id, responsibleUserId],
+            [id, step.id, responsibleUserId, sopFileId, JSON.stringify(step.important_parameters ?? [])],
           );
         }
       }
@@ -590,9 +622,16 @@ export class ProductionTaskRepository {
         process_route_steps_id: step.id,
         step_order: step.step_order,
         step_name: step.process_name,
-        sop_file_id: step.sop_file_id,
-        responsible_user_id: step.default_owner_id,
-        responsible_user_name: step.default_owner_name,
+        sop_file_id: null,
+        sop_file_name: null,
+        sop_file_url: null,
+        default_sop_file_id: step.sop_file_id,
+        default_sop_file_name: step.sop_file_name,
+        default_sop_file_url: step.sop_file_url,
+        responsible_user_id: null,
+        responsible_user_name: null,
+        default_responsible_user_id: step.default_owner_id,
+        default_responsible_user_name: step.default_owner_name,
         status: 'pending',
         started_at: null,
         completed_at: null,
@@ -636,10 +675,10 @@ export class ProductionTaskRepository {
         const assignment = assignmentMap.get(step.id);
         const responsibleUserId = assignmentMap.has(step.id)
           ? (assignment?.responsibleUserId ?? null)
-          : step.default_owner_id;
+          : null;
         const sopFileId = assignmentMap.has(step.id)
           ? (assignment?.sopFileId ?? null)
-          : step.sop_file_id;
+          : null;
         await this.assertUserAvailable(responsibleUserId);
         await this.assertTechnicalFileAvailable(sopFileId);
         await execute(
@@ -647,11 +686,11 @@ export class ProductionTaskRepository {
           `
           INSERT INTO batch_step_records (
             batch_id, process_route_steps_id,
-            responsible_user_id, status, created_at, updated_at
+            responsible_user_id, sop_file_id, parameter_definitions, status, created_at, updated_at
           )
-          VALUES (?, ?, ?, 'pending', NOW(), NOW())
+          VALUES (?, ?, ?, ?, CAST(? AS JSON), 'pending', NOW(), NOW())
         `,
-          [id, step.id, responsibleUserId],
+          [id, step.id, responsibleUserId, sopFileId, JSON.stringify(step.important_parameters ?? [])],
         );
       }
 
@@ -720,7 +759,9 @@ export class ProductionTaskRepository {
         (SELECT COUNT(*) FROM batch_step_records sr
           WHERE sr.batch_id = ? AND sr.is_deleted = 0) AS step_count,
         (SELECT COUNT(*) FROM batch_step_records sr
-          WHERE sr.batch_id = ? AND sr.is_deleted = 0 AND sr.responsible_user_id IS NULL) AS unassigned_step_count
+          INNER JOIN process_route_steps prs ON prs.id = sr.process_route_steps_id AND prs.is_deleted = 0
+          WHERE sr.batch_id = ? AND sr.is_deleted = 0
+            AND COALESCE(sr.responsible_user_id, prs.default_owner_id) IS NULL) AS unassigned_step_count
       `,
       [id, id, id, id, id, id],
     );
@@ -809,10 +850,32 @@ export class ProductionTaskRepository {
       payload.abnormalQuantity === undefined ? current.abnormal_quantity : payload.abnormalQuantity,
       '异常数量不能小于 0',
     );
+    // 工序资料只定义参数；完成或异常报工时必须为每个重要参数提交实际值。
+    const currentParameterValues = mergeBatchStepParameterValues(
+      current.important_parameters,
+      current.parameter_values,
+    );
+    const parameterValues =
+      payload.parameterValues === undefined
+        ? currentParameterValues
+        : normalizeBatchStepParameterValues(
+            current.important_parameters,
+            payload.parameterValues,
+            ['completed', 'abnormal'].includes(status),
+          );
+    if (
+      payload.parameterValues === undefined &&
+      ['completed', 'abnormal'].includes(status) &&
+      currentParameterValues.some((item) => !item.value?.trim())
+    ) {
+      throw new BadRequestException('请填写全部工序重要参数后再提交报工');
+    }
 
     assertStepStatusTransition(current.status, status);
-    if (current.status === 'pending' && status === 'doing') {
+    // 开工、继续报工及完工都必须经过前序专检放行，避免历史异常状态绕过开工校验。
+    if (['doing', 'completed', 'abnormal'].includes(status)) {
       await this.assertPreviousStepCompleted(taskId, current.step_order);
+      await this.assertPreviousStepInspectionReleased(taskId, current.step_order);
     }
     await this.assertUserAvailable(responsibleUserId);
     await this.assertTechnicalFileAvailable(sopFileId);
@@ -827,18 +890,21 @@ export class ProductionTaskRepository {
       `
       UPDATE batch_step_records
       SET responsible_user_id = ?,
+        sop_file_id = ?,
         status = ?,
         started_at = ?,
         completed_at = ?,
         output_quantity = ?,
         return_quantity = ?,
         abnormal_quantity = ?,
+        parameter_values = CAST(? AS JSON),
         remark = ?,
         updated_at = NOW()
       WHERE id = ? AND batch_id = ? AND is_deleted = 0
     `,
       [
         responsibleUserId,
+        sopFileId,
         status,
         payload.startedAt === undefined ? current.started_at : normalizeDateTime(payload.startedAt),
         payload.completedAt === undefined
@@ -853,22 +919,12 @@ export class ProductionTaskRepository {
         payload.abnormalQuantity === undefined
           ? current.abnormal_quantity
           : abnormalQuantity,
+        JSON.stringify(parameterValues),
         payload.remark === undefined ? current.remark : normalizeOptionalString(payload.remark),
         recordId,
         taskId,
       ],
     );
-
-    if (payload.sopFileId !== undefined && sopFileId !== current.sop_file_id) {
-      await this.database.execute(
-        `
-        UPDATE process_route_steps
-        SET sop_file_id = ?, updated_at = NOW()
-        WHERE id = ? AND is_deleted = 0
-      `,
-        [sopFileId, current.process_route_steps_id],
-      );
-    }
 
     const updatedStep = await this.getStepRecordRow(taskId, recordId);
     this.auditContext.setAfterData(updatedStep);
@@ -898,14 +954,14 @@ export class ProductionTaskRepository {
       [`STEP-SOP-${Date.now()}`, sopFileName, sopFileUrl],
     )) as ResultSetHeader;
 
-    const current = await this.getStepRecordRow(taskId, recordId);
+    // 上传文件只绑定当前批次工序，不改动工艺路线的默认参考文件。
     await this.database.execute(
       `
-      UPDATE process_route_steps
+      UPDATE batch_step_records
       SET sop_file_id = ?, updated_at = NOW()
-      WHERE id = ? AND is_deleted = 0
+      WHERE id = ? AND batch_id = ? AND is_deleted = 0
     `,
-      [result.insertId, current.process_route_steps_id],
+      [result.insertId, recordId, taskId],
     );
 
     return this.getTask(taskId);
@@ -1076,7 +1132,7 @@ export class ProductionTaskRepository {
         COUNT(DISTINCT sr.id) AS step_count,
         -- completed 与 abnormal 都表示本工序已经报工结束，区别仅在于是否存在待处置数量。
         SUM(CASE WHEN sr.status IN ('completed', 'abnormal') THEN 1 ELSE 0 END) AS finished_step_count,
-        COUNT(DISTINCT CASE WHEN sr.responsible_user_id IS NOT NULL THEN sr.id END) AS assigned_step_count,
+        COUNT(DISTINCT CASE WHEN sr.responsible_user_id IS NOT NULL OR prs.default_owner_id IS NOT NULL THEN sr.id END) AS assigned_step_count,
         (
           SELECT COUNT(*) FROM batch_material_requirement requirement
           WHERE requirement.batch_id = b.id AND requirement.is_deleted = 0
@@ -1095,6 +1151,7 @@ export class ProductionTaskRepository {
       LEFT JOIN process_routes r ON r.id = b.route_id AND r.is_deleted = 0
       LEFT JOIN users u ON u.id = b.owner_id
       LEFT JOIN batch_step_records sr ON sr.batch_id = b.id AND sr.is_deleted = 0
+      LEFT JOIN process_route_steps prs ON prs.id = sr.process_route_steps_id AND prs.is_deleted = 0
       WHERE b.id = ? AND b.is_deleted = 0
       GROUP BY b.id, b.work_order_id, wo.order_no, b.batch_no, wo.product_id, p.product_model, p.product_name,
         b.route_id, r.route_name, b.planned_quantity, b.status, b.owner_id, u.display_name, b.plan_start_date,
@@ -1120,15 +1177,24 @@ export class ProductionTaskRepository {
         sr.process_route_steps_id,
         prs.step_order,
         ps.step_name,
-        COALESCE(prs.sop_file_id, ps.sop_file_id) AS sop_file_id,
+        sr.sop_file_id,
+        actual_file.file_name AS sop_file_name,
+        actual_file.file_url AS sop_file_url,
+        COALESCE(prs.sop_file_id, ps.sop_file_id) AS default_sop_file_id,
+        default_file.file_name AS default_sop_file_name,
+        default_file.file_url AS default_sop_file_url,
         sr.responsible_user_id,
         ru.display_name AS responsible_user_name,
+        prs.default_owner_id AS default_responsible_user_id,
+        default_owner.display_name AS default_responsible_user_name,
         sr.status,
         sr.started_at,
         sr.completed_at,
         sr.output_quantity,
         sr.return_quantity,
         sr.abnormal_quantity,
+        COALESCE(sr.parameter_definitions, ps.important_parameters) AS important_parameters,
+        sr.parameter_values,
         sr.remark,
         sr.created_at,
         sr.updated_at
@@ -1136,6 +1202,9 @@ export class ProductionTaskRepository {
       INNER JOIN process_route_steps prs ON prs.id = sr.process_route_steps_id AND prs.is_deleted = 0
       INNER JOIN process_steps ps ON ps.id = prs.process_step_id AND ps.is_deleted = 0
       LEFT JOIN users ru ON ru.id = sr.responsible_user_id
+      LEFT JOIN users default_owner ON default_owner.id = prs.default_owner_id
+      LEFT JOIN technical_files actual_file ON actual_file.id = sr.sop_file_id AND actual_file.is_deleted = 0
+      LEFT JOIN technical_files default_file ON default_file.id = COALESCE(prs.sop_file_id, ps.sop_file_id) AND default_file.is_deleted = 0
       WHERE sr.batch_id = ? AND sr.is_deleted = 0
       ORDER BY prs.step_order ASC, sr.id ASC
     `,
@@ -1330,8 +1399,11 @@ export class ProductionTaskRepository {
         process_code: string;
         process_name: string;
         sop_file_id: number | null;
+        sop_file_name: string | null;
+        sop_file_url: string | null;
         default_owner_id: number | null;
         default_owner_name: string | null;
+        important_parameters: unknown;
       })[]
     >(
       `
@@ -1341,11 +1413,15 @@ export class ProductionTaskRepository {
         ps.step_code AS process_code,
         ps.step_name AS process_name,
         COALESCE(prs.sop_file_id, ps.sop_file_id) AS sop_file_id,
+        tf.file_name AS sop_file_name,
+        tf.file_url AS sop_file_url,
         prs.default_owner_id,
         u.display_name AS default_owner_name
+        , ps.important_parameters
       FROM process_route_steps prs
       INNER JOIN process_steps ps ON ps.id = prs.process_step_id AND ps.is_deleted = 0
       LEFT JOIN users u ON u.id = prs.default_owner_id
+      LEFT JOIN technical_files tf ON tf.id = COALESCE(prs.sop_file_id, ps.sop_file_id) AND tf.is_deleted = 0
       WHERE prs.route_id = ? AND prs.status = 1 AND prs.is_deleted = 0
       ORDER BY prs.step_order ASC, prs.id ASC
     `,
@@ -1366,6 +1442,7 @@ export class ProductionTaskRepository {
         process_route_steps_id: number;
         step_order: number;
         responsible_user_id: number | null;
+        default_responsible_user_id: number | null;
         sop_file_id: number | null;
         status: string;
         started_at: Date | null;
@@ -1373,6 +1450,8 @@ export class ProductionTaskRepository {
         output_quantity: string | number | null;
         return_quantity: string | number | null;
         abnormal_quantity: string | number | null;
+        important_parameters: unknown;
+        parameter_values: unknown;
         remark: string | null;
       })[]
     >(
@@ -1382,13 +1461,16 @@ export class ProductionTaskRepository {
         sr.process_route_steps_id,
         prs.step_order,
         sr.responsible_user_id,
-        COALESCE(prs.sop_file_id, ps.sop_file_id) AS sop_file_id,
+        prs.default_owner_id AS default_responsible_user_id,
+        sr.sop_file_id,
         sr.status,
         sr.started_at,
         sr.completed_at,
         sr.output_quantity,
         sr.return_quantity,
         sr.abnormal_quantity,
+        COALESCE(sr.parameter_definitions, ps.important_parameters) AS important_parameters,
+        sr.parameter_values,
         sr.remark
       FROM batch_step_records sr
       INNER JOIN process_route_steps prs ON prs.id = sr.process_route_steps_id AND prs.is_deleted = 0
@@ -1430,6 +1512,28 @@ export class ProductionTaskRepository {
     // 异常报工仅用于提醒待处置数量；其合格数量仍可流转，所以 abnormal 也视为前序已结束。
     if (!previousStep || !['completed', 'abnormal'].includes(previousStep.status)) {
       throw new BadRequestException('前一道工序尚未报工结束，当前工序不能开始');
+    }
+  }
+
+  /**
+   * 校验当前工序之前的全部需检工序已经质量放行。
+   * 原过程检验不合格后允许通过返工复检记录放行，因此按工序关联的全部有效检验判断。
+   */
+  private async assertPreviousStepInspectionReleased(batchId: number, stepOrder: number) {
+    if (stepOrder === 1) return;
+    const [summary] = await this.database.query<(RowDataPacket & { blocking_count: number })[]>(
+      `SELECT COUNT(*) blocking_count
+       FROM v_batch_step_execution_detail previous
+       WHERE previous.batch_id=? AND previous.step_order<? AND previous.need_inspection=1
+         AND NOT EXISTS(SELECT 1 FROM inspection_records inspection
+           WHERE inspection.batch_step_record_id=previous.step_record_id
+             AND inspection.is_deleted=0
+             AND inspection.result IN ('pass','partial_pass')
+             AND inspection.disposition IN ('accept','conditional_accept'))`,
+      [batchId, stepOrder],
+    );
+    if (Number(summary?.blocking_count ?? 0) > 0) {
+      throw new BadRequestException('前序工序要求专检，尚未检验放行，当前工序不能开始或报工');
     }
   }
 
@@ -1513,6 +1617,22 @@ export class ProductionTaskRepository {
     // 批次完工前必须确保所有工序已脱离未开工/进行中状态，避免任务提前关闭导致报工断链。
     if (Number(row?.blocking_count ?? 0) > 0) {
       throw new BadRequestException('仍有未开工或进行中的工序，不能完成生产任务');
+    }
+
+    const [inspection] = await this.database.query<(RowDataPacket & { blocking_count: number })[]>(
+      `SELECT COUNT(*) blocking_count
+       FROM v_batch_step_execution_detail step
+       WHERE step.batch_id=? AND step.need_inspection=1
+         AND NOT EXISTS(SELECT 1 FROM inspection_records record
+           WHERE record.batch_step_record_id=step.step_record_id
+             AND record.is_deleted=0
+             AND record.result IN ('pass','partial_pass')
+             AND record.disposition IN ('accept','conditional_accept'))`,
+      [batchId],
+    );
+    // 所有需检工序必须存在合格或有条件接收的有效检验，批次才允许完工。
+    if (Number(inspection?.blocking_count ?? 0) > 0) {
+      throw new BadRequestException('仍有需检工序尚未检验放行，不能完成生产任务');
     }
   }
 
@@ -1653,7 +1773,8 @@ export class ProductionTaskRepository {
 
   private async refreshWorkOrderStatusByTasks(orderId: number) {
     const order = await this.getWorkOrderRow(orderId);
-    if (!['released', 'doing'].includes(order.status)) {
+    // 草稿工单首次创建任务即视为已下达，后续再根据任务执行情况同步。
+    if (!['draft', 'released', 'doing'].includes(order.status)) {
       return;
     }
 

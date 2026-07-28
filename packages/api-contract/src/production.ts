@@ -37,6 +37,13 @@ export interface ProductionBatchItem {
   assignedStepCount?: number;
 }
 
+/** 报工参数值：名称和单位来自工序配置，value 在报工时填写。 */
+export interface BatchStepParameterValue {
+  key: string;
+  value: string | null;
+  unit?: string | null;
+}
+
 export interface BatchStepRecordItem {
   id: string;
   batchId: string;
@@ -44,14 +51,30 @@ export interface BatchStepRecordItem {
   stepOrder: number;
   stepName: string;
   sopFileId: string | null;
+  /** 当前批次工序实际使用的参考文件名称。 */
+  sopFileName: string | null;
+  /** 当前批次工序实际使用的参考文件访问地址。 */
+  sopFileUrl: string | null;
+  /** 工艺路线或工序资料中配置的默认参考文件 ID。 */
+  defaultSopFileId: string | null;
+  /** 工艺路线或工序资料中配置的默认参考文件名称。 */
+  defaultSopFileName: string | null;
+  /** 工艺路线或工序资料中配置的默认参考文件地址。 */
+  defaultSopFileUrl: string | null;
   responsibleUserId: string | null;
   responsibleUserName: string | null;
+  /** 工艺路线工序配置的默认负责人 ID。 */
+  defaultResponsibleUserId: string | null;
+  /** 工艺路线工序配置的默认负责人名称。 */
+  defaultResponsibleUserName: string | null;
   status: BatchStepStatus;
   startedAt: string | null;
   completedAt: string | null;
   outputQuantity: string | null;
   returnQuantity: string | null;
   abnormalQuantity: string | null;
+  /** 当前工序配置的重要参数及本次报工填写值。 */
+  parameterValues: BatchStepParameterValue[];
   remark: string | null;
   createdAt: string;
   updatedAt: string;
@@ -89,8 +112,13 @@ export interface TaskMaterialRequirementItem {
 }
 
 export interface MaterialAllocationRequirementItem extends TaskMaterialRequirementItem {
+  /** 当前所有有效物料批次的可分配库存合计。 */
+  availableInventoryQuantity: string;
+  /** 当前可分配库存仍无法覆盖未满足需求时的实时缺口。 */
+  shortageQuantity: string;
   reservedQuantity: string;
   unmetQuantity: string;
+  /** 当前仍有可分配库存的物料批次数量。 */
   availableBatchCount: number;
   allocationStatus: 'unallocated' | 'partial' | 'allocated' | 'used';
   /** 同一需求可由多个物料批次分次预留。 */
@@ -271,5 +299,7 @@ export interface UpdateBatchStepRecordPayload {
   outputQuantity?: string | number | null;
   returnQuantity?: string | number | null;
   abnormalQuantity?: string | number | null;
+  /** 本次报工填写的重要参数值。 */
+  parameterValues?: BatchStepParameterValue[];
   remark?: string | null;
 }

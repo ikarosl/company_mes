@@ -20,6 +20,12 @@
             <el-option label="否" value="0" />
           </el-select>
         </el-form-item>
+        <el-form-item label="库存缺口">
+          <el-select v-model="query.shortage" placeholder="全部">
+            <el-option label="全部" value="" />
+            <el-option label="仅看缺料" value="1" />
+          </el-select>
+        </el-form-item>
         <el-form-item class="query-actions">
           <el-button type="primary" :loading="loading" @click="searchAllocations">查询</el-button>
           <el-button @click="resetQuery">重置</el-button>
@@ -68,6 +74,17 @@
                 <span :class="{ danger: Number(row.unmetQuantity) > 0 }">{{ formatQuantity(row.unmetQuantity) }}</span>
               </template>
             </el-table-column>
+            <el-table-column label="可分配库存" width="120" align="right">
+              <template #default="{ row }">{{ formatQuantity(row.availableInventoryQuantity) }}</template>
+            </el-table-column>
+            <el-table-column label="缺料数量" width="110" align="right">
+              <template #default="{ row }">
+                <el-tag v-if="Number(row.shortageQuantity) > 0" type="danger" effect="light">
+                  {{ formatQuantity(row.shortageQuantity) }} {{ row.unit || '' }}
+                </el-tag>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
             <el-table-column label="物料批次" min-width="160" show-overflow-tooltip>
               <template #default="{ row }">
                 {{ formatAllocationBatchNos(row) }}
@@ -92,15 +109,13 @@
         </section>
       </div>
 
-      <div class="table-footer">
-        <span class="total-text">共 {{ total }} 条</span>
-        <el-select v-model="pageSize" class="page-size" @change="handlePageSizeChange">
-          <el-option label="10条/页" :value="10" />
-          <el-option label="20条/页" :value="20" />
-          <el-option label="50条/页" :value="50" />
-        </el-select>
-        <el-pagination :current-page="currentPage" :page-size="pageSize" :total="total" layout="prev, pager, next, jumper" @current-change="loadAllocations" />
-      </div>
+      <TablePagination
+        v-model:page="currentPage"
+        v-model:page-size="pageSize"
+        :total="total"
+        :page-sizes="[5, 10, 20]"
+        @change="handlePaginationChange"
+      />
     </section>
 
     <el-dialog v-model="allocateDialogVisible" title="分配物料批次" :width="DialogWidth.lg" class="business-dialog">
@@ -115,7 +130,24 @@
           </el-descriptions-item>
         </el-descriptions>
 
-        <el-form class="dialog-form" label-width="108px" :model="allocateForm">
+        <el-alert
+          v-if="!availableBatches.length"
+          class="shortage-alert"
+          type="error"
+          :closable="false"
+          show-icon
+          :title="`当前没有可分配的物料批次，缺料 ${formatQuantity(activeRequirement.unmetQuantity)} ${activeRequirement.unit || ''}`"
+        />
+        <el-alert
+          v-else-if="dialogShortageQuantity > 0"
+          class="shortage-alert"
+          type="warning"
+          :closable="false"
+          show-icon
+          :title="`当前可分配 ${formatQuantity(dialogAvailableQuantity)} ${activeRequirement.unit || ''}，全部分配后仍缺料 ${formatQuantity(dialogShortageQuantity)} ${activeRequirement.unit || ''}`"
+        />
+
+        <el-form v-if="availableBatches.length" class="dialog-form" label-width="108px" :model="allocateForm">
           <el-form-item label="物料批次" required>
             <el-select v-model="allocateForm.materialBatchId" filterable placeholder="请选择物料批次" @change="handleBatchChange">
               <el-option
@@ -136,7 +168,7 @@
       </template>
       <template #footer>
         <el-button @click="allocateDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="submitAllocation">确认分配</el-button>
+        <el-button type="primary" :disabled="!availableBatches.length" :loading="submitting" @click="submitAllocation">确认分配</el-button>
       </template>
     </el-dialog>
 
@@ -176,7 +208,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import { Refresh } from '@element-plus/icons-vue';
 import type {
@@ -186,6 +218,7 @@ import type {
   ProductListItem,
 } from '@company/api-contract';
 import { productApi } from '../../api/product';
+import TablePagination from '../../components/common/TablePagination.vue';
 import { productionApi } from '../../api/production';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
@@ -208,7 +241,7 @@ const requirementStatusOptions: Record<MaterialAllocationRequirementItem['alloca
 };
 
 /** 查询条件：按生产批次、产品和物料筛选已生成的需求。 */
-const query = reactive({ keyword: '', productId: '', materialKeyword: '', keyMaterial: '' });
+const query = reactive({ keyword: '', productId: '', materialKeyword: '', keyMaterial: '', shortage: '' });
 const productOptions = ref<ProductListItem[]>([]);
 const allocationRows = ref<MaterialAllocationBatchItem[]>([]);
 const availableBatches = ref<MaterialAllocationAvailableBatchItem[]>([]);
@@ -218,8 +251,24 @@ const loading = ref(false);
 const submitting = ref(false);
 const total = ref(0);
 const currentPage = ref(1);
-const pageSize = ref(10);
+/** 物料分配每条记录包含明细卡片，默认每页 5 条以减少纵向拥挤。 */
+const pageSize = ref(5);
 const allocateDialogVisible = ref(false);
+
+/** 分配弹窗中的实时可分配总量，以接口返回的有效物料批次为准。 */
+const dialogAvailableQuantity = computed(() =>
+  availableBatches.value.reduce((total, batch) => total + Number(batch.availableQuantity), 0),
+);
+/** 分配弹窗缺口 = max(当前未满足数量 - 实时可分配总量, 0)。 */
+const dialogShortageQuantity = computed(() => Math.max(
+  Number(activeRequirement.value?.unmetQuantity ?? 0) - dialogAvailableQuantity.value,
+  0,
+));
+
+/** 统一分页组件变更后，使用组件给出的页码重新查询后端。 */
+const handlePaginationChange = ({ page }: { page: number; pageSize: number }) => {
+  void loadAllocations(page);
+};
 /** 分配明细弹窗：展示同一需求的多次预留流水。 */
 const allocationDetailVisible = ref(false);
 
@@ -246,6 +295,7 @@ const loadAllocations = async (page = currentPage.value) => {
       productId: query.productId,
       materialKeyword: query.materialKeyword,
       keyMaterial: query.keyMaterial,
+      shortage: query.shortage,
     });
     allocationRows.value = result.items;
     total.value = result.total;
@@ -260,7 +310,7 @@ const searchAllocations = async () => {
 };
 
 const resetQuery = async () => {
-  Object.assign(query, { keyword: '', productId: '', materialKeyword: '', keyMaterial: '' });
+  Object.assign(query, { keyword: '', productId: '', materialKeyword: '', keyMaterial: '', shortage: '' });
   currentPage.value = 1;
   await loadAllocations();
 };
@@ -530,6 +580,11 @@ onMounted(async () => {
 }
 
 .allocation-summary {
+  margin-bottom: 16px;
+}
+
+/* 缺料提示与下方分配表单保持统一间距，避免弹窗内容拥挤。 */
+.shortage-alert {
   margin-bottom: 16px;
 }
 

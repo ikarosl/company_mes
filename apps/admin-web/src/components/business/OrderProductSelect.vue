@@ -21,7 +21,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue';
-import type { ProductListItem } from '@company/api-contract';
+import { isProductionProductAttribute, type ProductListItem } from '@company/api-contract';
 import { productApi } from '../../api/product';
 import { EMessage } from '../../utils/message';
 
@@ -42,8 +42,8 @@ const emit = defineEmits<{
   change: [value: string];
 }>();
 
-/** 订单产品仅包含成品和半成品，物料、辅料不进入工单及任务筛选。 */
-const orderProductAttributes = '成品,半成品';
+/** 订单产品仅包含成品和半成品；附带历史中文值，兼容尚未完成枚举迁移的数据。 */
+const orderProductAttributes = 'finished,semi_finished,成品,半成品';
 /** 远程搜索结果：限制单次返回数量，避免产品很多时渲染超长下拉列表。 */
 const productOptions = ref<ProductListItem[]>([]);
 const loading = ref(false);
@@ -90,7 +90,10 @@ const ensureSelectedProduct = async () => {
   }
 
   const product = await productApi.getProduct(props.modelValue);
-  if ((product.productAttribute === '成品' || product.productAttribute === '半成品') && product.acquireMethod === 'self_made') {
+  if (
+    isProductionProductAttribute(product.productAttribute) &&
+    product.acquireMethod === 'self_made'
+  ) {
     mergeProductOption(product);
   }
 };

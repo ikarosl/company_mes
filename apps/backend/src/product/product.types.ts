@@ -101,6 +101,7 @@ export interface ProcessListRow extends RowDataPacket {
   sop_file_id: number | null;
   sop_file_name: string | null;
   sop_file_url: string | null;
+  important_parameters: unknown;
   status: number;
   remark: string | null;
   created_at: Date;
@@ -115,6 +116,7 @@ export interface ProcessRow extends RowDataPacket {
   sop_file_id: number | null;
   sop_file_name: string | null;
   sop_file_url: string | null;
+  important_parameters: unknown;
   status: number;
   remark: string | null;
 }
@@ -134,6 +136,7 @@ export interface ProcessOptionRow extends RowDataPacket {
   sop_file_id: number | null;
   sop_file_name: string | null;
   sop_file_url: string | null;
+  important_parameters: unknown;
 }
 
 export interface ProcessRouteStepListRow extends RowDataPacket {

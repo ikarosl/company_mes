@@ -19,8 +19,23 @@ export class SystemUserController {
 
   @RequirePermission(PERMISSIONS.system.users.view)
   @Get('users')
-  listUsers(@Query('page') page?: string, @Query('pageSize') pageSize?: string) {
-    return this.users.listUsers(readPagination(page, pageSize));
+  listUsers(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('keyword') keyword?: string,
+    @Query('username') username?: string,
+    @Query('displayName') displayName?: string,
+    @Query('roleId') roleId?: string,
+    @Query('status') status?: string,
+  ) {
+    // 用户筛选和分页统一交给数据库处理，避免前端只筛选当前已加载的数据。
+    return this.users.listUsers(readPagination(page, pageSize), {
+      keyword,
+      username,
+      displayName,
+      roleId,
+      status,
+    });
   }
 
   @RequirePermission(PERMISSIONS.system.users.create)

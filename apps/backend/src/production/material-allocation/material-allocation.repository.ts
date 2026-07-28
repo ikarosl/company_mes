@@ -41,6 +41,8 @@ interface RequirementRow extends RowDataPacket {
   plan_quantity: string | number;
   reserved_quantity: string | number;
   used_quantity: string | number;
+  available_inventory_quantity: string | number;
+  available_batch_count: string | number;
   unit: string | null;
   is_key_material: number;
   need_batch_record: number;
@@ -160,7 +162,10 @@ export class MaterialAllocationRepository {
         available_quantity,
         material_batch_status AS status
       FROM v_material_batch_available
-      WHERE material_product_id = ? AND material_batch_status <> 'disabled'
+      -- 分配下拉仅展示仍有可用量的批次，避免用户选择库存已被全部预留或耗尽的批次。
+      WHERE material_product_id = ?
+        AND material_batch_status <> 'disabled'
+        AND available_quantity > 0
       ORDER BY received_date ASC, material_batch_id ASC
     `,
       [materialProductId],
@@ -330,6 +335,8 @@ export class MaterialAllocationRepository {
         allocation.required_quantity AS plan_quantity,
         allocation.reserved_quantity,
         allocation.used_quantity,
+        COALESCE(available_stock.available_inventory_quantity, 0) AS available_inventory_quantity,
+        COALESCE(available_stock.available_batch_count, 0) AS available_batch_count,
         allocation.unit,
         allocation.is_key_material,
         allocation.need_batch_record,
@@ -338,6 +345,16 @@ export class MaterialAllocationRepository {
         allocation.material_status AS status,
         allocation.remark
       FROM v_batch_material_allocation allocation
+      LEFT JOIN (
+        -- 按物料汇总所有有效批次的实时可用量，供缺口计算和页面提示统一使用。
+        SELECT
+          material_product_id,
+          SUM(available_quantity) AS available_inventory_quantity,
+          COUNT(*) AS available_batch_count
+        FROM v_material_batch_available
+        WHERE material_batch_status <> 'disabled' AND available_quantity > 0
+        GROUP BY material_product_id
+      ) available_stock ON available_stock.material_product_id = allocation.material_product_id
       WHERE ${clauses.join(' AND ')}
       ORDER BY allocation.batch_id DESC, allocation.is_key_material DESC, allocation.material_model ASC
     `,
@@ -357,7 +374,7 @@ export class MaterialAllocationRepository {
       ),
     );
     const shortageCount = requirements.filter(
-      (item) => decimalNumber(item.unmetQuantity) > 0,
+      (item) => decimalNumber(item.shortageQuantity) > 0,
     ).length;
     const allocatedCount = requirements.filter(
       (item) => decimalNumber(item.reservedQuantity) >= decimalNumber(item.planQuantity),
@@ -370,11 +387,13 @@ export class MaterialAllocationRepository {
         ? 'missing_demand'
         : usedCount === requirements.length
           ? 'used'
-          : shortageCount === 0
-            ? 'allocated'
-            : allocatedCount > 0
-              ? 'partial'
-              : 'unallocated';
+          : shortageCount > 0
+            ? 'shortage'
+            : allocatedCount === requirements.length
+              ? 'allocated'
+              : requirements.some((item) => decimalNumber(item.reservedQuantity) > 0)
+                ? 'partial'
+                : 'unallocated';
 
     return {
       ...mapProductionBatch(batch),
@@ -394,6 +413,9 @@ export class MaterialAllocationRepository {
     const reservedQuantity = decimalNumber(row.reserved_quantity);
     const usedQuantity = decimalNumber(row.used_quantity);
     const unmetQuantity = Math.max(planQuantity - reservedQuantity, 0);
+    const availableInventoryQuantity = decimalNumber(row.available_inventory_quantity);
+    // 缺料数量 = max(未满足数量 - 当前所有有效批次可分配库存, 0)。
+    const shortageQuantity = Math.max(unmetQuantity - availableInventoryQuantity, 0);
     const allocationStatus =
       usedQuantity >= planQuantity
         ? 'used'
@@ -415,10 +437,12 @@ export class MaterialAllocationRepository {
       reservedQuantity: decimalString(row.reserved_quantity),
       usedQuantity: decimalString(row.used_quantity),
       unmetQuantity: unmetQuantity.toFixed(4),
+      availableInventoryQuantity: availableInventoryQuantity.toFixed(4),
+      shortageQuantity: shortageQuantity.toFixed(4),
       unit: row.unit,
       isKeyMaterial: row.is_key_material === 1,
       needBatchRecord: row.need_batch_record === 1,
-      availableBatchCount: 0,
+      availableBatchCount: Number(row.available_batch_count),
       allocationStatus,
       allocations,
     };
@@ -468,6 +492,25 @@ export class MaterialAllocationRepository {
     if (filters.productId?.trim()) {
       clauses.push('b.product_id = ?');
       params.push(readPositiveId(filters.productId, 'Invalid product'));
+    }
+
+    if (filters.shortage === '1') {
+      // 缺料批次：至少一项物料的未满足数量大于该物料当前全部可分配库存。
+      clauses.push(`EXISTS (
+        SELECT 1
+        FROM v_batch_material_allocation shortage_allocation
+        WHERE shortage_allocation.batch_id = b.batch_id
+          AND GREATEST(
+            shortage_allocation.required_quantity - shortage_allocation.reserved_quantity,
+            0
+          ) > COALESCE((
+            SELECT SUM(shortage_stock.available_quantity)
+            FROM v_material_batch_available shortage_stock
+            WHERE shortage_stock.material_product_id = shortage_allocation.material_product_id
+              AND shortage_stock.material_batch_status <> 'disabled'
+              AND shortage_stock.available_quantity > 0
+          ), 0)
+      )`);
     }
 
     if (

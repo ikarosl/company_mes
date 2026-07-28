@@ -8,6 +8,7 @@ CREATE TABLE `process_steps` (
   `step_code` varchar(100) DEFAULT NULL COMMENT '工序编码',
   `step_name` varchar(100) NOT NULL COMMENT '工序名称',
   `sop_file_id` bigint unsigned DEFAULT NULL COMMENT '默认SOP文件ID',
+  `important_parameters` json DEFAULT NULL COMMENT '工序重要参数定义，仅保存参数名称和单位，参数值在报工时填写',
   `status` tinyint NOT NULL DEFAULT '1' COMMENT '状态：1启用，0停用',
   `remark` text COMMENT '备注',
   `created_by` bigint unsigned DEFAULT NULL COMMENT '创建人',

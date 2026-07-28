@@ -13,6 +13,7 @@ import type {
   MaterialBatchListItem,
   MaterialBatchStatus,
   ProductMaterialPayload,
+  SetProductDefaultRoutePayload,
   UpdateProductPayload,
 } from '@company/api-contract';
 import { DatabaseService, type QueryParam } from '../../database/database.service.js';
@@ -44,7 +45,7 @@ import {
 export interface ProductFilters {
   keyword?: string;
   specKeyword?: string;
-  /** 产品属性集合，用于区分订单产品与原材料、辅料。 */
+  /** 产品属性集合，用于区分订单产品与物料、辅料。 */
   productAttributes?: string;
   categoryId?: string;
   acquireMethod?: string;
@@ -151,7 +152,9 @@ export class ProductRepository {
         ? current.product_name
         : readRequiredString(payload.productName, 'Missing product name');
     const unit =
-      payload.unit === undefined ? current.unit : readRequiredString(payload.unit, 'Missing product unit');
+      payload.unit === undefined
+        ? current.unit
+        : readRequiredString(payload.unit, 'Missing product unit');
     const categoryId =
       payload.categoryId === undefined ? current.category_id : nullableId(payload.categoryId);
     const acquireMethod =
@@ -264,10 +267,14 @@ export class ProductRepository {
 
   async getProductRoutes(id: number) {
     const [product] = await this.database.query<
-      (RowDataPacket & { category_id: number | null; default_route_id: number | null })[]
+      (RowDataPacket & {
+        category_id: number | null;
+        default_route_id: number | null;
+        acquire_method: string;
+      })[]
     >(
       `
-      SELECT category_id, default_route_id
+      SELECT category_id, default_route_id, acquire_method
       FROM products
       WHERE id = ? AND is_deleted = 0
       LIMIT 1
@@ -278,6 +285,7 @@ export class ProductRepository {
     if (!product) {
       throw new NotFoundException('Product not found');
     }
+    this.assertSelfMadeProduct(product.acquire_method, '仅自制产品需要配置工艺路线');
 
     const rows = await this.database.query<ProductRouteListRow[]>(
       `
@@ -317,8 +325,7 @@ export class ProductRepository {
 
     return {
       productId: String(id),
-      defaultRouteId:
-        product.default_route_id === null ? null : String(product.default_route_id),
+      defaultRouteId: product.default_route_id === null ? null : String(product.default_route_id),
       routes: rows.map((row) => ({
         ...mapProcessRoute(row),
         isDefault: row.is_default === 1,
@@ -326,8 +333,60 @@ export class ProductRepository {
     };
   }
 
+  /**
+   * 设置产品默认工艺路线。
+   * 1. 仅自制产品允许绑定内部工艺路线
+   * 2. 路线必须启用，且属于当前产品分类或为通用路线
+   * 3. routeId 为空时取消默认路线
+   */
+  async setProductDefaultRoute(productId: number, payload: SetProductDefaultRoutePayload) {
+    const product = await this.getProductRow(productId);
+    this.assertSelfMadeProduct(product.acquire_method, '仅自制产品可以设置默认工艺路线');
+    const routeId = nullableId(payload.routeId);
+
+    if (routeId !== null) {
+      const [route] = await this.database.query<
+        (RowDataPacket & { product_category_id: number | null; status: number })[]
+      >(
+        `
+        SELECT product_category_id, status
+        FROM process_routes
+        WHERE id = ? AND is_deleted = 0
+        LIMIT 1
+      `,
+        [routeId],
+      );
+
+      // 默认路线会自动带入生产任务，因此禁止绑定停用或分类不匹配的路线。
+      if (!route) {
+        throw new NotFoundException('工艺路线不存在');
+      }
+      if (route.status !== 1) {
+        throw new BadRequestException('停用的工艺路线不能设为默认路线');
+      }
+      if (
+        route.product_category_id !== null &&
+        route.product_category_id !== product.category_id
+      ) {
+        throw new BadRequestException('该工艺路线不适用于当前产品分类');
+      }
+    }
+
+    await this.database.execute(
+      `
+      UPDATE products
+      SET default_route_id = ?, updated_at = NOW()
+      WHERE id = ? AND is_deleted = 0
+    `,
+      [routeId, productId],
+    );
+
+    return this.getProductRoutes(productId);
+  }
+
   async listProductMaterials(productId: number) {
-    await this.getProductRow(productId);
+    const product = await this.getProductRow(productId);
+    this.assertSelfMadeProduct(product.acquire_method, '仅自制产品需要配置物料清单');
     const rows = await this.database.query<ProductMaterialListRow[]>(
       `
       SELECT
@@ -356,7 +415,8 @@ export class ProductRepository {
   }
 
   async configureProductMaterials(productId: number, payload: ConfigureProductMaterialsPayload) {
-    await this.getProductRow(productId);
+    const product = await this.getProductRow(productId);
+    this.assertSelfMadeProduct(product.acquire_method, '仅自制产品需要配置物料清单');
     const materials = await this.normalizeMaterialPayloads(productId, payload.materials ?? []);
     await this.assertProductMaterialsUnlocked(productId);
     const activeRows = await this.getProductMaterialRows(productId, false);
@@ -476,9 +536,9 @@ export class ProductRepository {
         WHERE b.is_deleted = 0
           AND EXISTS (
             SELECT 1
-            FROM batch_material_requirement generated
-            WHERE generated.batch_id = b.id
-              AND generated.is_deleted = 0
+            FROM batch_material_requirement generated_requirement
+            WHERE generated_requirement.batch_id = b.id
+              AND generated_requirement.is_deleted = 0
           )
           AND NOT EXISTS (
             SELECT 1
@@ -569,7 +629,7 @@ export class ProductRepository {
   }
 
   private async assertProductMaterialsUnlocked(productId: number) {
-    const [row] = await this.database.query<(CountRow)[]>(
+    const [row] = await this.database.query<CountRow[]>(
       `
       SELECT COUNT(*) AS total
       FROM product_materials pm
@@ -674,6 +734,13 @@ export class ProductRepository {
     return row;
   }
 
+  /** 委外和外购产品不执行内部生产工艺，因此不能维护内部工艺路线或物料清单。 */
+  private assertSelfMadeProduct(acquireMethod: string, message: string) {
+    if (acquireMethod !== 'self_made') {
+      throw new BadRequestException(message);
+    }
+  }
+
   private async getProductListItem(id: number) {
     const [row] = await this.database.query<ProductListRow[]>(
       `
@@ -765,7 +832,10 @@ export class ProductRepository {
 
     return Promise.all(
       payloads.map(async (item, index) => {
-        const materialProductId = readPositiveId(item.materialProductId, `Missing material product at row ${index + 1}`);
+        const materialProductId = readPositiveId(
+          item.materialProductId,
+          `Missing material product at row ${index + 1}`,
+        );
         if (materialProductId === productId) {
           throw new BadRequestException('Product cannot use itself as material');
         }
@@ -782,10 +852,14 @@ export class ProductRepository {
 
         return {
           materialProductId,
-          quantityPerUnit: readPositiveDecimal(item.quantityPerUnit ?? 1, `Invalid material quantity at row ${index + 1}`),
+          quantityPerUnit: readPositiveDecimal(
+            item.quantityPerUnit ?? 1,
+            `Invalid material quantity at row ${index + 1}`,
+          ),
           unit: normalizeOptionalString(item.unit) ?? material.unit,
           isKeyMaterial: item.isKeyMaterial === undefined ? true : Boolean(item.isKeyMaterial),
-          needBatchRecord: item.needBatchRecord === undefined ? true : Boolean(item.needBatchRecord),
+          needBatchRecord:
+            item.needBatchRecord === undefined ? true : Boolean(item.needBatchRecord),
           remark: normalizeOptionalString(item.remark),
         };
       }),
@@ -828,7 +902,8 @@ const mapProductInventoryBatch = (row: ProductInventoryBatchRow): MaterialBatchL
     supplierName: row.supplier_name,
     protocolCode: row.protocol_code,
     receivedDate: row.received_date ? formatDate(row.received_date) : null,
-    initialQuantity: row.initial_quantity === null ? null : formatDecimal(decimalNumber(row.initial_quantity)),
+    initialQuantity:
+      row.initial_quantity === null ? null : formatDecimal(decimalNumber(row.initial_quantity)),
     quantity: formatDecimal(quantity),
     reservedQuantity: formatDecimal(reservedQuantity),
     usedQuantity: formatDecimal(usedQuantity),

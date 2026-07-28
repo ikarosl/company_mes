@@ -4,6 +4,11 @@ import { httpClient } from './http-client';
 
 export type QueryParams = PageQuery & {
   keyword?: string;
+  username?: string;
+  displayName?: string;
+  roleId?: string;
+  name?: string;
+  code?: string;
   specKeyword?: string;
   status?: string;
   batchId?: string;

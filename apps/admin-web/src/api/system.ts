@@ -23,6 +23,14 @@ export const systemApi = {
     requestPageItems<SystemUserListItem>({
       url: SYSTEM_API.users,
       method: 'GET',
+      // 该方法主要供负责人、人员等下拉选项复用，默认加载后端允许的最大页容量。
+      params: { page: 1, pageSize: 100, ...params },
+    }),
+  /** 用户管理分页结果：保留总数和当前页信息，供统一分页组件使用。 */
+  listUsersPage: (params?: QueryParams) =>
+    requestData<PageResult<SystemUserListItem>>({
+      url: SYSTEM_API.users,
+      method: 'GET',
       params,
     }),
   createUser: (data: CreateSystemUserPayload) =>
@@ -64,15 +72,17 @@ export const systemApi = {
       url: SYSTEM_API.roleOptions,
       method: 'GET',
     }),
-  listRoles: () =>
-    requestData<SystemRoleListItem[]>({
+  listRoles: (params?: QueryParams) =>
+    requestData<PageResult<SystemRoleListItem>>({
       url: SYSTEM_API.roles,
       method: 'GET',
+      params,
     }),
-  listPermissions: () =>
-    requestData<SystemPermissionListItem[]>({
+  listPermissions: (params?: QueryParams) =>
+    requestData<PageResult<SystemPermissionListItem>>({
       url: SYSTEM_API.permissions,
       method: 'GET',
+      params,
     }),
   listPermissionTree: () =>
     requestData<SystemPermissionTreeNode[]>({

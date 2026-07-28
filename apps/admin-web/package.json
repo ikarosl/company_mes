@@ -17,6 +17,7 @@
     "@company/ui": "workspace:*",
     "@company/utils": "workspace:*",
     "@element-plus/icons-vue": "catalog:",
+    "docx-preview": "^0.4.0",
     "element-plus": "catalog:",
     "nprogress": "catalog:",
     "pinia": "catalog:",

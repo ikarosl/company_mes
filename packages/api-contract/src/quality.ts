@@ -59,6 +59,50 @@ export interface SaveInspectionPayload {
 export type CreateInspectionPayload = SaveInspectionPayload;
 export type UpdateInspectionPayload = SaveInspectionPayload;
 
+/** 检测端待过程检验任务查询条件。 */
+export interface PendingProcessInspectionQuery extends PageQuery {
+  keyword?: string;
+}
+
+/** 已完成需检工序派生出的检测任务，不额外保存任务状态。 */
+export interface PendingProcessInspectionItem {
+  id: string;
+  batchId: string;
+  batchNo: string;
+  workOrderId: string;
+  workOrderNo: string;
+  productId: string;
+  productCode: string | null;
+  productModel: string | null;
+  productName: string | null;
+  productUnit: string | null;
+  stepOrder: number;
+  stepCode: string | null;
+  stepName: string;
+  sopFileName: string | null;
+  sopVersion: string | null;
+  sopFileUrl: string | null;
+  responsibleUserName: string | null;
+  outputQuantity: number;
+  abnormalQuantity: number;
+  suggestedInspectQuantity: number;
+  completedAt: string | null;
+}
+
+/** 检测端提交过程检验结果；批次和工序关系由后端根据任务 ID 确定。 */
+export interface SubmitProcessInspectionPayload {
+  inspectionName?: string | null;
+  inspectQuantity: number;
+  passQuantity: number;
+  failQuantity: number;
+  result: InspectionResult;
+  disposition?: InspectionDisposition | null;
+  inspectedAt?: string | null;
+  fileUrl?: string | null;
+  resultSummary?: string | null;
+  remark?: string | null;
+}
+
 export interface InspectionListItem extends SaveInspectionPayload {
   id: string;
   inspectionNo: string | null;

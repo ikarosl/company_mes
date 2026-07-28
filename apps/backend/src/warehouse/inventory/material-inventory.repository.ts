@@ -285,35 +285,33 @@ export class MaterialInventoryRepository {
       ) u ON u.material_batch_id = mb.id
       UNION ALL
       SELECT
-        pib.id,
+        inventory.product_inventory_id AS id,
         'product' AS inventory_type,
-        pib.product_id,
-        p.product_model,
-        p.product_name,
-        c.product_attribute,
-        c.product_type,
-        pib.object_type,
-        pib.source_type,
-        pib.inventory_batch_no AS material_batch_no,
+        inventory.product_id,
+        inventory.product_model,
+        inventory.product_name,
+        inventory.product_attribute,
+        inventory.product_type,
+        inventory.object_type,
+        inventory.source_type,
+        inventory.inventory_batch_no AS material_batch_no,
         NULL AS supplier_name,
         NULL AS protocol_code,
-        pib.received_date,
+        inventory.received_date,
         NULL AS initial_quantity,
-        pib.quantity,
+        inventory.stock_quantity AS quantity,
         0 AS reserved_quantity,
         0 AS used_quantity,
-        pib.quantity AS available_quantity,
-        CASE WHEN pib.quantity <= 0 THEN 'used_up' ELSE 'available' END AS status,
+        inventory.available_quantity,
+        CASE WHEN inventory.stock_quantity <= 0 THEN 'used_up' ELSE 'available' END AS status,
         NULL AS quality_status,
-        COALESCE(pib.unit, p.unit) AS unit,
-        pib.location,
-        pib.remark,
-        pib.created_at,
-        pib.updated_at,
-        pib.is_deleted
-      FROM product_inventory_batches pib
-      INNER JOIN products p ON p.id = pib.product_id AND p.is_deleted = 0
-      LEFT JOIN product_categories c ON c.id = p.category_id AND c.is_deleted = 0
+        inventory.unit,
+        inventory.location,
+        inventory.remark,
+        inventory.created_at,
+        inventory.updated_at,
+        0 AS is_deleted
+      FROM v_product_inventory_available inventory
     `;
   }
 

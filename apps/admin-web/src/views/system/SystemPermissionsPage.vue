@@ -5,18 +5,23 @@
       <el-button :loading="loading" @click="loadPermissions">刷新</el-button>
     </div>
 
-    <el-form class="query-bar" :inline="true">
+    <el-form class="query-bar" :inline="true" @submit.prevent="handleSearch">
       <el-form-item label="关键字">
-        <el-input v-model="keyword" clearable placeholder="名称、编码、类型、路由或接口" />
+        <el-input v-model="keyword" clearable placeholder="名称、编码、路由或接口" />
+      </el-form-item>
+      <el-form-item>
+        <el-button type="primary" @click="handleSearch">查询</el-button>
       </el-form-item>
     </el-form>
 
-    <el-table v-loading="loading" :data="filteredPermissions" border>
+    <el-table v-loading="loading" :data="permissions" border>
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column prop="parentId" label="父级" width="90" />
       <el-table-column prop="name" label="权限名称" min-width="140" />
       <el-table-column prop="code" label="权限编码" min-width="200" />
-      <el-table-column prop="type" label="类型" width="100" />
+      <el-table-column label="类型" width="100">
+        <template #default="{ row }">{{ formatPermissionType(row.type) }}</template>
+      </el-table-column>
       <el-table-column prop="routePath" label="路由" min-width="160" />
       <el-table-column prop="apiMethod" label="方法" width="90" />
       <el-table-column prop="apiPath" label="接口" min-width="180" />
@@ -28,44 +33,59 @@
         </template>
       </el-table-column>
     </el-table>
+
+    <TablePagination
+      v-model:page="currentPage"
+      v-model:page-size="pageSize"
+      :total="total"
+      @change="loadPermissions"
+    />
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
 import type { SystemPermissionListItem } from '@company/api-contract';
+import { onMounted, ref } from 'vue';
 import { systemApi } from '../../api/system';
+import TablePagination from '../../components/common/TablePagination.vue';
 
+/** 当前页权限记录，由后端分页接口返回。 */
 const permissions = ref<SystemPermissionListItem[]>([]);
+/** 权限类型中文标签，未知值保留原值以兼容历史数据。 */
+const permissionTypeLabels: Record<string, string> = {
+  menu: '菜单',
+  page: '页面',
+  api: '接口',
+  button: '按钮',
+};
+const formatPermissionType = (value: string) => permissionTypeLabels[value] ?? value;
 const loading = ref(false);
 const keyword = ref('');
+const currentPage = ref(1);
+const pageSize = ref(10);
+/** 后端筛选后的权限记录总数。 */
+const total = ref(0);
 
-/** 权限数据量较小，综合关键字在前端匹配可见业务字段。 */
-const filteredPermissions = computed(() => {
-  const value = keyword.value.trim().toLowerCase();
-  if (!value) {
-    return permissions.value;
-  }
-
-  return permissions.value.filter((item) =>
-    [
-      item.name,
-      item.code,
-      item.type,
-      item.routePath ?? '',
-      item.apiMethod ?? '',
-      item.apiPath ?? '',
-    ].some((field) => field.toLowerCase().includes(value)),
-  );
-});
-
+/** 按当前筛选条件和页码查询权限列表。 */
 const loadPermissions = async () => {
   loading.value = true;
   try {
-    permissions.value = await systemApi.listPermissions();
+    const result = await systemApi.listPermissions({
+      page: currentPage.value,
+      pageSize: pageSize.value,
+      keyword: keyword.value.trim() || undefined,
+    });
+    permissions.value = result.items;
+    total.value = result.total;
   } finally {
     loading.value = false;
   }
+};
+
+/** 查询时回到第一页，避免旧页码超出新结果范围。 */
+const handleSearch = () => {
+  currentPage.value = 1;
+  void loadPermissions();
 };
 
 onMounted(loadPermissions);

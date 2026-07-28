@@ -3,3 +3,64 @@
   max-height: 70vh;
   overflow-y: auto;
 }
+
+/*
+ * 管理端查询区响应式布局：
+ * 1. 查询条件超过容器宽度时按完整表单项换行，避免控件和按钮挤出卡片；
+ * 2. 同时兼容带 query-form 类的标准页面，以及 query-panel 内的旧版行内表单。
+ */
+.query-form,
+.query-panel > .el-form--inline,
+.panel > .el-form--inline,
+.query-bar.el-form--inline {
+  display: flex;
+  flex-wrap: wrap;
+  width: 100%;
+  max-width: 100%;
+}
+
+/* 每个筛选条件作为独立换行单元，不在空间不足时压缩内部输入控件。 */
+.query-form > .el-form-item,
+.query-panel > .el-form--inline > .el-form-item,
+.panel > .el-form--inline > .el-form-item,
+.query-bar.el-form--inline > .el-form-item {
+  flex: 0 0 auto;
+}
+
+/**
+ * 查询区控件基础宽度：
+ * 避免 width: 100% 在无固定宽度的行内表单项中被压缩到只剩图标。
+ */
+:is(.query-form, .query-panel > .el-form--inline, .panel > .el-form--inline, .query-bar.el-form--inline) .el-input {
+  width: 190px;
+  min-width: 190px;
+}
+
+:is(.query-form, .query-panel > .el-form--inline, .panel > .el-form--inline, .query-bar.el-form--inline) .el-select {
+  width: 160px;
+  min-width: 160px;
+}
+
+:is(.query-form, .query-panel > .el-form--inline, .panel > .el-form--inline, .query-bar.el-form--inline) .el-input-number {
+  width: 160px;
+  min-width: 160px;
+}
+
+:is(.query-form, .query-panel > .el-form--inline, .panel > .el-form--inline, .query-bar.el-form--inline) .el-date-editor {
+  width: 240px;
+  min-width: 240px;
+}
+/* 窄屏下操作按钮占用独立行，避免与最后一个筛选条件相互挤压。 */
+@media (max-width: 768px) {
+  .query-form > .query-actions,
+  .query-panel > .el-form--inline > .el-form-item:last-child,
+  .panel > .el-form--inline > .el-form-item:last-child {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  :is(.query-form, .query-panel > .el-form--inline, .panel > .el-form--inline, .query-bar.el-form--inline) :is(.el-input, .el-select, .el-input-number, .el-date-editor) {
+    width: 100%;
+    min-width: 0;
+  }
+}

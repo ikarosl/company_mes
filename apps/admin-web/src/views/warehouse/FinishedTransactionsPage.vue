@@ -264,13 +264,23 @@ import { EMessage } from '../../utils/message';
 
 /** 入库来源类型字典：与 product_inventory_batches.source_type 保持一致。 */
 const sourceTypeOptions: Array<{ value: FinishedInventorySourceType; label: string }> = [
-  { value: 'production', label: 'production / 生产入库' },
-  { value: 'purchase', label: 'purchase / 外购入库' },
-  { value: 'outsourcing', label: 'outsourcing / 外协入库' },
-  { value: 'other', label: 'other / 其他入库' },
+  { value: 'production', label: '生产入库' },
+  { value: 'purchase', label: '采购入库' },
+  { value: 'outsourcing', label: '外协入库' },
+  { value: 'other', label: '其他入库' },
 ];
 
 /** 产品库存对象类型字典：区分成品和半成品库存。 */
+/** 流转原因中文标签：兼容入库来源、出库和盘点调整记录。 */
+const flowReasonLabels: Record<string, string> = {
+  production: '生产入库',
+  purchase: '采购入库',
+  outsourcing: '外协入库',
+  stocktake: '盘点调整',
+  other: '其他入库',
+  outbound: '产品出库',
+};
+
 const objectTypeOptions: Array<{ value: FinishedInventoryObjectType; label: string }> = [
   { value: 'finished', label: '成品' },
   { value: 'semi_finished', label: '半成品' },
@@ -601,7 +611,7 @@ const getTransactionTypeMeta = (type: FinishedTransactionType) =>
 const getObjectTypeLabel = (type: FinishedInventoryObjectType) =>
   type === 'finished' ? '成品' : '半成品';
 const getFlowReasonLabel = (value: string | null) =>
-  sourceTypeOptions.find((item) => item.value === value)?.label ?? value ?? '-';
+  value ? flowReasonLabels[value] ?? value : '-';
 const formatPartner = (name: string | null, type: FinishedFlowPartnerType | null) => {
   const typeText = partnerTypeOptions.find((item) => item.value === type)?.label;
   if (name && typeText) {

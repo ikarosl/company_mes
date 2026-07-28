@@ -38,7 +38,17 @@
 
     <section class="table-panel">
       <div class="table-toolbar">
-        <el-button type="primary" @click="openInbound">物料入库</el-button>
+        <el-dropdown trigger="click" @command="openInbound">
+          <el-button type="primary">
+            办理入库<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="material">物料入库</el-dropdown-item>
+              <el-dropdown-item command="product">成/半成品入库</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <el-tooltip content="刷新" placement="top">
           <el-button :icon="Refresh" text circle :loading="loading" @click="loadInventory" />
         </el-tooltip>
@@ -133,7 +143,7 @@
           <el-option label="50条/页" :value="50" />
         </el-select>
         <el-pagination
-          :current-page="currentPage"
+          v-model:current-page="currentPage"
           :page-size="pageSize"
           :total="total"
           layout="prev, pager, next, jumper"
@@ -378,7 +388,7 @@
 import { onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessageBox } from 'element-plus';
-import { Refresh } from '@element-plus/icons-vue';
+import { ArrowDown, Refresh } from '@element-plus/icons-vue';
 import type {
   InventoryStocktakeDifferenceType,
   InventoryStocktakeInventoryType,
@@ -388,7 +398,9 @@ import type {
   MaterialBatchListItem,
   MaterialBatchStatus,
   ProductListItem,
+  ProductAttribute,
 } from '@company/api-contract';
+import { PRODUCT_ATTRIBUTE_LABELS } from '@company/api-contract';
 import { productApi } from '../../api/product';
 import { warehouseApi } from '../../api/warehouse';
 import { DialogWidth } from '../../utils/dialog';
@@ -527,8 +539,19 @@ const handlePageSizeChange = async () => {
   await loadInventory();
 };
 
-/** 新增正库存统一跳转到带来料检验的物料入库入口。 */
-const openInbound = () => router.push('/warehouse/material-transactions');
+/** 库存入库对象：物料与成/半成品分别遵循来料检验和生产入库规则。 */
+type InboundInventoryType = 'material' | 'product';
+
+/**
+ * 打开对应的入库业务页面。
+ * 物料入库包含来料检验；成/半成品入库需要关联生产批次或其他产品入库来源。
+ */
+const openInbound = (inventoryType: InboundInventoryType) => {
+  const targetPath = inventoryType === 'material'
+    ? '/warehouse/material-transactions'
+    : '/warehouse/finished-transactions';
+  return router.push(targetPath);
+};
 
 const openEdit = async (row: MaterialBatchListItem) => {
   if (!isMaterialInventory(row)) {
@@ -719,14 +742,22 @@ const formatProductSourceType = (value: string | null | undefined) => ({
   other: '其他',
 }[value ?? ''] ?? (value || '-'));
 
+/** 库存页面统一显示产品属性中文标签，同时兼容历史中文分类值。 */
+const formatProductAttribute = (value: string | null | undefined) =>
+  value ? PRODUCT_ATTRIBUTE_LABELS[value as ProductAttribute] ?? value : '-';
+
 const formatObjectType = (row: MaterialBatchListItem) => {
   if (getInventoryType(row) === 'product') {
     const objectType = formatProductObjectType(row.objectType);
-    const category = row.productAttribute && row.productType ? `${row.productAttribute} / ${row.productType}` : '';
+    const category = row.productAttribute && row.productType
+      ? `${formatProductAttribute(row.productAttribute)} / ${row.productType}`
+      : '';
     return category ? `${objectType} · ${category}` : objectType;
   }
 
-  return row.productAttribute && row.productType ? `${row.productAttribute} / ${row.productType}` : '-';
+  return row.productAttribute && row.productType
+    ? `${formatProductAttribute(row.productAttribute)} / ${row.productType}`
+    : '-';
 };
 
 const getStatusMeta = (status: MaterialBatchStatus) =>

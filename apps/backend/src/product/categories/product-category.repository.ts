@@ -1,8 +1,15 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { ResultSetHeader } from 'mysql2';
 import type { RowDataPacket } from 'mysql2/promise';
 import type {
   CreateProductCategoryPayload,
+  ProductAttribute,
   UpdateProductCategoryPayload,
 } from '@company/api-contract';
 import { DatabaseService, type QueryParam } from '../../database/database.service.js';
@@ -24,6 +31,24 @@ export interface ProductCategoryFilters {
   productAttribute?: string;
   productType?: string;
   status?: string;
+}
+
+/** 系统允许维护的一级产品属性，后端校验用于防止绕过前端提交任意值。 */
+const PRODUCT_ATTRIBUTES: ReadonlySet<ProductAttribute> = new Set([
+  'finished',
+  'semi_finished',
+  'material',
+  'auxiliary',
+  'other',
+]);
+
+/** 读取并校验一级产品属性，保证分类口径在前后端及数据库中一致。 */
+function readProductAttribute(value: string | undefined): ProductAttribute {
+  const productAttribute = readRequiredString(value, '请选择产品属性') as ProductAttribute;
+  if (!PRODUCT_ATTRIBUTES.has(productAttribute)) {
+    throw new BadRequestException('产品属性无效');
+  }
+  return productAttribute;
 }
 
 @Injectable()
@@ -66,10 +91,7 @@ export class ProductCategoryRepository {
   }
 
   async createCategory(payload: CreateProductCategoryPayload) {
-    const productAttribute = readRequiredString(
-      payload.productAttribute,
-      'Missing product attribute',
-    );
+    const productAttribute = readProductAttribute(payload.productAttribute);
     const productType = readRequiredString(payload.productType, 'Missing product type');
     const status = readTinyStatus(payload.status ?? 1);
 
@@ -98,7 +120,7 @@ export class ProductCategoryRepository {
     const productAttribute =
       payload.productAttribute === undefined
         ? current.product_attribute
-        : readRequiredString(payload.productAttribute, 'Missing product attribute');
+        : readProductAttribute(payload.productAttribute);
     const productType =
       payload.productType === undefined
         ? current.product_type

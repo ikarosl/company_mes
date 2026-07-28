@@ -471,18 +471,16 @@ export class InventoryStocktakeRepository {
   private stocktakeSource() {
     return `
       SELECT
-        stocktake.id,
+        stocktake.stocktake_id AS id,
         stocktake.stocktake_no,
         stocktake.inventory_type,
         stocktake.inventory_batch_id,
         stocktake.batch_no_snapshot,
-        stocktake.product_id_snapshot,
-        p.product_model,
-        p.product_name,
-        CASE
-          WHEN stocktake.inventory_type = 'product' THEN product_inventory.object_type
-          ELSE category.product_type
-        END AS object_type,
+        stocktake.product_id AS product_id_snapshot,
+        stocktake.product_model,
+        stocktake.product_name,
+        CASE WHEN stocktake.inventory_type = 'product' THEN stocktake.product_object_type
+          ELSE stocktake.product_type END AS object_type,
         stocktake.before_quantity,
         stocktake.counted_quantity,
         stocktake.difference_quantity,
@@ -490,63 +488,46 @@ export class InventoryStocktakeRepository {
         stocktake.reason_type,
         stocktake.status,
         stocktake.after_quantity,
-        operator.display_name AS operator_name,
+        stocktake.operator_name,
         stocktake.operated_at,
-        adjuster.display_name AS adjusted_by_name,
+        stocktake.adjusted_by_name,
         stocktake.adjusted_at,
         stocktake.file_url,
         stocktake.remark,
         stocktake.created_at,
         stocktake.updated_at,
-        stocktake.is_deleted
-      FROM inventory_stocktakes stocktake
-      LEFT JOIN products p
-        ON p.id = stocktake.product_id_snapshot
-        AND p.is_deleted = 0
-      LEFT JOIN product_categories category
-        ON category.id = p.category_id
-        AND category.is_deleted = 0
-      LEFT JOIN product_inventory_batches product_inventory
-        ON product_inventory.id = stocktake.inventory_batch_id
-        AND stocktake.inventory_type = 'product'
-        AND product_inventory.is_deleted = 0
-      LEFT JOIN users operator ON operator.id = stocktake.operator_id
-      LEFT JOIN users adjuster ON adjuster.id = stocktake.adjusted_by
+        0 AS is_deleted
+      FROM v_inventory_stocktake_detail stocktake
     `;
   }
 
   private targetSource() {
     return `
       SELECT
-        mb.id,
+        available.material_batch_id AS id,
         'material' AS inventory_type,
-        mb.material_batch_no AS batch_no,
-        mb.product_id,
-        p.product_model,
-        p.product_name,
-        category.product_type AS object_type,
-        mb.quantity,
-        p.unit AS unit,
+        available.material_batch_no AS batch_no,
+        available.material_product_id AS product_id,
+        available.material_model AS product_model,
+        available.material_name AS product_name,
+        NULL AS object_type,
+        available.stock_quantity AS quantity,
+        available.unit,
         NULL AS location
-      FROM material_batches mb
-      INNER JOIN products p ON p.id = mb.product_id AND p.is_deleted = 0
-      LEFT JOIN product_categories category ON category.id = p.category_id AND category.is_deleted = 0
-      WHERE mb.is_deleted = 0
+      FROM v_material_batch_available available
       UNION ALL
       SELECT
-        inventory.id,
+        inventory.product_inventory_id AS id,
         'product' AS inventory_type,
         inventory.inventory_batch_no AS batch_no,
         inventory.product_id,
-        p.product_model,
-        p.product_name,
+        inventory.product_model,
+        inventory.product_name,
         inventory.object_type,
-        inventory.quantity,
-        COALESCE(inventory.unit, p.unit) AS unit,
+        inventory.stock_quantity AS quantity,
+        inventory.unit,
         inventory.location
-      FROM product_inventory_batches inventory
-      INNER JOIN products p ON p.id = inventory.product_id AND p.is_deleted = 0
-      WHERE inventory.is_deleted = 0
+      FROM v_product_inventory_available inventory
     `;
   }
 }

@@ -1,12 +1,14 @@
 import { BadRequestException } from '@nestjs/common';
 import type {
   ProductAcquireMethod,
+  ProductAttribute,
   ProductCategoryListItem,
   ProductListItem,
   ProductMaterialItem,
   ProductSpecValue,
   ProcessOption,
   ProcessListItem,
+  ProcessImportantParameter,
   ProcessRouteListItem,
   ProcessRouteStepItem,
 } from '@company/api-contract';
@@ -24,7 +26,7 @@ export const PRODUCT_ACQUIRE_METHODS = new Set(['self_made', 'outsourced', 'purc
 
 export const mapProductCategory = (row: ProductCategoryListRow): ProductCategoryListItem => ({
   id: String(row.id),
-  productAttribute: row.product_attribute,
+  productAttribute: row.product_attribute as ProductAttribute,
   productType: row.product_type,
   status: row.status,
   remark: row.remark,
@@ -73,6 +75,7 @@ export const mapProcess = (row: ProcessListRow): ProcessListItem => ({
   sopFileId: row.sop_file_id === null ? null : String(row.sop_file_id),
   sopFileName: row.sop_file_name,
   sopFileUrl: row.sop_file_url,
+  importantParameters: parseProcessImportantParameters(row.important_parameters),
   status: row.status,
   remark: row.remark,
   createdAt: row.created_at.toISOString(),
@@ -87,7 +90,45 @@ export const mapProcessOption = (row: ProcessOptionRow): ProcessOption => ({
   sopFileId: row.sop_file_id === null ? null : String(row.sop_file_id),
   sopFileName: row.sop_file_name,
   sopFileUrl: row.sop_file_url,
+  importantParameters: parseProcessImportantParameters(row.important_parameters),
 });
+
+/** 校验工序重要参数，保证参数名非空且同一工序内不重复。 */
+export const normalizeProcessImportantParameters = (value: unknown): ProcessImportantParameter[] => {
+  if (!Array.isArray(value)) {
+    throw new BadRequestException('工序重要参数格式不正确');
+  }
+
+  const seenKeys = new Set<string>();
+  return value.map((item, index) => {
+    const source = item as Partial<ProcessImportantParameter> | null;
+    const key = typeof source?.key === 'string' ? source.key.trim() : '';
+    const unit = typeof source?.unit === 'string' ? source.unit.trim() || null : null;
+    if (!key) {
+      throw new BadRequestException(`第 ${index + 1} 个重要参数缺少参数名称`);
+    }
+    if (seenKeys.has(key)) {
+      throw new BadRequestException(`重要参数名称“${key}”重复`);
+    }
+    seenKeys.add(key);
+    return { key, unit };
+  });
+};
+
+/** MySQL JSON 字段可能返回对象或字符串，这里统一解析为工序重要参数数组。 */
+export const parseProcessImportantParameters = (value: unknown): ProcessImportantParameter[] => {
+  if (value === null || value === undefined || value === '') {
+    return [];
+  }
+  try {
+    return normalizeProcessImportantParameters(typeof value === 'string' ? JSON.parse(value) : value);
+  } catch (error) {
+    if (error instanceof BadRequestException) {
+      throw error;
+    }
+    return [];
+  }
+};
 
 export const mapProcessRouteStep = (row: ProcessRouteStepListRow): ProcessRouteStepItem => ({
   id: String(row.id),

@@ -55,7 +55,7 @@
 
       <el-table
         v-loading="loading"
-        :data="pagedUsers"
+        :data="users"
         class="users-table"
         @selection-change="handleSelectionChange"
       >
@@ -93,20 +93,12 @@
         </el-table-column>
       </el-table>
 
-      <div class="table-footer">
-        <span class="total-text">共 {{ filteredUsers.length }} 条</span>
-        <el-select v-model="pageSize" class="page-size" @change="handlePageSizeChange">
-          <el-option label="10条/页" :value="10" />
-          <el-option label="20条/页" :value="20" />
-          <el-option label="50条/页" :value="50" />
-        </el-select>
-        <el-pagination
-          v-model:current-page="currentPage"
-          :page-size="pageSize"
-          :total="filteredUsers.length"
-          layout="prev, pager, next"
-        />
-      </div>
+      <TablePagination
+        v-model:page="currentPage"
+        v-model:page-size="pageSize"
+        :total="total"
+        @change="loadUsers"
+      />
     </section>
 
     <el-dialog
@@ -208,6 +200,7 @@ import type {
   SystemUserListItem,
 } from '@company/api-contract';
 import { systemApi } from '../../api/system';
+import TablePagination from '../../components/common/TablePagination.vue';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
 
@@ -238,6 +231,8 @@ const roleDialogVisible = ref(false);
 const editingUserId = ref<string | null>(null);
 const currentPage = ref(1);
 const pageSize = ref(10);
+/** 后端返回的用户总数，用于统一分页组件计算页码。 */
+const total = ref(0);
 const query = reactive({
   keyword: '',
   username: '',
@@ -283,40 +278,6 @@ const getPrimaryRoleName = (row: SystemUserListItem) => {
   return roleId ? getRoleName(roleId) : roleCode ? getRoleName(roleCode) : '-';
 };
 
-const filteredUsers = computed(() =>
-  users.value.filter((user) => {
-    const keyword = query.keyword.trim().toLowerCase();
-    const usernameKeyword = query.username.trim().toLowerCase();
-    const displayNameKeyword = query.displayName.trim().toLowerCase();
-    const matchesUsername =
-      !usernameKeyword || user.username.toLowerCase().includes(usernameKeyword);
-    const matchesDisplayName =
-      !displayNameKeyword || user.displayName.toLowerCase().includes(displayNameKeyword);
-    const matchesKeyword =
-      !keyword ||
-      [
-        user.username,
-        user.displayName,
-        user.departmentName ?? '',
-        user.email ?? '',
-        user.mobile ?? '',
-        formatUserRoles(user),
-      ].some((value) => value.toLowerCase().includes(keyword));
-    const matchesRole = !query.roleId || user.roleIds.includes(query.roleId);
-    const matchesStatus =
-      !query.status ||
-      (query.status === 'enabled' && user.status === 1) ||
-      (query.status === 'disabled' && user.status !== 1);
-
-    return matchesKeyword && matchesUsername && matchesDisplayName && matchesRole && matchesStatus;
-  }),
-);
-
-const pagedUsers = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value;
-  return filteredUsers.value.slice(start, start + pageSize.value);
-});
-
 const resetUserForm = () => {
   Object.assign(userForm, {
     username: '',
@@ -333,8 +294,17 @@ const resetUserForm = () => {
 const loadUsers = async () => {
   loading.value = true;
   try {
-    users.value = await systemApi.listUsers({ page: 1, pageSize: 100 });
-    currentPage.value = 1;
+    const result = await systemApi.listUsersPage({
+      page: currentPage.value,
+      pageSize: pageSize.value,
+      keyword: query.keyword || undefined,
+      username: query.username || undefined,
+      displayName: query.displayName || undefined,
+      roleId: query.roleId || undefined,
+      status: query.status === 'enabled' ? '1' : query.status === 'disabled' ? '0' : undefined,
+    });
+    users.value = result.items;
+    total.value = result.total;
   } finally {
     loading.value = false;
   }
@@ -351,6 +321,7 @@ const loadOptions = async () => {
 
 const handleSearch = () => {
   currentPage.value = 1;
+  void loadUsers();
 };
 
 const resetQuery = () => {
@@ -360,10 +331,7 @@ const resetQuery = () => {
   query.roleId = '';
   query.status = '';
   currentPage.value = 1;
-};
-
-const handlePageSizeChange = () => {
-  currentPage.value = 1;
+  void loadUsers();
 };
 
 const handleSelectionChange = (selection: SystemUserListItem[]) => {

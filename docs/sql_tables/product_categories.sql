@@ -7,7 +7,7 @@ DROP TABLE IF EXISTS `product_categories`;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `product_categories` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `product_attribute` varchar(64) NOT NULL,
+  `product_attribute` varchar(64) NOT NULL COMMENT '一级产品属性：finished成品/semi_finished半成品/material物料/auxiliary辅料/other其他',
   `product_type` varchar(64) NOT NULL,
   `status` tinyint NOT NULL DEFAULT '1',
   `remark` varchar(255) DEFAULT NULL,
@@ -29,6 +29,7 @@ CREATE TABLE `product_categories` (
   KEY `idx_product_categories_deleted_by` (`deleted_by`),
   CONSTRAINT `fk_product_categories_created_by` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_product_categories_deleted_by` FOREIGN KEY (`deleted_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
-  CONSTRAINT `fk_product_categories_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+  CONSTRAINT `fk_product_categories_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `chk_product_categories_attribute` CHECK (`product_attribute` IN ('finished','semi_finished','material','auxiliary','other'))
 ) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;

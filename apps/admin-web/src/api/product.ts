@@ -16,6 +16,7 @@ import {
   type ProductListItem,
   type ProductMaterialItem,
   type ProductRouteDetail,
+  type SetProductDefaultRoutePayload,
   type UpdateProductCategoryPayload,
   type UpdateProductPayload,
   type UpdateProcessPayload,
@@ -62,6 +63,12 @@ export const productApi = {
     requestData<ProductRouteDetail>({
       url: `${BUSINESS_API.products}/${id}/routes`,
       method: 'GET',
+    }),
+  setProductDefaultRoute: (id: string, data: SetProductDefaultRoutePayload) =>
+    requestData<ProductRouteDetail>({
+      url: `${BUSINESS_API.products}/${id}/default-route`,
+      method: 'PUT',
+      data,
     }),
   listProductMaterials: (id: string) =>
     requestData<ProductMaterialItem[]>({

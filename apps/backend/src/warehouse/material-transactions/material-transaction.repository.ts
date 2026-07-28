@@ -12,6 +12,7 @@ import type {
   MaterialReturnPayload,
   MaterialTransactionDemandOption,
   MaterialTransactionListItem,
+  ProductionBatchStatus,
 } from '@company/api-contract';
 import { DatabaseService, type QueryParam } from '../../database/database.service.js';
 import { AuditContextService } from '../../operation-log/audit-context.service.js';
@@ -51,6 +52,7 @@ interface DemandRow extends RowDataPacket {
   usage_id: number;
   production_batch_id: number;
   production_batch_no: string;
+  production_batch_status: ProductionBatchStatus;
   order_no: string;
   product_material_id: number;
   material_product_id: number;
@@ -101,6 +103,7 @@ export class MaterialTransactionRepository {
         allocation.usage_id,
         b.id AS production_batch_id,
         b.batch_no AS production_batch_no,
+        b.status AS production_batch_status,
         wo.order_no,
         pm.id AS product_material_id,
         pm.material_product_id,
@@ -158,6 +161,7 @@ export class MaterialTransactionRepository {
       usageId: String(row.usage_id),
       productionBatchId: String(row.production_batch_id),
       productionBatchNo: row.production_batch_no,
+      productionBatchStatus: row.production_batch_status,
       workOrderNo: row.order_no,
       productMaterialId: String(row.product_material_id),
       materialProductId: String(row.material_product_id),
@@ -271,6 +275,10 @@ export class MaterialTransactionRepository {
     await this.database.transaction(async (connection) => {
       const usage = await this.lockUsage(connection, usageId);
       this.auditContext.setBeforeData(usage);
+      // 领料属于任务执行动作，仅生产中的任务允许扣减物料库存。
+      if (usage.production_batch_status !== 'doing') {
+        throw new BadRequestException('生产任务尚未开始或已结束，不能领料出库');
+      }
       const remaining = number(usage.reserved_quantity) - number(usage.used_quantity);
       if (number(quantity) > remaining) {
         throw new BadRequestException('出库数量不能超过剩余预留数量');
@@ -435,6 +443,7 @@ export class MaterialTransactionRepository {
         reserved_quantity: string | number;
         used_quantity: string | number;
         stock_quantity: string | number;
+        production_batch_status: ProductionBatchStatus;
         unit: string | null;
       })[]
     >(
@@ -466,9 +475,12 @@ export class MaterialTransactionRepository {
             AND flow.is_deleted = 0
         ) AS used_quantity,
         reserve.unit,
-        mb.quantity AS stock_quantity
+        mb.quantity AS stock_quantity,
+        production_batch.status AS production_batch_status
       FROM batch_material_usages reserve
       INNER JOIN material_batches mb ON mb.id = reserve.material_batch_id AND mb.is_deleted = 0
+      INNER JOIN production_batches production_batch
+        ON production_batch.id = reserve.batch_id AND production_batch.is_deleted = 0
       WHERE reserve.id = ?
         AND reserve.operation_type = 'reserve'
         AND reserve.is_deleted = 0

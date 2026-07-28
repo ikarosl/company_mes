@@ -64,20 +64,20 @@
 
     <el-table v-loading="loading" :data="logs" border>
       <el-table-column prop="id" label="ID" width="90" />
-      <el-table-column prop="logType" label="类型" width="100" />
-      <el-table-column prop="module" label="模块" min-width="150" />
+      <el-table-column label="类型" width="100"><template #default="{ row }">{{ formatLogType(row.logType) }}</template></el-table-column>
+      <el-table-column label="模块" min-width="150"><template #default="{ row }">{{ formatModule(row.module) }}</template></el-table-column>
       <el-table-column prop="action" label="动作" min-width="220" show-overflow-tooltip />
       <el-table-column label="用户" min-width="130">
         <template #default="{ row }">
           {{ row.username ?? row.userId ?? '-' }}
         </template>
       </el-table-column>
-      <el-table-column prop="targetType" label="对象" min-width="130" />
+      <el-table-column label="对象" min-width="130"><template #default="{ row }">{{ formatTargetType(row.targetType) }}</template></el-table-column>
       <el-table-column prop="targetId" label="对象ID" width="100" />
       <el-table-column label="结果" width="100">
         <template #default="{ row }">
           <el-tag :type="row.result === 'success' ? 'success' : 'danger'">
-            {{ row.result }}
+            {{ formatLogResult(row.result) }}
           </el-tag>
         </template>
       </el-table-column>
@@ -110,9 +110,9 @@
           activeLog.username ?? activeLog.userId
         }}</el-descriptions-item>
         <el-descriptions-item label="对象"
-          >{{ activeLog.targetType }} / {{ activeLog.targetId }}</el-descriptions-item
+          >{{ formatTargetType(activeLog.targetType) }} / {{ activeLog.targetId || '-' }}</el-descriptions-item
         >
-        <el-descriptions-item label="结果">{{ activeLog.result }}</el-descriptions-item>
+        <el-descriptions-item label="结果">{{ formatLogResult(activeLog.result) }}</el-descriptions-item>
         <el-descriptions-item label="请求ID">{{ activeLog.requestId || '-' }}</el-descriptions-item>
         <el-descriptions-item label="请求">
           {{ activeLog.httpMethod || '-' }} {{ activeLog.route || '-' }}
@@ -163,6 +163,21 @@ const activeDiff = computed(() =>
 const operationLogModuleOptions = OPERATION_LOG_MODULE_OPTIONS;
 
 /** 查询条件：提交接口前会补充分页参数，并将空字符串转换为 undefined。 */
+/** 日志枚举中文映射：列表和详情统一使用，未知值保留原值便于排查。 */
+const logTypeLabels: Record<string, string> = { auth: '认证', operation: '操作', security: '安全' };
+const logResultLabels: Record<string, string> = { success: '成功', failed: '失败' };
+const targetTypeLabels: Record<string, string> = {
+  user: '用户', role: '角色', permission: '权限',
+  work_order: '工单', production_batch: '生产批次', batch_step_record: '工序记录',
+  product: '产品', product_category: '产品分类', process: '工序', process_route: '工艺路线',
+  material_batch: '物料批次', product_inventory: '产品库存', stocktake: '库存盘点',
+  inspection: '检验记录', rework: '返工记录',
+};
+const formatLogType = (value: string) => logTypeLabels[value] ?? value;
+const formatLogResult = (value: string) => logResultLabels[value] ?? value;
+const formatModule = (value: string) => operationLogModuleOptions.find((item) => item.value === value)?.label ?? value;
+const formatTargetType = (value: string | null) => value ? targetTypeLabels[value] ?? value : '-';
+
 const query = reactive({
   keyword: '',
   logType: '',

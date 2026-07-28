@@ -194,6 +194,19 @@
         <el-descriptions-item label="返工数量">
           {{ formatQuantity(stepReturnQuantity(detailStep)) }}
         </el-descriptions-item>
+        <el-descriptions-item label="重要参数" :span="2">
+          <template v-if="detailStep.parameterValues.length">
+            <el-tag
+              v-for="parameter in detailStep.parameterValues"
+              :key="parameter.key"
+              class="parameter-tag"
+              effect="plain"
+            >
+              {{ parameter.key }}：{{ parameter.value || '-' }}{{ parameter.unit || '' }}
+            </el-tag>
+          </template>
+          <span v-else>-</span>
+        </el-descriptions-item>
         <el-descriptions-item label="备注" :span="2">
           {{ detailStep.remark || '-' }}
         </el-descriptions-item>
@@ -736,6 +749,10 @@ onMounted(loadTasks);
 .dialog-form :deep(.el-input-number),
 .dialog-form :deep(.el-textarea) {
   width: 100%;
+}
+
+.parameter-tag {
+  margin: 2px 8px 2px 0;
 }
 
 @media (max-width: 1180px) {

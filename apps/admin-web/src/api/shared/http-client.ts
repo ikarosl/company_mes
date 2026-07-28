@@ -1,5 +1,6 @@
 import NProgress from 'nprogress';
 import { createRequestClient } from '@company/request';
+import { EMessage } from '../../utils/message';
 
 NProgress.configure({ showSpinner: false });
 
@@ -33,6 +34,13 @@ export const httpClient = createRequestClient({
       NProgress.start();
     } else {
       NProgress.done();
+    }
+  },
+  // Report final request failures globally; EMessage suppresses duplicate page-level reports.
+  onError: (error) => {
+    // 401 交由认证客户端刷新令牌，其他最终失败统一提示。
+    if (error.status !== 401) {
+      EMessage.error(error);
     }
   },
 });

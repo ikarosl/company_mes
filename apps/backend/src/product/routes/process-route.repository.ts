@@ -14,7 +14,7 @@ import type {
   UpdateProcessRoutePayload,
 } from '@company/api-contract';
 import { DatabaseService, type QueryParam } from '../../database/database.service.js';
-import { execute } from '../../shared/repository.helpers.js';
+import { execute, query, type DbExecutor } from '../../shared/repository.helpers.js';
 import { type PaginationOptions, toPageResult } from '../../shared/request-utils.js';
 import type {
   CountRow,
@@ -119,6 +119,7 @@ export class ProcessRouteRepository {
 
   async updateRoute(id: number, payload: UpdateProcessRoutePayload) {
     const current = await this.getRouteRow(id);
+    await this.assertRouteNotInProduction(id);
     const routeCode =
       payload.routeCode === undefined
         ? current.route_code
@@ -164,6 +165,7 @@ export class ProcessRouteRepository {
 
   async deleteRoute(id: number) {
     await this.getRouteRow(id);
+    await this.assertRouteNotInProduction(id);
 
     await this.database.transaction(async (connection) => {
       await execute(
@@ -183,6 +185,7 @@ export class ProcessRouteRepository {
 
   async changeRouteStatus(id: number, status: number) {
     await this.getRouteRow(id);
+    await this.assertRouteNotInProduction(id);
 
     await this.database.execute(
       `
@@ -198,39 +201,94 @@ export class ProcessRouteRepository {
 
   async configureRouteSteps(id: number, payload: ConfigureProcessRouteStepsPayload) {
     await this.getRouteRow(id);
+    await this.assertRouteNotInProduction(id);
     const steps = this.normalizeSteps(payload.steps);
 
     await this.database.transaction(async (connection) => {
-      // 路线步骤的顺序只在工艺路线内维护，批量保存时先软删除旧步骤再按提交顺序重建。
+      /**
+       * 未投产路线采用原位差异更新：
+       * 1. 锁定路线，避免保存期间被生产批次引用
+       * 2. 暂时释放步骤顺序，支持上下移动时交换顺序
+       * 3. 更新已有步骤、插入新增步骤、物理删除被移除且从未投产的步骤
+       */
+      const [lockedRoute] = await query<(RowDataPacket & { id: number })[]>(
+        connection,
+        'SELECT id FROM process_routes WHERE id = ? AND is_deleted = 0 FOR UPDATE',
+        [id],
+      );
+      if (!lockedRoute) {
+        throw new NotFoundException('工艺路线不存在');
+      }
+      await this.assertRouteNotInProduction(id, connection);
+
+      const currentSteps = await query<(RowDataPacket & { id: number })[]>(
+        connection,
+        'SELECT id FROM process_route_steps WHERE route_id = ? AND is_deleted = 0 FOR UPDATE',
+        [id],
+      );
+      const currentStepIds = new Set(currentSteps.map((step) => step.id));
+      const submittedStepIds = new Set<number>();
+
+      for (const step of steps) {
+        if (step.id !== null && !currentStepIds.has(step.id)) {
+          throw new BadRequestException('路线步骤已变化，请刷新后重试');
+        }
+        if (step.id !== null) {
+          submittedStepIds.add(step.id);
+        }
+      }
+
+      // 临时使用负数顺序释放唯一键，避免第 1、2 道工序互换时产生瞬时冲突。
       await execute(
         connection,
-        'UPDATE process_route_steps SET is_deleted = 1, deleted_at = NOW() WHERE route_id = ? AND is_deleted = 0',
+        'UPDATE process_route_steps SET step_order = -id WHERE route_id = ? AND is_deleted = 0',
         [id],
       );
 
       for (const step of steps) {
         const process = await this.getProcessSnapshot(step.processId);
         await this.assertUserAvailable(step.defaultOwnerId);
+        const params: QueryParam[] = [
+          step.processId,
+          step.stepOrder,
+          step.defaultOwnerId,
+          step.needInspection ? 1 : 0,
+          step.needRecord ? 1 : 0,
+          process.sop_file_id,
+          step.status,
+          normalizeOptionalString(step.remark),
+        ];
+        if (step.id !== null) {
+          await execute(
+            connection,
+            `UPDATE process_route_steps
+             SET process_step_id = ?, step_order = ?, default_owner_id = ?, need_inspection = ?,
+               need_record = ?, sop_file_id = ?, status = ?, remark = ?, updated_at = NOW()
+             WHERE id = ? AND route_id = ? AND is_deleted = 0`,
+            [...params, step.id, id],
+          );
+        } else {
+          await execute(
+            connection,
+            `INSERT INTO process_route_steps (
+               route_id, process_step_id, step_order, default_owner_id, need_inspection, need_record,
+               sop_file_id, status, remark, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+            [id, ...params],
+          );
+        }
+      }
+
+      const removedIds = currentSteps
+        .map((step) => step.id)
+        .filter((stepId) => !submittedStepIds.has(stepId));
+      if (removedIds.length) {
+        // 路线未投产时步骤不会被报工记录引用，因此删除移除项不会破坏追溯链路。
         await execute(
           connection,
-          `
-          INSERT INTO process_route_steps (
-            route_id, process_step_id, step_order, default_owner_id, need_inspection, need_record, sop_file_id,
-            status, remark, created_at, updated_at
-          )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
-        `,
-          [
-            id,
-            step.processId,
-            step.stepOrder,
-            step.defaultOwnerId,
-            step.needInspection ? 1 : 0,
-            step.needRecord ? 1 : 0,
-            process.sop_file_id,
-            step.status,
-            normalizeOptionalString(step.remark),
-          ],
+          `DELETE FROM process_route_steps
+           WHERE route_id = ? AND id IN (${removedIds.map(() => '?').join(', ')})`,
+          [id, ...removedIds],
         );
       }
     });
@@ -290,8 +348,10 @@ export class ProcessRouteRepository {
 
     const orders = new Set<number>();
     const processIds = new Set<number>();
+    const stepIds = new Set<number>();
 
     return steps.map((step) => {
+      const stepId = nullableId(step.id);
       const stepOrder = Number(step.stepOrder);
       const processId = nullableId(step.processId);
 
@@ -301,6 +361,14 @@ export class ProcessRouteRepository {
 
       if (processId === null) {
         throw new BadRequestException('Missing process');
+      }
+
+      if (stepId !== null && (!Number.isInteger(stepId) || stepId <= 0)) {
+        throw new BadRequestException('Invalid route step');
+      }
+
+      if (stepId !== null && stepIds.has(stepId)) {
+        throw new BadRequestException('Duplicate route step');
       }
 
       if (orders.has(stepOrder)) {
@@ -313,8 +381,12 @@ export class ProcessRouteRepository {
 
       orders.add(stepOrder);
       processIds.add(processId);
+      if (stepId !== null) {
+        stepIds.add(stepId);
+      }
 
       return {
+        id: stepId,
         stepOrder,
         processId,
         defaultOwnerId: nullableId(step.defaultOwnerId),
@@ -428,7 +500,7 @@ export class ProcessRouteRepository {
     >(
       `
       SELECT
-        p.id,
+        ps.id,
         ps.step_code AS process_code,
         ps.step_name AS process_name,
         NULL AS description,
@@ -448,6 +520,27 @@ export class ProcessRouteRepository {
     }
 
     return row;
+  }
+
+  /**
+   * 路线一旦被任一生产批次采用即视为已投产并永久冻结。
+   * 取消的批次同样属于历史事实，不能通过取消批次重新开放路线修改。
+   */
+  private async assertRouteNotInProduction(
+    routeId: number,
+    executor: DbExecutor = this.database,
+  ) {
+    const [row] = await query<(RowDataPacket & { id: number })[]>(
+      executor,
+      `SELECT id
+       FROM production_batches
+       WHERE route_id = ? AND is_deleted = 0
+       LIMIT 1`,
+      [routeId],
+    );
+    if (row) {
+      throw new ConflictException('该工艺路线已投入生产，不能修改；请新建一个路线版本');
+    }
   }
 
   private async assertRouteCodeAvailable(routeCode: string, ignoredRouteId?: number) {

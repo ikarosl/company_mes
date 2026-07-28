@@ -3,6 +3,7 @@ import { Body, Controller, Get, Inject, Param, Post, Put, Query, UseGuards } fro
 import type {
   ConfigureProductMaterialsPayload,
   CreateProductPayload,
+  SetProductDefaultRoutePayload,
   UpdateProductPayload,
 } from '@company/api-contract';
 import { PermissionGuard } from '../../auth/permission.guard.js';
@@ -73,6 +74,16 @@ export class ProductController {
   @Get('products/:id/routes')
   getProductRoutes(@Param('id') id: string) {
     return this.products.getProductRoutes(readId(id));
+  }
+
+  /** 设置或取消自制产品的默认工艺路线。 */
+  @RequirePermission(PERMISSIONS.product.products.bindRoute)
+  @Put('products/:id/default-route')
+  setProductDefaultRoute(
+    @Param('id') id: string,
+    @Body() body: SetProductDefaultRoutePayload,
+  ) {
+    return this.products.setProductDefaultRoute(readId(id), body);
   }
 
   @RequirePermission(PERMISSIONS.product.products.configBom)

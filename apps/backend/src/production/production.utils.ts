@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import type {
   BatchStepRecordItem,
+  BatchStepParameterValue,
   BatchStepStatus,
   ProductionBatchItem,
   ProductionBatchStatus,
@@ -107,18 +108,91 @@ export const mapBatchStepRecord = (row: BatchStepRecordListRow): BatchStepRecord
   stepOrder: row.step_order,
   stepName: row.step_name,
   sopFileId: row.sop_file_id === null ? null : String(row.sop_file_id),
+  sopFileName: row.sop_file_name,
+  sopFileUrl: row.sop_file_url,
+  defaultSopFileId: row.default_sop_file_id === null ? null : String(row.default_sop_file_id),
+  defaultSopFileName: row.default_sop_file_name,
+  defaultSopFileUrl: row.default_sop_file_url,
   responsibleUserId: row.responsible_user_id === null ? null : String(row.responsible_user_id),
   responsibleUserName: row.responsible_user_name,
+  defaultResponsibleUserId: row.default_responsible_user_id === null ? null : String(row.default_responsible_user_id),
+  defaultResponsibleUserName: row.default_responsible_user_name,
   status: row.status as BatchStepStatus,
   startedAt: row.started_at ? row.started_at.toISOString() : null,
   completedAt: row.completed_at ? row.completed_at.toISOString() : null,
   outputQuantity: row.output_quantity === null ? null : decimalString(row.output_quantity),
   returnQuantity: row.return_quantity === null ? null : decimalString(row.return_quantity),
   abnormalQuantity: row.abnormal_quantity === null ? null : decimalString(row.abnormal_quantity),
+  parameterValues: mergeBatchStepParameterValues(row.important_parameters, row.parameter_values),
   remark: row.remark,
   createdAt: row.created_at.toISOString(),
   updatedAt: row.updated_at.toISOString(),
 });
+
+/**
+ * 合并工序参数定义与已报工值。
+ * 参数名称、单位以工序配置为准，已保存的值按参数名称回填。
+ */
+export const mergeBatchStepParameterValues = (
+  definitionsValue: unknown,
+  valuesValue: unknown,
+): BatchStepParameterValue[] => {
+  const definitions = readJsonArray(definitionsValue);
+  const values = readJsonArray(valuesValue);
+  const valueMap = new Map(
+    values.map((item) => [typeof item.key === 'string' ? item.key : '', item.value]),
+  );
+  return definitions
+    .map((item) => {
+      const key = typeof item.key === 'string' ? item.key.trim() : '';
+      return {
+        key,
+        unit: typeof item.unit === 'string' ? item.unit.trim() || null : null,
+        value: valueMap.has(key) ? String(valueMap.get(key) ?? '') : null,
+      };
+    })
+    .filter((item) => item.key);
+};
+
+/** 校验报工参数：完成或异常报工时，每个已配置的重要参数都必须填写。 */
+export const normalizeBatchStepParameterValues = (
+  definitionsValue: unknown,
+  valuesValue: unknown,
+  required: boolean,
+): BatchStepParameterValue[] => {
+  const definitions = mergeBatchStepParameterValues(definitionsValue, []);
+  if (!Array.isArray(valuesValue)) {
+    throw new BadRequestException('报工参数格式不正确');
+  }
+  const submittedMap = new Map(
+    valuesValue.map((item) => {
+      const source = item as Partial<BatchStepParameterValue> | null;
+      return [typeof source?.key === 'string' ? source.key.trim() : '', source?.value];
+    }),
+  );
+  const result = definitions.map((definition) => {
+    const rawValue = submittedMap.get(definition.key);
+    const value = rawValue === null || rawValue === undefined ? '' : String(rawValue).trim();
+    if (required && !value) {
+      throw new BadRequestException(`请填写重要参数“${definition.key}”`);
+    }
+    return { ...definition, value: value || null };
+  });
+  if ([...submittedMap.keys()].some((key) => key && !definitions.some((item) => item.key === key))) {
+    throw new BadRequestException('报工参数与当前工序配置不一致，请刷新后重试');
+  }
+  return result;
+};
+
+/** 兼容 mysql2 返回 JSON 字符串或对象数组两种形态。 */
+const readJsonArray = (value: unknown): Array<Record<string, unknown>> => {
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
 
 export const mapWorkerTask = (row: WorkerTaskListRow): WorkerTaskItem => ({
   ...mapProductionBatch(row),

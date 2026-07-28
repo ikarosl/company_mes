@@ -18,8 +18,9 @@ import type {
   CreateProcessPayload,
   UpdateProcessPayload,
 } from '@company/api-contract';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { basename, join } from 'node:path';
 import { PermissionGuard } from '../../auth/permission.guard.js';
 import { RequirePermission } from '../../auth/require-permission.decorator.js';
 import { readId, readPagination } from '../../shared/request-utils.js';
@@ -90,21 +91,41 @@ export class ProcessController {
       throw new BadRequestException('Missing upload file');
     }
 
+    const processId = readId(id);
+    // 先检查工序是否已投产冻结，避免失败请求在磁盘留下孤儿文件。
+    await this.processes.assertProcessSopUploadAllowed(processId);
+
     const uploadsDir = join(process.cwd(), 'uploads', 'processes');
     await mkdir(uploadsDir, { recursive: true });
     const originalName = decodeUploadFileName(file.originalname);
-    const fileName = `${Date.now()}-${sanitizeFileName(originalName)}`;
+    // 存储名使用 UUID，展示名仍保留用户原文件名，因此同名文件可以重复上传。
+    const fileName = `${randomUUID()}-${sanitizeFileName(originalName)}`;
     const filePath = join(uploadsDir, fileName);
 
-    // 文件存储方案未最终确定，当前先写入本地 uploads/processes，并返回静态访问地址。
     await writeFile(filePath, file.buffer);
-
-    return this.processes.uploadProcessSop(readId(id), {
-      sopFileName: originalName,
-      sopFileUrl: `/uploads/processes/${fileName}`,
-    });
+    try {
+      const result = await this.processes.uploadProcessSop(processId, {
+        sopFileName: originalName,
+        sopFileUrl: `/uploads/processes/${fileName}`,
+      });
+      // 数据库切换成功后再清理无引用的旧本地文件，避免更新失败时丢失原 SOP。
+      await removeLocalProcessFile(uploadsDir, result.obsoleteFileUrl);
+      return result.process;
+    } catch (error) {
+      // 数据库保存或并发冻结校验失败时回滚本次新写入文件。
+      await unlink(filePath).catch(() => undefined);
+      throw error;
+    }
   }
 }
+
+/** 只允许删除本系统 process 上传目录内的旧文件，外部地址和历史 /files 地址保持不动。 */
+const removeLocalProcessFile = async (uploadsDir: string, fileUrl: string | null) => {
+  if (!fileUrl?.startsWith('/uploads/processes/')) {
+    return;
+  }
+  await unlink(join(uploadsDir, basename(fileUrl))).catch(() => undefined);
+};
 
 const decodeUploadFileName = (fileName: string) => {
   const decoded = Buffer.from(fileName, 'latin1').toString('utf8');

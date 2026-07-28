@@ -38,6 +38,7 @@ import { PERMISSIONS } from '@company/constants';
 import { computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
+import { EMessage } from '../utils/message';
 
 interface MenuItem {
   title: string;
@@ -214,8 +215,10 @@ const activeMenu = computed(() => {
 });
 
 const handleLogout = async () => {
-  authStore.logout();
+  // 退出登录会清理后端 Cookie 和本地会话，完成后给出明确反馈。
+  await authStore.logout();
   await router.push({ name: 'login' });
+  EMessage.success('已安全退出登录');
 };
 </script>
 

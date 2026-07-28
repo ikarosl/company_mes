@@ -1,5 +1,5 @@
 import { PERMISSIONS } from '@company/constants';
-import { Body, Controller, Delete, Get, Inject, Param, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Inject, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import type {
   AssignSystemRolePermissionsPayload,
   CreateSystemRolePayload,
@@ -8,7 +8,7 @@ import type {
 import { PermissionGuard } from '../../auth/permission.guard.js';
 import { RequirePermission } from '../../auth/require-permission.decorator.js';
 import { Audit } from '../../operation-log/audit.decorator.js';
-import { readId } from '../../shared/request-utils.js';
+import { readId, readPagination } from '../../shared/request-utils.js';
 import { SystemRoleRepository } from './system-role.repository.js';
 
 @UseGuards(PermissionGuard)
@@ -18,8 +18,16 @@ export class SystemRoleController {
 
   @RequirePermission(PERMISSIONS.system.roles.view)
   @Get('roles')
-  listRoles() {
-    return this.roles.listRoles();
+  listRoles(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('keyword') keyword?: string,
+    @Query('name') name?: string,
+    @Query('code') code?: string,
+    @Query('status') status?: string,
+  ) {
+    // 角色列表使用后端分页，确保筛选结果和总数来自同一查询口径。
+    return this.roles.listRoles(readPagination(page, pageSize), { keyword, name, code, status });
   }
 
   @RequirePermission(PERMISSIONS.system.roles.create)

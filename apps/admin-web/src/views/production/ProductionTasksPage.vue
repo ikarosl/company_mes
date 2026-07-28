@@ -107,7 +107,7 @@
           <el-option label="20条/页" :value="20" />
           <el-option label="50条/页" :value="50" />
         </el-select>
-        <el-pagination :current-page="currentPage" :page-size="pageSize" :total="total" layout="prev, pager, next, jumper" @current-change="loadTasks" />
+        <el-pagination v-model:current-page="currentPage" :page-size="pageSize" :total="total" layout="prev, pager, next, jumper" @current-change="loadTasks" />
       </div>
     </section>
 
@@ -173,10 +173,22 @@
           <el-table :data="createPreviewSteps" class="detail-table">
             <el-table-column prop="stepOrder" label="顺序" width="70" />
             <el-table-column prop="stepName" label="工序" min-width="160" />
+            <el-table-column label="默认参考文件" min-width="190">
+              <template #default="{ row }">
+                <el-link
+                  v-if="row.defaultSopFileUrl"
+                  type="primary"
+                  @click="openFilePreview(row.defaultSopFileName, row.defaultSopFileUrl)"
+                >
+                  {{ row.defaultSopFileName }}
+                </el-link>
+                <span v-else>{{ row.defaultSopFileName || '未配置' }}</span>
+              </template>
+            </el-table-column>
             <el-table-column label="实际参考文件" min-width="220">
               <template #default="{ row }">
                 <div class="file-cell">
-                  <el-select v-model="row.sopFileId" clearable filterable placeholder="请选择参考文件">
+                  <el-select v-model="row.sopFileId" clearable filterable placeholder="留空则使用默认文件">
                     <el-option v-for="file in sopFileOptions" :key="file.id" :label="file.name" :value="file.id" />
                   </el-select>
                   <el-upload
@@ -189,9 +201,12 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="负责人" min-width="180">
+            <el-table-column label="默认负责人" min-width="140">
+              <template #default="{ row }">{{ row.defaultResponsibleUserName || '未配置' }}</template>
+            </el-table-column>
+            <el-table-column label="实际负责人" min-width="180">
               <template #default="{ row }">
-                <el-select v-model="row.responsibleUserId" clearable filterable placeholder="请选择负责人">
+                <el-select v-model="row.responsibleUserId" clearable filterable placeholder="留空则使用默认负责人">
                   <el-option v-for="user in userOptions" :key="user.id" :label="user.displayName" :value="user.id" />
                 </el-select>
               </template>
@@ -241,13 +256,26 @@
               <el-table-column prop="stepOrder" label="序号" width="70" />
               <el-table-column prop="stepName" label="工序" min-width="160" />
               <el-table-column label="默认负责人" width="130">
-                <template #default="{ row }">{{ row.responsibleUserName || '-' }}</template>
+                <template #default="{ row }">{{ row.defaultResponsibleUserName || '未配置' }}</template>
               </el-table-column>
               <el-table-column label="现场负责人" width="130">
-                <template #default="{ row }">{{ row.responsibleUserName || '-' }}</template>
+                <template #default="{ row }">
+                  {{ row.responsibleUserName || row.defaultResponsibleUserName || '未配置' }}
+                  <span v-if="!row.responsibleUserId && row.defaultResponsibleUserId" class="fallback-text">(默认)</span>
+                </template>
               </el-table-column>
-              <el-table-column label="实际参考文件" width="160">
-                <template #default="{ row }">{{ getSopFileName(row.sopFileId) }}</template>
+              <el-table-column label="生效参考文件" width="190">
+                <template #default="{ row }">
+                  <el-link
+                    v-if="row.sopFileUrl || row.defaultSopFileUrl"
+                    type="primary"
+                    @click="openFilePreview(row.sopFileName || row.defaultSopFileName, row.sopFileUrl || row.defaultSopFileUrl)"
+                  >
+                    {{ row.sopFileName || row.defaultSopFileName }}
+                  </el-link>
+                  <span v-else>{{ row.sopFileName || row.defaultSopFileName || '未配置' }}</span>
+                  <span v-if="!row.sopFileId && row.defaultSopFileId" class="fallback-text">(默认)</span>
+                </template>
               </el-table-column>
               <el-table-column label="状态" width="110">
                 <template #default="{ row }">{{ stepStatusLabels[row.status] ?? row.status }}</template>
@@ -257,7 +285,7 @@
               </el-table-column>
               <el-table-column label="操作" width="90" fixed="right">
                 <template #default="{ row }">
-                  <el-button link type="primary" @click="openStepEdit(row)">编辑</el-button>
+                  <el-button link type="primary" @click="openStepDetail(row)">查看</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -287,20 +315,47 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="dispatchDialogVisible" title="任务派工" :width="DialogWidth.lg" class="business-dialog">
+    <el-dialog v-model="dispatchDialogVisible" title="任务派工" :width="DialogWidth.xl" class="business-dialog">
       <el-table :data="dispatchRows" class="detail-table">
         <el-table-column prop="stepOrder" label="序号" width="70" />
         <el-table-column prop="stepName" label="工序" min-width="180" />
-        <el-table-column label="实际参考文件" min-width="220">
+        <el-table-column label="默认参考文件" min-width="220">
           <template #default="{ row }">
-            <el-select v-model="row.sopFileId" clearable filterable placeholder="请选择参考文件">
-              <el-option v-for="file in sopFileOptions" :key="file.id" :label="file.name" :value="file.id" />
-            </el-select>
+            <el-link
+              v-if="row.defaultSopFileUrl"
+              type="primary"
+              @click="openFilePreview(row.defaultSopFileName, row.defaultSopFileUrl)"
+            >
+              {{ row.defaultSopFileName }}
+            </el-link>
+            <span v-else>{{ row.defaultSopFileName || '未配置' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="负责人" min-width="180">
+        <el-table-column label="实际参考文件" min-width="390">
           <template #default="{ row }">
-            <el-select v-model="row.responsibleUserId" clearable filterable placeholder="指定现场负责人">
+            <div class="file-cell">
+              <el-select
+                v-model="row.sopFileId"
+                clearable
+                filterable
+                placeholder="默认文件不适用时选择"
+                @change="syncDispatchFileMeta(row)"
+              >
+                <el-option v-for="file in sopFileOptions" :key="file.id" :label="file.name" :value="file.id" />
+              </el-select>
+              <el-link v-if="row.sopFileUrl" type="primary" @click="openFilePreview(row.sopFileName, row.sopFileUrl)">查看</el-link>
+              <el-upload :show-file-list="false" :before-upload="dispatchStepSopUploadHandler(row)">
+                <el-button>上传</el-button>
+              </el-upload>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="默认负责人" min-width="150">
+          <template #default="{ row }">{{ row.defaultResponsibleUserName || '未配置' }}</template>
+        </el-table-column>
+        <el-table-column label="实际负责人" min-width="190">
+          <template #default="{ row }">
+            <el-select v-model="row.responsibleUserId" clearable filterable placeholder="留空则使用默认负责人">
               <el-option v-for="user in userOptions" :key="user.id" :label="user.displayName" :value="user.id" />
             </el-select>
           </template>
@@ -382,55 +437,76 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="stepDialogVisible" title="编辑工序记录" :width="DialogWidth.md" class="business-dialog">
-      <el-form class="dialog-form" label-width="108px" :model="stepForm">
-        <el-form-item label="负责人">
-          <el-select v-model="stepForm.responsibleUserId" clearable filterable placeholder="请选择负责人">
-            <el-option v-for="user in userOptions" :key="user.id" :label="user.displayName" :value="user.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="参考文件">
-          <div class="file-cell">
-            <el-select v-model="stepForm.sopFileId" clearable filterable placeholder="请选择参考文件">
-              <el-option v-for="file in sopFileOptions" :key="file.id" :label="file.name" :value="file.id" />
-            </el-select>
-            <el-upload
-              v-if="editingTaskId && editingStepId"
-              :show-file-list="false"
-              :before-upload="uploadEditingStepSopFile"
-            >
-              <el-button>上传</el-button>
-            </el-upload>
+    <el-dialog v-model="stepDialogVisible" title="工序记录详情" :width="DialogWidth.lg" class="business-dialog">
+      <el-descriptions v-if="activeStep" :column="2" border>
+        <el-descriptions-item label="工序">{{ activeStep.stepName }}</el-descriptions-item>
+        <el-descriptions-item label="状态">{{ stepStatusLabels[activeStep.status] ?? activeStep.status }}</el-descriptions-item>
+        <el-descriptions-item label="默认负责人">{{ activeStep.defaultResponsibleUserName || '未配置' }}</el-descriptions-item>
+        <el-descriptions-item label="实际负责人">{{ activeStep.responsibleUserName || '未指定' }}</el-descriptions-item>
+        <el-descriptions-item label="生效负责人" :span="2">
+          {{ activeStep.responsibleUserName || activeStep.defaultResponsibleUserName || '未配置' }}
+        </el-descriptions-item>
+        <el-descriptions-item label="默认参考文件">{{ activeStep.defaultSopFileName || '未配置' }}</el-descriptions-item>
+        <el-descriptions-item label="实际参考文件">{{ activeStep.sopFileName || '未指定' }}</el-descriptions-item>
+        <el-descriptions-item label="生效参考文件" :span="2">
+          <el-link
+            v-if="activeStep.sopFileUrl || activeStep.defaultSopFileUrl"
+            type="primary"
+            @click="openFilePreview(activeStep.sopFileName || activeStep.defaultSopFileName, activeStep.sopFileUrl || activeStep.defaultSopFileUrl)"
+          >
+            {{ activeStep.sopFileName || activeStep.defaultSopFileName }}
+          </el-link>
+          <span v-else>未配置</span>
+        </el-descriptions-item>
+        <el-descriptions-item label="产出数量">{{ formatQuantity(activeStep.outputQuantity) }}</el-descriptions-item>
+        <el-descriptions-item label="返工数量">{{ formatQuantity(activeStep.returnQuantity) }}</el-descriptions-item>
+        <el-descriptions-item label="异常数量">{{ formatQuantity(activeStep.abnormalQuantity) }}</el-descriptions-item>
+        <el-descriptions-item label="备注">{{ activeStep.remark || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="重要参数" :span="2">
+          <div v-for="parameter in activeStep.parameterValues" :key="parameter.key">
+            {{ parameter.key }}：{{ parameter.value || '未填写' }}{{ parameter.unit ? ` ${parameter.unit}` : '' }}
           </div>
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="stepForm.status">
-            <el-option v-for="item in stepStatusOptions" :key="item.value" :label="item.label" :value="item.value" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="返工数量">
-          <el-input-number v-model="stepForm.returnQuantity" :min="0" :precision="4" :step="1" />
-        </el-form-item>
-        <el-form-item label="产出数量">
-          <el-input-number v-model="stepForm.outputQuantity" :min="0" :precision="4" :step="1" />
-        </el-form-item>
-        <el-form-item label="异常数量">
-          <el-input-number v-model="stepForm.abnormalQuantity" :min="0" :precision="4" :step="1" />
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="stepForm.remark" type="textarea" :rows="3" />
-        </el-form-item>
-      </el-form>
+          <span v-if="!activeStep.parameterValues.length">-</span>
+        </el-descriptions-item>
+      </el-descriptions>
       <template #footer>
-        <el-button @click="stepDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="submitStep">保存工序记录</el-button>
+        <el-button type="primary" @click="stepDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="previewDialogVisible"
+      :title="previewFileName || '技术文件预览'"
+      :width="DialogWidth.xl"
+      destroy-on-close
+      @closed="clearFilePreview"
+    >
+      <div v-loading="previewLoading" class="file-preview-body">
+        <iframe
+          v-if="previewType === 'pdf'"
+          class="pdf-preview"
+          :src="previewFileUrl"
+          :title="previewFileName"
+        />
+        <img
+          v-else-if="previewType === 'image'"
+          class="image-preview"
+          :src="previewFileUrl"
+          :alt="previewFileName"
+        />
+        <div v-else-if="previewType === 'docx'" ref="docxPreviewContainer" class="docx-preview" />
+        <el-empty v-else description="该格式暂不支持在线预览，请下载原文件查看" />
+      </div>
+      <template #footer>
+        <el-button @click="previewDialogVisible = false">关闭</el-button>
+        <el-button type="primary" @click="downloadPreviewFile">下载原文件</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessageBox, type UploadRawFile } from 'element-plus';
 import { Plus, Refresh } from '@element-plus/icons-vue';
@@ -499,6 +575,8 @@ const userOptions = ref<SystemUserListItem[]>([]);
 const workOrderOptions = ref<WorkOrderListItem[]>([]);
 const processOptions = ref<ProcessOption[]>([]);
 const activeTask = ref<ProductionTaskDetail | null>(null);
+/** 当前查看的工序记录，详情弹窗只读展示。 */
+const activeStep = ref<BatchStepRecordItem | null>(null);
 const createPreviewSteps = ref<Array<BatchStepRecordItem & { responsibleUserId: string | null; sopFileId: string | null }>>([]);
 const createPreviewMaterials = ref<MaterialDemandFormRow[]>([]);
 const materialDemandTask = ref<ProductionBatchItem | null>(null);
@@ -506,7 +584,6 @@ const materialDemandPreviewRows = ref<TaskMaterialRequirementItem[]>([]);
 const editingTaskId = ref<string | null>(null);
 const editingTaskOriginalQuantity = ref(0);
 const dispatchTaskId = ref<string | null>(null);
-const editingStepId = ref<string | null>(null);
 const loading = ref(false);
 /** 工单远程检索加载状态，避免工单较多时一次性载入全部记录。 */
 const workOrderLoading = ref(false);
@@ -520,6 +597,13 @@ const dispatchDialogVisible = ref(false);
 const materialDemandDialogVisible = ref(false);
 const startCheckDialogVisible = ref(false);
 const stepDialogVisible = ref(false);
+/** 文件预览弹窗：与工序模块保持一致，PDF/图片直接展示，DOCX 在浏览器本地渲染。 */
+const previewDialogVisible = ref(false);
+const previewLoading = ref(false);
+const previewFileName = ref('');
+const previewFileUrl = ref('');
+const previewType = ref<'pdf' | 'image' | 'docx' | 'unsupported'>('unsupported');
+const docxPreviewContainer = ref<HTMLElement | null>(null);
 const dispatchRows = ref<Array<BatchStepRecordItem & { responsibleUserId: string | null; sopFileId: string | null }>>([]);
 /** 开始生产检查弹窗：保存当前任务及后端返回的阻断项、警告项。 */
 const startCheckTaskId = ref<string | null>(null);
@@ -538,25 +622,17 @@ const taskForm = reactive({
   planEndDate: '',
   remark: '',
 });
-const stepForm = reactive({
-  responsibleUserId: '',
-  sopFileId: '',
-  status: 'pending' as BatchStepStatus,
-  returnQuantity: 0,
-  outputQuantity: 0,
-  abnormalQuantity: 0,
-  remark: '',
-});
 
 /**
- * 远程检索仍可分配生产数量的已下达/生产中工单。
- * 两种状态分别分页查询后按工单 ID 合并，避免只加载固定前 100 条导致后续工单无法选择。
+ * 远程检索仍可分配生产数量的未完成工单。
+ * 草稿、已下达、生产中分别分页查询后按工单 ID 合并，已完成/已关闭/已取消不允许再创建任务。
  */
 const searchWorkOrders = async (keyword: string) => {
   workOrderLoading.value = true;
   try {
     const normalizedKeyword = keyword.trim();
-    const [releasedOrders, doingOrders] = await Promise.all([
+    const [draftOrders, releasedOrders, doingOrders] = await Promise.all([
+      productionApi.listOrders({ page: 1, pageSize: 50, status: 'draft', keyword: normalizedKeyword }),
       productionApi.listOrders({ page: 1, pageSize: 50, status: 'released', keyword: normalizedKeyword }),
       productionApi.listOrders({ page: 1, pageSize: 50, status: 'doing', keyword: normalizedKeyword }),
     ]);
@@ -567,7 +643,7 @@ const searchWorkOrders = async (keyword: string) => {
     if (selectedOrder) {
       orderMap.set(selectedOrder.id, selectedOrder);
     }
-    for (const order of [...releasedOrders.items, ...doingOrders.items]) {
+    for (const order of [...draftOrders.items, ...releasedOrders.items, ...doingOrders.items]) {
       if (getWorkOrderRemaining(order) > 0) {
         orderMap.set(order.id, order);
       }
@@ -640,11 +716,17 @@ const taskQuantityMax = computed(() => {
 /** 当前产品可用路线由产品路线接口返回，包含默认路线和同分类的其他版本。 */
 const availableRouteOptions = computed(() => routeOptions.value);
 const sopFileOptions = computed(() => {
-  const map = new Map<string, { id: string; name: string }>();
+  const map = new Map<string, { id: string; name: string; url: string | null }>();
 
   for (const process of processOptions.value) {
     if (process.sopFileId && process.sopFileName) {
-      map.set(process.sopFileId, { id: process.sopFileId, name: process.sopFileName });
+      map.set(process.sopFileId, { id: process.sopFileId, name: process.sopFileName, url: process.sopFileUrl });
+    }
+  }
+  // 批次上传文件可能不属于工序默认文件，仍需保留在当前选项和详情中。
+  for (const step of [...dispatchRows.value, ...(activeTask.value?.steps ?? [])]) {
+    if (step.sopFileId && step.sopFileName) {
+      map.set(step.sopFileId, { id: step.sopFileId, name: step.sopFileName, url: step.sopFileUrl });
     }
   }
 
@@ -912,6 +994,129 @@ const startTask = async (row: ProductionBatchItem) => {
   startCheckDialogVisible.value = true;
 };
 
+/** 选择已有文件后同步文件名和访问地址，便于派工前直接查看。 */
+const syncDispatchFileMeta = (row: BatchStepRecordItem) => {
+  const selected = sopFileOptions.value.find((file) => file.id === row.sopFileId);
+  row.sopFileName = selected?.name ?? null;
+  row.sopFileUrl = selected?.url ?? null;
+};
+
+/**
+ * 在站内弹窗预览参考文件。
+ * PDF 和图片先校验文件可访问性，DOCX 使用与工序模块相同的本地渲染方式。
+ */
+const openFilePreview = async (fileName: string | null, fileUrl: string | null) => {
+  if (!fileName || !fileUrl) {
+    EMessage.warning('该工序尚未配置可预览的参考文件');
+    return;
+  }
+
+  previewFileName.value = fileName;
+  previewFileUrl.value = fileUrl;
+  const extension = fileName.split('.').pop()?.toLowerCase();
+  previewType.value = extension === 'pdf'
+    ? 'pdf'
+    : ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'].includes(extension ?? '')
+      ? 'image'
+      : extension === 'docx'
+        ? 'docx'
+        : 'unsupported';
+  previewDialogVisible.value = true;
+
+  if (previewType.value === 'unsupported') {
+    return;
+  }
+
+  previewLoading.value = true;
+  try {
+    // 先校验后端是否真实存在文件，避免 PDF iframe 只显示空白页。
+    const response = await fetch(fileUrl);
+    if (!response.ok) {
+      throw new Error(`文件加载失败（${response.status}）`);
+    }
+    const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+    // Vite 对不存在的本地地址可能回退返回 index.html，必须拦截，否则 PDF 区域仍会显示空白页。
+    if (contentType.includes('text/html')) {
+      throw new Error('原文件不存在，请在工序模块重新上传');
+    }
+    if (previewType.value === 'pdf' && !contentType.includes('application/pdf')) {
+      throw new Error('服务器返回的不是有效 PDF 文件');
+    }
+    if (previewType.value === 'image' && !contentType.startsWith('image/')) {
+      throw new Error('服务器返回的不是有效图片文件');
+    }
+    if (previewType.value !== 'docx') {
+      return;
+    }
+
+    await nextTick();
+    if (!docxPreviewContainer.value) {
+      throw new Error('预览容器尚未初始化');
+    }
+    docxPreviewContainer.value.innerHTML = '';
+    const { renderAsync } = await import('docx-preview');
+    await renderAsync(await response.arrayBuffer(), docxPreviewContainer.value, undefined, {
+      className: 'docx',
+      inWrapper: true,
+      ignoreWidth: false,
+      ignoreHeight: false,
+      breakPages: true,
+    });
+  } catch (error) {
+    previewType.value = 'unsupported';
+    EMessage.error(error, '参考文件预览失败，请检查原文件是否存在');
+  } finally {
+    previewLoading.value = false;
+  }
+};
+
+/** 下载当前预览的原始文件，并保留原文件名。 */
+const downloadPreviewFile = () => {
+  if (!previewFileUrl.value) {
+    return;
+  }
+  const link = document.createElement('a');
+  link.href = previewFileUrl.value;
+  link.download = previewFileName.value;
+  link.click();
+};
+
+/** 关闭弹窗后清理 DOCX 渲染节点，避免下次预览残留。 */
+const clearFilePreview = () => {
+  if (docxPreviewContainer.value) {
+    docxPreviewContainer.value.innerHTML = '';
+  }
+  previewLoading.value = false;
+  previewFileName.value = '';
+  previewFileUrl.value = '';
+  previewType.value = 'unsupported';
+};
+
+/** 任务派工上传入口：上传成功后立即选中新文件，不需要先到工序资料页上传。 */
+const dispatchStepSopUploadHandler = (row: BatchStepRecordItem) => (file: UploadRawFile) => {
+  if (!dispatchTaskId.value || row.batchId === '0') {
+    EMessage.warning('请先保存任务后再上传参考文件');
+    return false;
+  }
+
+  void (async () => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const task = await productionApi.uploadTaskStepSop(dispatchTaskId.value!, row.id, formData);
+    const updated = task.steps.find((step) => step.id === row.id);
+    if (updated) {
+      Object.assign(row, {
+        sopFileId: updated.sopFileId,
+        sopFileName: updated.sopFileName,
+        sopFileUrl: updated.sopFileUrl,
+      });
+    }
+    EMessage.success('参考文件已上传并选中');
+  })();
+
+  return false;
+};
+
 /** 确认开始生产；后端会再次校验，避免绕过前端直接改变状态。 */
 const confirmStartTask = async () => {
   if (!startCheckTaskId.value || !startCheck.value?.canStart) {
@@ -944,46 +1149,10 @@ const finishTask = async (row: ProductionBatchItem) => {
   await loadTasks();
 };
 
-const openStepEdit = (row: BatchStepRecordItem) => {
-  if (!activeTask.value) {
-    return;
-  }
-
-  editingTaskId.value = activeTask.value.id;
-  editingStepId.value = row.id;
-  Object.assign(stepForm, {
-    responsibleUserId: row.responsibleUserId ?? '',
-    sopFileId: row.sopFileId ?? '',
-    status: row.status,
-    returnQuantity: Number(row.returnQuantity ?? 0),
-    outputQuantity: Number(row.outputQuantity ?? 0),
-    abnormalQuantity: Number(row.abnormalQuantity ?? 0),
-    remark: row.remark ?? '',
-  });
+/** 查看工序记录：任务详情中不提供编辑，避免绕过派工和报工业务入口。 */
+const openStepDetail = (row: BatchStepRecordItem) => {
+  activeStep.value = row;
   stepDialogVisible.value = true;
-};
-
-const submitStep = async () => {
-  if (!editingTaskId.value || !editingStepId.value) {
-    return;
-  }
-
-  submitting.value = true;
-  try {
-    activeTask.value = await productionApi.updateTaskStep(editingTaskId.value, editingStepId.value, {
-      responsibleUserId: stepForm.responsibleUserId || null,
-      sopFileId: stepForm.sopFileId || null,
-      status: stepForm.status,
-      returnQuantity: stepForm.returnQuantity,
-      outputQuantity: stepForm.outputQuantity,
-      abnormalQuantity: stepForm.abnormalQuantity,
-      remark: stepForm.remark,
-    });
-    EMessage.success('工序记录已更新');
-    stepDialogVisible.value = false;
-  } finally {
-    submitting.value = false;
-  }
 };
 
 const getTaskStatusMeta = (status: ProductionBatchStatus) => taskStatusOptions.find((item) => item.value === status) ?? taskStatusOptions[0];
@@ -1029,22 +1198,6 @@ const uploadStepSopFile = (file: UploadRawFile, row: BatchStepRecordItem & { sop
     }
 
     activeTask.value = task;
-    EMessage.success('实际参考文件已上传');
-  })();
-
-  return false;
-};
-const uploadEditingStepSopFile = (file: UploadRawFile) => {
-  if (!editingTaskId.value || !editingStepId.value) {
-    return false;
-  }
-
-  void (async () => {
-    const formData = new FormData();
-    formData.append('file', file);
-    activeTask.value = await productionApi.uploadTaskStepSop(editingTaskId.value!, editingStepId.value!, formData);
-    const updated = activeTask.value.steps.find((step) => step.id === editingStepId.value);
-    stepForm.sopFileId = updated?.sopFileId ?? '';
     EMessage.success('实际参考文件已上传');
   })();
 
@@ -1174,6 +1327,37 @@ onMounted(loadPageData);
   margin-top: 18px;
 }
 
+.file-preview-body {
+  min-height: 520px;
+  max-height: 72vh;
+  overflow: auto;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+}
+
+.pdf-preview {
+  display: block;
+  width: 100%;
+  height: 70vh;
+  border: 0;
+  background: #ffffff;
+}
+
+.image-preview {
+  display: block;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.docx-preview {
+  min-height: 520px;
+  padding: 20px 0;
+}
+
+.docx-preview :deep(.docx-wrapper) {
+  background: #f3f4f6;
+}
+
 .file-cell {
   display: flex;
   align-items: center;
@@ -1182,6 +1366,12 @@ onMounted(loadPageData);
 
 .file-cell :deep(.el-select) {
   flex: 1;
+}
+
+.fallback-text {
+  margin-left: 4px;
+  color: #909399;
+  font-size: 12px;
 }
 
 .business-dialog :deep(.el-dialog__body) {

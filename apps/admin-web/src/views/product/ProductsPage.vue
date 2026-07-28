@@ -14,14 +14,13 @@
           />
         </el-form-item>
         <el-form-item label="产品分类">
-          <el-select v-model="query.categoryId" clearable placeholder="全部">
-            <el-option
-              v-for="category in categoryOptions"
-              :key="category.id"
-              :label="formatCategory(category)"
-              :value="category.id"
-            />
-          </el-select>
+          <ProductCategorySelect
+            v-model="query.categoryId"
+            :options="categoryOptions"
+            clearable
+            allow-attribute-selection
+            placeholder="全部"
+          />
         </el-form-item>
         <el-form-item label="获取方式">
           <el-select v-model="query.acquireMethod" clearable placeholder="全部">
@@ -60,7 +59,7 @@
         </el-table-column>
         <el-table-column prop="productName" label="产品名称" min-width="160" />
         <el-table-column label="属性" width="100">
-          <template #default="{ row }">{{ row.productAttribute || '-' }}</template>
+          <template #default="{ row }">{{ formatProductAttribute(row.productAttribute) }}</template>
         </el-table-column>
         <el-table-column label="类型" width="120">
           <template #default="{ row }">{{ row.productType || '-' }}</template>
@@ -92,11 +91,23 @@
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">查看</el-button>
             <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-button link v-if="row.acquireMethod ==='self_made'" :type="row.materialCount > 0 ? 'primary' : 'warning'" @click="openMaterials(row)" > 
+            <el-button
+              v-if="row.acquireMethod === 'self_made' && canConfigureBom"
+              link
+              :type="row.materialCount > 0 ? 'primary' : 'warning'"
+              @click="openMaterials(row)"
+            >
               物料清单
             </el-button>
             <el-button link type="primary" @click="showInventory(row)">库存</el-button>
-            <el-button link type="primary" @click="showRoutes(row)">工艺路线</el-button>
+            <el-button
+              v-if="row.acquireMethod === 'self_made' && canBindRoute"
+              link
+              type="primary"
+              @click="showRoutes(row)"
+            >
+              工艺路线
+            </el-button>
             <el-button
               link
               :type="row.status === 1 ? 'danger' : 'success'"
@@ -116,7 +127,7 @@
           <el-option label="50条/页" :value="50" />
         </el-select>
         <el-pagination
-          :current-page="currentPage"
+          v-model:current-page="currentPage"
           :page-size="pageSize"
           :total="total"
           layout="prev, pager, next, jumper"
@@ -140,14 +151,10 @@
             <el-input v-model="productForm.productName" placeholder="请输入产品名称" />
           </el-form-item>
           <el-form-item label="产品分类" required>
-            <el-select v-model="productForm.categoryId" placeholder="请选择产品分类">
-              <el-option
-                v-for="category in categoryOptions"
-                :key="category.id"
-                :label="formatCategory(category)"
-                :value="category.id"
-              />
-            </el-select>
+            <ProductCategorySelect
+              v-model="productForm.categoryId"
+              :options="categoryOptions"
+            />
           </el-form-item>
           <el-form-item label="单位" required>
             <el-input v-model="productForm.unit" placeholder="pcs" />
@@ -211,13 +218,15 @@
       <el-descriptions v-if="detailRow" :column="2" border>
         <el-descriptions-item label="产品型号">{{ detailRow.productModel }}</el-descriptions-item>
         <el-descriptions-item label="产品名称">{{ detailRow.productName }}</el-descriptions-item>
-        <el-descriptions-item label="产品属性">{{ detailRow.productAttribute || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="产品属性">
+          {{ formatProductAttribute(detailRow.productAttribute) }}
+        </el-descriptions-item>
         <el-descriptions-item label="产品类型">{{ detailRow.productType || '-' }}</el-descriptions-item>
         <el-descriptions-item label="获取方式">
           {{ getAcquireMethodLabel(detailRow.acquireMethod) }}
         </el-descriptions-item>
         <el-descriptions-item label="单位">{{ detailRow.unit }}</el-descriptions-item>
-        <el-descriptions-item label="物料清单">
+        <el-descriptions-item v-if="detailRow.acquireMethod === 'self_made'" label="物料清单">
           {{ detailRow.materialCount > 0 ? `${detailRow.materialCount} 项` : '未配置' }}
         </el-descriptions-item>
         <el-descriptions-item label="状态">
@@ -369,7 +378,7 @@
             <span class="sub-text">{{ routeProduct.productName }}</span>
           </div>
           <span class="sub-text">
-            {{ routeProduct.productAttribute || '-' }} / {{ routeProduct.productType || '-' }}
+            {{ formatProductAttribute(routeProduct.productAttribute) }} / {{ routeProduct.productType || '-' }}
           </span>
         </div>
         <el-table
@@ -399,6 +408,18 @@
               </el-tag>
             </template>
           </el-table-column>
+          <el-table-column label="操作" width="120" fixed="right">
+            <template #default="{ row }">
+              <el-button
+                link
+                :type="row.isDefault ? 'danger' : 'primary'"
+                :disabled="!row.isDefault && row.status !== 1"
+                @click="handleSetDefaultRoute(row)"
+              >
+                {{ row.isDefault ? '取消默认' : '设为默认' }}
+              </el-button>
+            </template>
+          </el-table-column>
         </el-table>
       </template>
     </el-dialog>
@@ -409,19 +430,25 @@
 import { onMounted, reactive, ref } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import { Plus, Refresh } from '@element-plus/icons-vue';
+import { PERMISSIONS } from '@company/constants';
 import type {
   MaterialBatchStatus,
   ProductAcquireMethod,
+  ProductAttribute,
   ProductCategoryListItem,
   ProductInventoryDetail,
   ProductListItem,
   ProductMaterialItem,
   ProductRouteDetail,
+  ProductRouteItem,
   ProductSpecValue,
 } from '@company/api-contract';
+import { PRODUCT_ATTRIBUTE_LABELS } from '@company/api-contract';
 import { productApi } from '../../api/product';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
+import { useAuthStore } from '../../stores/auth';
+import ProductCategorySelect from '../../components/business/ProductCategorySelect.vue';
 
 type SpecFormRow = {
   key: string;
@@ -444,6 +471,11 @@ const acquireMethodLabels: Record<ProductAcquireMethod, string> = {
   outsourced: '委外',
   purchased: '外购',
 };
+
+/** 当前账号的产品配置权限：与后端 PermissionGuard 使用相同权限编码。 */
+const authStore = useAuthStore();
+const canConfigureBom = authStore.hasPermission(PERMISSIONS.product.products.configBom);
+const canBindRoute = authStore.hasPermission(PERMISSIONS.product.products.bindRoute);
 
 const products = ref<ProductListItem[]>([]);
 const categoryOptions = ref<ProductCategoryListItem[]>([]);
@@ -494,12 +526,18 @@ const loadCategoryOptions = async () => {
 const loadProducts = async () => {
   loading.value = true;
   try {
+    // 分类查询支持两种口径：一级属性查询全部，二级分类按分类 ID 精确查询。
+    const attributePrefix = 'attribute:';
+    const selectedAttribute = query.categoryId.startsWith(attributePrefix)
+      ? query.categoryId.slice(attributePrefix.length)
+      : '';
     const page = await productApi.listProducts({
       page: currentPage.value,
       pageSize: pageSize.value,
       keyword: query.keyword,
       specKeyword: query.specKeyword,
-      categoryId: query.categoryId,
+      categoryId: selectedAttribute ? '' : query.categoryId,
+      productAttributes: selectedAttribute,
       acquireMethod: query.acquireMethod,
       status: query.status,
     });
@@ -592,11 +630,28 @@ const openDetail = (row: ProductListItem) => {
 };
 
 const openMaterials = async (row: ProductListItem) => {
-  materialProduct.value = row;
-  const materials = await productApi.listProductMaterials(row.id);
-  await refreshMaterialOptions();
-  materialRows.value = materials.map(toMaterialFormRow);
-  materialDialogVisible.value = true;
+  // 委外和外购产品不维护内部 BOM，避免通过页面方法误打开配置弹窗。
+  if (row.acquireMethod !== 'self_made') {
+    EMessage.warning('仅自制产品需要配置物料清单');
+    return;
+  }
+  if (!canConfigureBom) {
+    EMessage.warning('当前账号没有配置产品物料清单的权限');
+    return;
+  }
+
+  relatedLoading.value = true;
+  try {
+    materialProduct.value = row;
+    const materials = await productApi.listProductMaterials(row.id);
+    await refreshMaterialOptions();
+    materialRows.value = materials.map(toMaterialFormRow);
+    materialDialogVisible.value = true;
+  } catch (error) {
+    EMessage.error(error, '物料清单加载失败，请检查账号权限');
+  } finally {
+    relatedLoading.value = false;
+  }
 };
 
 const refreshMaterialOptions = async () => {
@@ -750,6 +805,8 @@ const submitMaterials = async () => {
     EMessage.success('物料清单已保存');
     materialDialogVisible.value = false;
     await loadProducts();
+  } catch (error) {
+    EMessage.error(error, '物料清单保存失败');
   } finally {
     submitting.value = false;
   }
@@ -788,6 +845,11 @@ const showInventory = async (row: ProductListItem) => {
 };
 
 const showRoutes = async (row: ProductListItem) => {
+  // 委外和外购产品不执行内部生产工艺，不允许进入工艺路线配置入口。
+  if (row.acquireMethod !== 'self_made') {
+    EMessage.warning('仅自制产品需要配置工艺路线');
+    return;
+  }
   routeProduct.value = row;
   routeDetail.value = null;
   routeDialogVisible.value = true;
@@ -796,6 +858,40 @@ const showRoutes = async (row: ProductListItem) => {
     routeDetail.value = await productApi.getProductRoutes(row.id);
   } catch (error) {
     EMessage.error(error, '产品工艺路线加载失败');
+  } finally {
+    relatedLoading.value = false;
+  }
+};
+
+/** 设置或取消产品默认路线，成功后直接使用接口返回结果刷新弹窗。 */
+const handleSetDefaultRoute = async (route: ProductRouteItem) => {
+  if (!routeProduct.value) {
+    return;
+  }
+
+  const actionText = route.isDefault ? '取消默认路线' : '设为默认路线';
+  try {
+    await ElMessageBox.confirm(
+      `确认将“${route.routeName}”${route.isDefault ? '取消默认' : '设为该产品的默认路线'}？`,
+      actionText,
+      {
+        confirmButtonText: '确认',
+        cancelButtonText: '取消',
+        type: route.isDefault ? 'warning' : 'info',
+      },
+    );
+  } catch {
+    return;
+  }
+
+  relatedLoading.value = true;
+  try {
+    routeDetail.value = await productApi.setProductDefaultRoute(routeProduct.value.id, {
+      routeId: route.isDefault ? null : route.id,
+    });
+    EMessage.success(route.isDefault ? '默认路线已取消' : '默认路线设置成功');
+  } catch (error) {
+    EMessage.error(error, '默认路线设置失败');
   } finally {
     relatedLoading.value = false;
   }
@@ -828,8 +924,13 @@ const toMaterialFormRow = (item: ProductMaterialItem): MaterialFormRow => ({
   remark: item.remark ?? '',
 });
 
-const formatCategory = (category: ProductCategoryListItem) =>
-  `${category.productAttribute} / ${category.productType}`;
+/** 产品列表和详情统一把分类属性枚举转换为中文标签，并兼容历史中文数据。 */
+const formatProductAttribute = (value: string | null) => {
+  if (!value) {
+    return '-';
+  }
+  return PRODUCT_ATTRIBUTE_LABELS[value as ProductAttribute] ?? value;
+};
 
 const formatProductOption = (product: ProductListItem) =>
   `${product.productModel} / ${product.productName}`;

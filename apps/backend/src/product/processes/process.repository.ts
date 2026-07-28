@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import type { ResultSetHeader } from 'mysql2';
 import type { RowDataPacket } from 'mysql2/promise';
+import { randomUUID } from 'node:crypto';
 import type {
   CreateProcessPayload,
   ProcessOption,
@@ -14,11 +15,14 @@ import type {
   UploadProcessSopPayload,
 } from '@company/api-contract';
 import { DatabaseService, type QueryParam } from '../../database/database.service.js';
+import { execute, query, type DbExecutor } from '../../shared/repository.helpers.js';
 import { type PaginationOptions, toPageResult } from '../../shared/request-utils.js';
 import type { CountRow, ProcessListRow, ProcessOptionRow, ProcessRow } from '../product.types.js';
 import {
   mapProcess,
   mapProcessOption,
+  normalizeProcessImportantParameters,
+  parseProcessImportantParameters,
   normalizeOptionalString,
   nullableId,
   readRequiredString,
@@ -54,6 +58,7 @@ export class ProcessRepository {
         ps.sop_file_id,
         f.file_name AS sop_file_name,
         f.file_url AS sop_file_url,
+        ps.important_parameters,
         ps.status,
         ps.remark,
         ps.created_at,
@@ -80,6 +85,7 @@ export class ProcessRepository {
         ps.sop_file_id,
         f.file_name AS sop_file_name,
         f.file_url AS sop_file_url
+        , ps.important_parameters
       FROM process_steps ps
       LEFT JOIN technical_files f ON f.id = ps.sop_file_id AND f.is_deleted = 0
       WHERE ps.is_deleted = 0 AND ps.status = 1
@@ -99,6 +105,8 @@ export class ProcessRepository {
     const processName = readRequiredString(payload.processName, 'Missing process name');
     const sopFileId = nullableId(payload.sopFileId);
     const status = readTinyStatus(payload.status ?? 1);
+    // 工序这里只保存参数定义；实际参数值由批次工序报工接口写入。
+    const importantParameters = normalizeProcessImportantParameters(payload.importantParameters ?? []);
 
     await this.assertProcessCodeAvailable(processCode);
     await this.assertTechnicalFileAvailable(sopFileId);
@@ -106,14 +114,15 @@ export class ProcessRepository {
     const result = (await this.database.execute(
       `
       INSERT INTO process_steps (
-        step_code, step_name, sop_file_id, status, remark, created_at, updated_at
+        step_code, step_name, sop_file_id, important_parameters, status, remark, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, NOW(), NOW())
+      VALUES (?, ?, ?, CAST(? AS JSON), ?, ?, NOW(), NOW())
     `,
       [
         processCode,
         processName,
         sopFileId,
+        JSON.stringify(importantParameters),
         status,
         normalizeOptionalString(payload.remark),
       ],
@@ -124,6 +133,7 @@ export class ProcessRepository {
 
   async updateProcess(id: number, payload: UpdateProcessPayload) {
     const current = await this.getProcessRow(id);
+    await this.assertProcessNotInProduction(id);
     const processCode =
       payload.processCode === undefined
         ? current.process_code
@@ -135,6 +145,10 @@ export class ProcessRepository {
     const sopFileId =
       payload.sopFileId === undefined ? current.sop_file_id : nullableId(payload.sopFileId);
     const status = payload.status === undefined ? current.status : readTinyStatus(payload.status);
+    const importantParameters =
+      payload.importantParameters === undefined
+        ? parseProcessImportantParameters(current.important_parameters)
+        : normalizeProcessImportantParameters(payload.importantParameters);
 
     await this.assertProcessCodeAvailable(processCode, id);
     await this.assertTechnicalFileAvailable(sopFileId);
@@ -145,6 +159,7 @@ export class ProcessRepository {
       SET step_code = ?,
         step_name = ?,
         sop_file_id = ?,
+        important_parameters = CAST(? AS JSON),
         status = ?,
         remark = ?,
         updated_at = NOW()
@@ -154,6 +169,7 @@ export class ProcessRepository {
         processCode,
         processName,
         sopFileId,
+        JSON.stringify(importantParameters),
         status,
         payload.remark === undefined ? current.remark : normalizeOptionalString(payload.remark),
         id,
@@ -165,6 +181,7 @@ export class ProcessRepository {
 
   async changeProcessStatus(id: number, status: number) {
     await this.getProcessRow(id);
+    await this.assertProcessNotInProduction(id);
 
     await this.database.execute(
       `
@@ -180,29 +197,57 @@ export class ProcessRepository {
 
   async uploadProcessSop(id: number, payload: UploadProcessSopPayload) {
     await this.getProcessRow(id);
+    await this.assertProcessNotInProduction(id);
     const sopFileName = readRequiredString(payload.sopFileName, 'Missing SOP file name');
     const sopFileUrl = normalizeOptionalString(payload.sopFileUrl);
 
-    const fileResult = (await this.database.execute(
-      `
-      INSERT INTO technical_files (
-        file_code, file_name, file_url, file_type, version, status, remark, created_at, updated_at
-      )
-      VALUES (?, ?, ?, 'process_sop', 'V1.0', 1, '生产工序上传文件', NOW(), NOW())
-    `,
-      [`SOP-${Date.now()}`, sopFileName, sopFileUrl],
-    )) as ResultSetHeader;
+    const obsoleteFileUrl = await this.database.transaction(async (connection) => {
+      // 锁定工序并再次校验投产状态，避免校验后到保存前被生产任务并发引用。
+      const [lockedProcess] = await query<(RowDataPacket & { sop_file_id: number | null })[]>(
+        connection,
+        'SELECT sop_file_id FROM process_steps WHERE id = ? AND is_deleted = 0 FOR UPDATE',
+        [id],
+      );
+      if (!lockedProcess) {
+        throw new NotFoundException('工序不存在');
+      }
+      await this.assertProcessNotInProduction(id, connection);
 
-    await this.database.execute(
-      `
-      UPDATE process_steps
-      SET sop_file_id = ?, updated_at = NOW()
-      WHERE id = ? AND is_deleted = 0
-    `,
-      [fileResult.insertId, id],
-    );
+      const fileResult = await execute(
+        connection,
+        `INSERT INTO technical_files (
+           file_code, file_name, file_url, file_type, version, status, remark, created_at, updated_at
+         ) VALUES (?, ?, ?, 'process_sop', 'V1.0', 1, '生产工序上传文件', NOW(), NOW())`,
+        [`SOP-${randomUUID()}`, sopFileName, sopFileUrl],
+      );
 
-    return this.getProcessListItem(id);
+      await execute(
+        connection,
+        'UPDATE process_steps SET sop_file_id = ?, updated_at = NOW() WHERE id = ? AND is_deleted = 0',
+        [fileResult.insertId, id],
+      );
+
+      // 未投产路线中继承了原默认 SOP 的步骤同步切换到新文件，保证路线详情不再指向旧文件。
+      if (lockedProcess.sop_file_id !== null) {
+        await execute(
+          connection,
+          `UPDATE process_route_steps
+           SET sop_file_id = ?, updated_at = NOW()
+           WHERE process_step_id = ? AND sop_file_id = ? AND is_deleted = 0`,
+          [fileResult.insertId, id, lockedProcess.sop_file_id],
+        );
+      }
+
+      return this.retireUnreferencedTechnicalFile(connection, lockedProcess.sop_file_id);
+    });
+
+    return { process: await this.getProcessListItem(id), obsoleteFileUrl };
+  }
+
+  /** 上传控制器写入磁盘前调用，避免业务已冻结时先落盘再返回失败。 */
+  async assertProcessSopUploadAllowed(id: number) {
+    await this.getProcessRow(id);
+    await this.assertProcessNotInProduction(id);
   }
 
   private buildListFilters(filters: ProcessFilters) {
@@ -250,6 +295,7 @@ export class ProcessRepository {
         ps.sop_file_id,
         f.file_name AS sop_file_name,
         f.file_url AS sop_file_url,
+        ps.important_parameters,
         ps.status,
         ps.remark
       FROM process_steps ps
@@ -278,6 +324,7 @@ export class ProcessRepository {
         ps.sop_file_id,
         f.file_name AS sop_file_name,
         f.file_url AS sop_file_url,
+        ps.important_parameters,
         ps.status,
         ps.remark,
         ps.created_at,
@@ -338,5 +385,58 @@ export class ProcessRepository {
     if (row) {
       throw new ConflictException('Process code already exists');
     }
+  }
+
+  /** 被已投产路线采用的标准工序永久冻结，后续变化必须新建工序及路线版本。 */
+  private async assertProcessNotInProduction(
+    processId: number,
+    executor: DbExecutor = this.database,
+  ) {
+    const [row] = await query<RowDataPacket[]>(
+      executor,
+      `SELECT bsr.id
+       FROM batch_step_records bsr
+       INNER JOIN process_route_steps prs
+         ON prs.id = bsr.process_route_steps_id
+        AND prs.process_step_id = ?
+       WHERE bsr.is_deleted = 0
+       LIMIT 1`,
+      [processId],
+    );
+    if (row) {
+      throw new ConflictException('该工序已随工艺路线投入生产，不能修改；请新建工序及路线版本');
+    }
+  }
+
+  /** 旧技术文件无任何业务引用时软删除，并返回可安全删除的本地文件地址。 */
+  private async retireUnreferencedTechnicalFile(
+    executor: DbExecutor,
+    fileId: number | null,
+  ): Promise<string | null> {
+    if (fileId === null) {
+      return null;
+    }
+    const [reference] = await query<(RowDataPacket & { file_url: string | null })[]>(
+      executor,
+      `SELECT tf.file_url
+       FROM technical_files tf
+       WHERE tf.id = ?
+         AND NOT EXISTS (SELECT 1 FROM process_steps ps WHERE ps.sop_file_id = tf.id)
+         AND NOT EXISTS (SELECT 1 FROM process_route_steps prs WHERE prs.sop_file_id = tf.id)
+         AND NOT EXISTS (SELECT 1 FROM products p WHERE p.spec_file_id = tf.id)
+       LIMIT 1`,
+      [fileId],
+    );
+    if (!reference) {
+      return null;
+    }
+    await execute(
+      executor,
+      `UPDATE technical_files
+       SET is_deleted = 1, status = 0, deleted_at = NOW(), updated_at = NOW()
+       WHERE id = ? AND is_deleted = 0`,
+      [fileId],
+    );
+    return reference.file_url;
   }
 }

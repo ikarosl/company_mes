@@ -40,7 +40,7 @@
 
       <el-table
         v-loading="loading"
-        :data="pagedRoles"
+        :data="roles"
         class="roles-table"
         @selection-change="handleSelectionChange"
       >
@@ -73,20 +73,12 @@
         </el-table-column>
       </el-table>
 
-      <div class="table-footer">
-        <span class="total-text">共 {{ filteredRoles.length }} 条</span>
-        <el-select v-model="pageSize" class="page-size" @change="handlePageSizeChange">
-          <el-option label="10条/页" :value="10" />
-          <el-option label="20条/页" :value="20" />
-          <el-option label="50条/页" :value="50" />
-        </el-select>
-        <el-pagination
-          v-model:current-page="currentPage"
-          :page-size="pageSize"
-          :total="filteredRoles.length"
-          layout="prev, pager, next, jumper"
-        />
-      </div>
+      <TablePagination
+        v-model:page="currentPage"
+        v-model:page-size="pageSize"
+        :total="total"
+        @change="loadPageData"
+      />
     </section>
 
     <el-dialog
@@ -260,9 +252,9 @@ import { Plus, Refresh, Search, Setting } from '@element-plus/icons-vue';
 import type {
   SystemPermissionTreeNode,
   SystemRoleListItem,
-  SystemUserListItem,
 } from '@company/api-contract';
 import { systemApi } from '../../api/system';
+import TablePagination from '../../components/common/TablePagination.vue';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
 
@@ -272,7 +264,6 @@ type RoleWithUpdateTime = SystemRoleListItem & {
 };
 
 const roles = ref<SystemRoleListItem[]>([]);
-const users = ref<SystemUserListItem[]>([]);
 const selectedRoles = ref<SystemRoleListItem[]>([]);
 const loading = ref(false);
 const roleDialogVisible = ref(false);
@@ -351,6 +342,8 @@ const activeScopeCheckedCount = computed(() => {
 
 const currentPage = ref(1);
 const pageSize = ref(10);
+/** 后端返回的角色总数，用于统一分页组件。 */
+const total = ref(0);
 const query = reactive({
   keyword: '',
   name: '',
@@ -364,45 +357,7 @@ const roleForm = reactive({
   associatedUserCount: '0',
 });
 
-const roleUserCounts = computed(() => {
-  const counts = new Map<string, number>();
-
-  for (const user of users.value) {
-    for (const roleId of user.roleIds) {
-      counts.set(roleId, (counts.get(roleId) ?? 0) + 1);
-    }
-  }
-
-  return counts;
-});
-
-const filteredRoles = computed(() =>
-  roles.value.filter((role) => {
-    const keyword = query.keyword.trim().toLowerCase();
-    const nameKeyword = query.name.trim().toLowerCase();
-    const codeKeyword = query.code.trim().toLowerCase();
-    const matchesName = !nameKeyword || role.name.toLowerCase().includes(nameKeyword);
-    const matchesCode = !codeKeyword || role.code.toLowerCase().includes(codeKeyword);
-    const matchesKeyword =
-      !keyword ||
-      [role.name, role.code, role.description ?? ''].some((value) =>
-        value.toLowerCase().includes(keyword),
-      );
-    const matchesStatus =
-      !query.status ||
-      (query.status === 'enabled' && role.status === 1) ||
-      (query.status === 'disabled' && role.status !== 1);
-
-    return matchesKeyword && matchesName && matchesCode && matchesStatus;
-  }),
-);
-
-const pagedRoles = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value;
-  return filteredRoles.value.slice(start, start + pageSize.value);
-});
-
-const getAssociatedUserCount = (role: SystemRoleListItem) => roleUserCounts.value.get(role.id) ?? 0;
+const getAssociatedUserCount = (role: SystemRoleListItem) => role.userCount;
 
 const getUpdatedAt = (role: SystemRoleListItem) => {
   const roleWithUpdateTime = role as RoleWithUpdateTime;
@@ -421,13 +376,16 @@ const resetRoleForm = () => {
 const loadPageData = async () => {
   loading.value = true;
   try {
-    const [roleRows, userRows] = await Promise.all([
-      systemApi.listRoles(),
-      systemApi.listUsers({ page: 1, pageSize: 100 }),
-    ]);
-    roles.value = roleRows;
-    users.value = userRows;
-    currentPage.value = 1;
+    const result = await systemApi.listRoles({
+      page: currentPage.value,
+      pageSize: pageSize.value,
+      keyword: query.keyword || undefined,
+      name: query.name || undefined,
+      code: query.code || undefined,
+      status: query.status === 'enabled' ? '1' : query.status === 'disabled' ? '0' : undefined,
+    });
+    roles.value = result.items;
+    total.value = result.total;
   } finally {
     loading.value = false;
   }
@@ -435,6 +393,7 @@ const loadPageData = async () => {
 
 const handleSearch = () => {
   currentPage.value = 1;
+  void loadPageData();
 };
 
 const resetQuery = () => {
@@ -443,10 +402,7 @@ const resetQuery = () => {
   query.code = '';
   query.status = '';
   currentPage.value = 1;
-};
-
-const handlePageSizeChange = () => {
-  currentPage.value = 1;
+  void loadPageData();
 };
 
 const handleSelectionChange = (selection: SystemRoleListItem[]) => {

@@ -16,7 +16,8 @@ import type {
 } from '@company/api-contract';
 import { DatabaseService, type QueryParam } from '../../database/database.service.js';
 import { AuditContextService } from '../../operation-log/audit-context.service.js';
-import type { RoleListRow, RolePermissionRow, RoleRow } from '../system.types.js';
+import type { CountRow, RoleListRow, RolePermissionRow, RoleRow } from '../system.types.js';
+import { type PaginationOptions, toPageResult } from '../../shared/request-utils.js';
 import {
   mapSystemRole,
   normalizeOptionalString,
@@ -33,27 +34,48 @@ export class SystemRoleRepository {
     @Inject(AuditContextService) private readonly auditContext: AuditContextService,
   ) {}
 
-  async listRoles(): Promise<SystemRoleListItem[]> {
-    const rows = await this.database.query<RoleListRow[]>(`
-      SELECT
-        r.id,
-        r.name,
-        r.code,
-        r.description,
+  /** 分页查询角色，并在数据库中完成关键字、名称、编码和状态筛选。 */
+  async listRoles(
+    pagination: PaginationOptions,
+    filters: { keyword?: string; name?: string; code?: string; status?: string },
+  ) {
+    const clauses = ['r.deleted_at IS NULL'];
+    const params: QueryParam[] = [];
+    if (filters.keyword?.trim()) {
+      const keyword = `%${filters.keyword.trim()}%`;
+      clauses.push('(r.name LIKE ? OR r.code LIKE ? OR r.description LIKE ?)');
+      params.push(keyword, keyword, keyword);
+    }
+    if (filters.name?.trim()) {
+      clauses.push('r.name LIKE ?');
+      params.push(`%${filters.name.trim()}%`);
+    }
+    if (filters.code?.trim()) {
+      clauses.push('r.code LIKE ?');
+      params.push(`%${filters.code.trim()}%`);
+    }
+    if (filters.status?.trim() !== undefined && filters.status?.trim() !== '') {
+      clauses.push('r.status = ?');
+      // 角色筛选兼容 enabled/disabled 和 1/0，避免不同页面复用时产生参数错误。
+      const status = filters.status === 'enabled' ? 1 : filters.status === 'disabled' ? 0 : Number(filters.status);
+      params.push(readTinyStatus(status));
+    }
+    const where = clauses.join(' AND ');
+    const [totalRow] = await this.database.query<CountRow[]>(`SELECT COUNT(*) AS total FROM roles r WHERE ${where}`, params);
+    const rows = await this.database.query<RoleListRow[]>(
+      `SELECT r.id, r.name, r.code, r.description,
         COUNT(DISTINCT rp.permission_id) AS permission_count,
-        COUNT(DISTINCT role_user.id) AS user_count,
-        r.status,
-        r.updated_at
-      FROM roles r
-      LEFT JOIN role_permissions rp ON rp.role_id = r.id
-      LEFT JOIN user_roles ur ON ur.role_id = r.id
-      LEFT JOIN users role_user ON role_user.id = ur.user_id AND role_user.deleted_at IS NULL
-      WHERE r.deleted_at IS NULL
-      GROUP BY r.id, r.name, r.code, r.description, r.status, r.updated_at
-      ORDER BY r.id
-    `);
-
-    return rows.map(mapSystemRole);
+        COUNT(DISTINCT role_user.id) AS user_count, r.status, r.updated_at
+       FROM roles r
+       LEFT JOIN role_permissions rp ON rp.role_id = r.id
+       LEFT JOIN user_roles ur ON ur.role_id = r.id
+       LEFT JOIN users role_user ON role_user.id = ur.user_id AND role_user.deleted_at IS NULL
+       WHERE ${where}
+       GROUP BY r.id, r.name, r.code, r.description, r.status, r.updated_at
+       ORDER BY r.id LIMIT ? OFFSET ?`,
+      [...params, pagination.pageSize, pagination.offset],
+    );
+    return toPageResult(rows.map(mapSystemRole), Number(totalRow?.total ?? 0), pagination);
   }
 
   async createRole(payload: CreateSystemRolePayload) {

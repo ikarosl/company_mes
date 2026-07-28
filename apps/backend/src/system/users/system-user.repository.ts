@@ -37,40 +37,53 @@ export class SystemUserRepository {
     @Inject(AuditContextService) private readonly auditContext: AuditContextService,
   ) {}
 
-  async listUsers(pagination: PaginationOptions) {
-    const [totalRow] = await this.database.query<CountRow[]>(`
-      SELECT COUNT(*) AS total
-      FROM users
-      WHERE deleted_at IS NULL
-    `);
-    const rows = await this.database.query<UserListRow[]>(
-      `
-      SELECT
-        u.id,
-        u.username,
-        u.display_name,
-        u.department_id,
-        d.name AS department_name,
-        u.email,
-        u.mobile,
-        GROUP_CONCAT(DISTINCT r.id ORDER BY r.id) AS role_ids,
-        GROUP_CONCAT(DISTINCT r.code ORDER BY r.id) AS roles,
-        u.status,
-        u.last_login_at
+  /** 分页查询用户，并在数据库中完成账号、姓名、角色和状态筛选。 */
+  async listUsers(
+    pagination: PaginationOptions,
+    filters: { keyword?: string; username?: string; displayName?: string; roleId?: string; status?: string },
+  ) {
+    const clauses = ['u.deleted_at IS NULL'];
+    const params: QueryParam[] = [];
+    if (filters.keyword?.trim()) {
+      const keyword = `%${filters.keyword.trim()}%`;
+      clauses.push('(u.username LIKE ? OR u.display_name LIKE ? OR d.name LIKE ? OR u.email LIKE ? OR u.mobile LIKE ? OR r.code LIKE ?)');
+      params.push(keyword, keyword, keyword, keyword, keyword, keyword);
+    }
+    if (filters.username?.trim()) {
+      clauses.push('u.username LIKE ?');
+      params.push(`%${filters.username.trim()}%`);
+    }
+    if (filters.displayName?.trim()) {
+      clauses.push('u.display_name LIKE ?');
+      params.push(`%${filters.displayName.trim()}%`);
+    }
+    if (filters.roleId?.trim()) {
+      clauses.push('r.id = ?');
+      params.push(filters.roleId.trim());
+    }
+    if (filters.status?.trim() !== undefined && filters.status?.trim() !== '') {
+      clauses.push('u.status = ?');
+      // 列表筛选兼容前端历史使用的 enabled/disabled 和公共的 1/0 两种口径。
+      const status = filters.status === 'enabled' ? 1 : filters.status === 'disabled' ? 0 : Number(filters.status);
+      params.push(readTinyStatus(status));
+    }
+    const joins = `
       FROM users u
       LEFT JOIN departments d ON d.id = u.department_id AND d.deleted_at IS NULL
       LEFT JOIN user_roles ur ON ur.user_id = u.id
       LEFT JOIN roles r ON r.id = ur.role_id AND r.deleted_at IS NULL
-      WHERE u.deleted_at IS NULL
-      GROUP BY
-        u.id, u.username, u.display_name, u.department_id, d.name,
-        u.email, u.mobile, u.status, u.last_login_at
-      ORDER BY u.id
-      LIMIT ? OFFSET ?
-    `,
-      [pagination.pageSize, pagination.offset],
+      WHERE ${clauses.join(' AND ')}
+    `;
+    const [totalRow] = await this.database.query<CountRow[]>(`SELECT COUNT(DISTINCT u.id) AS total ${joins}`, params);
+    const rows = await this.database.query<UserListRow[]>(
+      `SELECT u.id, u.username, u.display_name, u.department_id, d.name AS department_name,
+        u.email, u.mobile, GROUP_CONCAT(DISTINCT r.id ORDER BY r.id) AS role_ids,
+        GROUP_CONCAT(DISTINCT r.code ORDER BY r.id) AS roles, u.status, u.last_login_at
+       ${joins}
+       GROUP BY u.id, u.username, u.display_name, u.department_id, d.name, u.email, u.mobile, u.status, u.last_login_at
+       ORDER BY u.id LIMIT ? OFFSET ?`,
+      [...params, pagination.pageSize, pagination.offset],
     );
-
     return toPageResult(rows.map(mapSystemUser), Number(totalRow?.total ?? 0), pagination);
   }
 

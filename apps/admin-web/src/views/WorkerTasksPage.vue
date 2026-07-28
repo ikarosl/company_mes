@@ -126,6 +126,9 @@
                   {{ formatQuantity(row.outputQuantity) }} / {{ formatQuantity(row.returnQuantity) }} / {{ formatQuantity(row.abnormalQuantity) }}
                 </template>
               </el-table-column>
+              <el-table-column label="重要参数" min-width="200" show-overflow-tooltip>
+                <template #default="{ row }">{{ formatParameterValues(row.parameterValues) }}</template>
+              </el-table-column>
               <el-table-column label="开始时间" width="170">
                 <template #default="{ row }">{{ formatDateTime(row.startedAt) }}</template>
               </el-table-column>
@@ -152,6 +155,19 @@
         <el-form-item label="异常数量">
           <el-input-number v-model="reportForm.abnormalQuantity" :min="0" :precision="4" :step="1" />
         </el-form-item>
+        <div v-if="reportForm.parameterValues.length" class="report-parameters">
+          <div class="report-parameters-title">重要参数</div>
+          <el-form-item
+            v-for="parameter in reportForm.parameterValues"
+            :key="parameter.key"
+            :label="parameter.key"
+            required
+          >
+            <el-input v-model="parameter.value" :placeholder="`请输入${parameter.key}`">
+              <template v-if="parameter.unit" #append>{{ parameter.unit }}</template>
+            </el-input>
+          </el-form-item>
+        </div>
         <el-form-item label="结果状态">
           <el-select v-model="reportForm.status">
             <el-option label="已完成" value="completed" />
@@ -175,6 +191,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
 import type {
   BatchStepStatus,
+  BatchStepParameterValue,
   ProductListItem,
   ProductionTaskDetail,
   WorkerTaskItem,
@@ -211,6 +228,8 @@ const reportForm = reactive({
   returnQuantity: 0,
   outputQuantity: 0,
   abnormalQuantity: 0,
+  // 重要参数值：字段定义来自工序资料，只有报工时填写实际值。
+  parameterValues: [] as BatchStepParameterValue[],
   remark: '',
 });
 
@@ -278,16 +297,29 @@ const startStep = async (row: WorkerTaskItem) => {
   await loadTasks();
 };
 
-const openReport = (row: WorkerTaskItem) => {
-  reportingTask.value = row;
-  Object.assign(reportForm, {
-    status: Number(row.abnormalQuantity ?? 0) > 0 ? 'abnormal' : 'completed',
-    returnQuantity: Number(row.returnQuantity ?? 0),
-    outputQuantity: Number(row.outputQuantity ?? 0),
-    abnormalQuantity: Number(row.abnormalQuantity ?? 0),
-    remark: '',
-  });
-  reportDialogVisible.value = true;
+/** 打开报工弹窗并读取工序重要参数及已保存的参数值。 */
+const openReport = async (row: WorkerTaskItem) => {
+  try {
+    // 报工前读取工序详情，确保展示的是批次生成时固化的重要参数定义及已保存值。
+    const taskDetail = await productionApi.getWorkerTask(row.id);
+    const stepDetail = taskDetail.steps.find((step) => step.id === row.stepRecordId);
+    if (!stepDetail) {
+      EMessage.warning('未找到当前工序报工记录，请刷新任务后重试');
+      return;
+    }
+    reportingTask.value = row;
+    Object.assign(reportForm, {
+      status: Number(row.abnormalQuantity ?? 0) > 0 ? 'abnormal' : 'completed',
+      returnQuantity: Number(row.returnQuantity ?? 0),
+      outputQuantity: Number(row.outputQuantity ?? 0),
+      abnormalQuantity: Number(row.abnormalQuantity ?? 0),
+      parameterValues: stepDetail.parameterValues.map((item) => ({ ...item })),
+      remark: stepDetail.remark ?? '',
+    });
+    reportDialogVisible.value = true;
+  } catch (error) {
+    EMessage.error(error, '工序重要参数加载失败');
+  }
 };
 
 const submitReport = async () => {
@@ -304,6 +336,10 @@ const submitReport = async () => {
     EMessage.warning('异常数量不能超过完成数量');
     return;
   }
+  if (reportForm.parameterValues.some((item) => !item.value?.trim())) {
+    EMessage.warning('请填写全部工序重要参数');
+    return;
+  }
 
   submitting.value = true;
   try {
@@ -314,6 +350,7 @@ const submitReport = async () => {
       returnQuantity: reportForm.returnQuantity,
       outputQuantity: reportForm.outputQuantity,
       abnormalQuantity: reportForm.abnormalQuantity,
+      parameterValues: reportForm.parameterValues,
       remark: reportForm.remark,
     });
     EMessage.success('报工已提交');
@@ -339,6 +376,11 @@ const formatQuantity = (value: string | number | null) => {
     ? amount.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 4 })
     : '-';
 };
+/** 将报工参数整理为紧凑文本，供任务详情快速核对。 */
+const formatParameterValues = (items: BatchStepParameterValue[]) =>
+  items.length
+    ? items.map((item) => `${item.key}：${item.value || '-'}${item.unit || ''}`).join('；')
+    : '-';
 const formatDateTime = (value: string | null) => (value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '-');
 
 onMounted(loadPageData);
@@ -455,6 +497,18 @@ onMounted(loadPageData);
 
 .detail-tabs {
   margin-top: 18px;
+}
+
+.report-parameters {
+  margin: 4px 0 18px;
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.report-parameters-title {
+  margin-bottom: 14px;
+  color: #1f2937;
+  font-weight: 600;
 }
 
 @media (max-width: 1120px) {

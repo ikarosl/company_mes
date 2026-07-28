@@ -11,6 +11,7 @@ import { ProductionModule } from './production/production.module.js';
 import { QualityModule } from './quality/quality.module.js';
 import { SystemModule } from './system/system.module.js';
 import { WarehouseModule } from './warehouse/warehouse.module.js';
+import { TrimRequestValuesInterceptor } from './shared/trim-request-values.js';
 
 @Module({
   imports: [
@@ -25,6 +26,11 @@ import { WarehouseModule } from './warehouse/warehouse.module.js';
   ],
   controllers: [AppController],
   providers: [
+    {
+      // 在审计记录和业务 Controller 读取请求前，统一清理所有模块的字符串输入。
+      provide: APP_INTERCEPTOR,
+      useClass: TrimRequestValuesInterceptor,
+    },
     {
       provide: APP_INTERCEPTOR,
       useClass: AuditInterceptor,

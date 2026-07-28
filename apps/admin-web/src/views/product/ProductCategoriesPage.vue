@@ -6,7 +6,14 @@
           <el-input v-model="query.keyword" clearable placeholder="属性、类型或备注" @keyup.enter="searchCategories" />
         </el-form-item>
         <el-form-item label="产品属性">
-          <el-input v-model="query.productAttribute" clearable placeholder="请输入产品属性" />
+          <el-select v-model="query.productAttribute" clearable placeholder="请选择产品属性">
+            <el-option
+              v-for="option in productAttributeOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="产品类型">
           <el-input v-model="query.productType" clearable placeholder="请输入产品类型" />
@@ -34,7 +41,9 @@
       </div>
 
       <el-table v-loading="loading" :data="categories" class="category-table">
-        <el-table-column prop="productAttribute" label="产品属性" min-width="140" />
+        <el-table-column label="产品属性" min-width="140">
+          <template #default="{ row }">{{ getProductAttributeLabel(row.productAttribute) }}</template>
+        </el-table-column>
         <el-table-column prop="productType" label="产品类型" min-width="160" />
         <el-table-column label="状态" width="110">
           <template #default="{ row }">
@@ -85,7 +94,14 @@
     >
       <el-form class="dialog-form" label-width="96px" :model="categoryForm">
         <el-form-item label="产品属性" required>
-          <el-input v-model="categoryForm.productAttribute" placeholder="例如：成品、半成品、外购件" />
+          <el-select v-model="categoryForm.productAttribute" placeholder="请选择产品属性">
+            <el-option
+              v-for="option in productAttributeOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="产品类型" required>
           <el-input v-model="categoryForm.productType" placeholder="例如：环形器、PCB、腔体" />
@@ -110,7 +126,9 @@
 
     <el-dialog v-model="detailDialogVisible" title="分类详情" :width="DialogWidth.md">
       <el-descriptions v-if="detailRow" :column="2" border>
-        <el-descriptions-item label="产品属性">{{ detailRow.productAttribute }}</el-descriptions-item>
+        <el-descriptions-item label="产品属性">
+          {{ getProductAttributeLabel(detailRow.productAttribute) }}
+        </el-descriptions-item>
         <el-descriptions-item label="产品类型">{{ detailRow.productType }}</el-descriptions-item>
         <el-descriptions-item label="状态">
           {{ detailRow.status === 1 ? '启用' : '停用' }}
@@ -126,7 +144,11 @@
 import { onMounted, reactive, ref } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import { Plus, Refresh } from '@element-plus/icons-vue';
-import type { ProductCategoryListItem } from '@company/api-contract';
+import {
+  PRODUCT_ATTRIBUTE_LABELS,
+  type ProductAttribute,
+  type ProductCategoryListItem,
+} from '@company/api-contract';
 import { productApi } from '../../api/product';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
@@ -141,14 +163,25 @@ const categoryDialogVisible = ref(false);
 const detailDialogVisible = ref(false);
 const editingCategoryId = ref<string | null>(null);
 const detailRow = ref<ProductCategoryListItem | null>(null);
+/** 产品属性下拉选项：值提交给接口，中文标签仅用于页面展示。 */
+const productAttributeOptions: Array<{ value: ProductAttribute; label: string }> = [
+  { value: 'finished', label: PRODUCT_ATTRIBUTE_LABELS.finished },
+  { value: 'semi_finished', label: PRODUCT_ATTRIBUTE_LABELS.semi_finished },
+  { value: 'material', label: PRODUCT_ATTRIBUTE_LABELS.material },
+  { value: 'auxiliary', label: PRODUCT_ATTRIBUTE_LABELS.auxiliary },
+  { value: 'other', label: PRODUCT_ATTRIBUTE_LABELS.other },
+];
+/** 将接口枚举值转换为页面中文标签。 */
+const getProductAttributeLabel = (value: ProductAttribute) =>
+  PRODUCT_ATTRIBUTE_LABELS[value] ?? value;
 const query = reactive({
   keyword: '',
-  productAttribute: '',
+  productAttribute: '' as ProductAttribute | '',
   productType: '',
   status: '',
 });
 const categoryForm = reactive({
-  productAttribute: '',
+  productAttribute: '' as ProductAttribute | '',
   productType: '',
   enabled: true,
   remark: '',
@@ -231,7 +264,7 @@ const submitCategory = async () => {
   submitting.value = true;
   try {
     const payload = {
-      productAttribute: categoryForm.productAttribute,
+      productAttribute: categoryForm.productAttribute as ProductAttribute,
       productType: categoryForm.productType,
       status: categoryForm.enabled ? 1 : 0,
       remark: categoryForm.remark,

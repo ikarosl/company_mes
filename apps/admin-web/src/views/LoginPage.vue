@@ -109,6 +109,7 @@ const handleLogin = async () => {
     await router.push(typeof route.query.redirect === 'string' ? route.query.redirect : '/');
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '登录失败';
+    EMessage.error(error, '登录失败，请检查账号和密码');
   } finally {
     loginLoading.value = false;
   }

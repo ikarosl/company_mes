@@ -200,6 +200,14 @@
       :width="DialogWidth.lg"
       class="business-dialog"
     >
+      <el-alert
+        v-if="flowMode === 'outbound' && !filteredDemands.length"
+        class="flow-alert"
+        title="当前没有可领料的生产任务，请先开始任务后再办理物料出库"
+        type="warning"
+        :closable="false"
+        show-icon
+      />
       <el-form :model="flowForm" label-width="112px">
         <el-form-item label="物料需求" required>
           <el-select
@@ -228,7 +236,12 @@
       </el-form>
       <template #footer>
         <el-button @click="flowVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="submitFlow">
+        <el-button
+          type="primary"
+          :disabled="flowMode === 'outbound' && !filteredDemands.length"
+          :loading="submitting"
+          @click="submitFlow"
+        >
           {{ flowMode === "outbound" ? "确认出库" : "确认退料" }}
         </el-button>
       </template>
@@ -299,7 +312,8 @@ const flowForm = reactive({ usageId: "", quantity: 1, reason: "", remark: "" });
 const filteredDemands = computed(() =>
   demands.value.filter((item) =>
     flowMode.value === "outbound"
-      ? Number(item.remainingQuantity) > 0
+      // 领料仅展示已开始且仍有剩余预留数量的生产任务。
+      ? item.productionBatchStatus === "doing" && Number(item.remainingQuantity) > 0
       : Number(item.usedQuantity) > 0
   )
 );
@@ -512,6 +526,10 @@ onMounted(async () => {
 .business-dialog :deep(.el-dialog__body) {
   max-height: 70vh;
   overflow-y: auto;
+}
+/* 无可领料任务时将原因置于表单上方，避免用户面对空下拉框。 */
+.flow-alert {
+  margin-bottom: 16px;
 }
 :deep(.el-select),
 :deep(.el-date-editor),

@@ -37,7 +37,7 @@
         <el-table-column prop="description" label="工序说明" min-width="220" show-overflow-tooltip />
         <el-table-column label="技术文件" min-width="190">
           <template #default="{ row }">
-            <el-link v-if="row.sopFileName" type="primary" :href="row.sopFileUrl || undefined" target="_blank">
+            <el-link v-if="row.sopFileName" type="primary" @click="openFilePreview(row)">
               {{ row.sopFileName }}
             </el-link>
             <span v-else class="empty-text">未上传</span>
@@ -74,7 +74,7 @@
           <el-option label="50条/页" :value="50" />
         </el-select>
         <el-pagination
-          :current-page="currentPage"
+          v-model:current-page="currentPage"
           :page-size="pageSize"
           :total="total"
           layout="prev, pager, next, jumper"
@@ -106,6 +106,30 @@
             placeholder="填写操作要求、检验要求或注意事项"
           />
         </el-form-item>
+        <div class="parameter-section">
+          <div class="parameter-toolbar">
+            <span class="parameter-title">重要参数</span>
+            <el-button type="primary" :icon="Plus" @click="addImportantParameter">新增参数</el-button>
+          </div>
+          <el-table :data="processForm.importantParameters" border empty-text="暂无重要参数">
+            <el-table-column label="参数名称" min-width="180">
+              <template #default="{ row }">
+                <el-input v-model="row.key" placeholder="例如：焊接温度" maxlength="100" />
+              </template>
+            </el-table-column>
+            <el-table-column label="单位" min-width="120">
+              <template #default="{ row }">
+                <el-input v-model="row.unit" placeholder="例如：℃、s、dB" maxlength="50" />
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="80" align="center">
+              <template #default="{ $index }">
+                <el-button link type="danger" @click="removeImportantParameter($index)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="parameter-tip">这里只配置报工时必须填写的参数名称和单位，参数值由员工报工时填写。</div>
+        </div>
         <el-form-item label="备注">
           <el-input v-model="processForm.remark" type="textarea" :rows="2" placeholder="可填写备注" />
         </el-form-item>
@@ -148,24 +172,66 @@
           <el-link
             v-if="detailRow.sopFileName"
             type="primary"
-            :href="detailRow.sopFileUrl || undefined"
-            target="_blank"
+            @click="openFilePreview(detailRow)"
           >
             {{ detailRow.sopFileName }}
           </el-link>
           <span v-else>-</span>
         </el-descriptions-item>
+        <el-descriptions-item label="重要参数" :span="2">
+          <el-tag
+            v-for="parameter in detailRow.importantParameters"
+            :key="parameter.key"
+            class="parameter-tag"
+            effect="plain"
+          >
+            {{ parameter.key }}{{ parameter.unit ? `（${parameter.unit}）` : '' }}
+          </el-tag>
+          <span v-if="!detailRow.importantParameters.length">-</span>
+        </el-descriptions-item>
         <el-descriptions-item label="备注" :span="2">{{ detailRow.remark || '-' }}</el-descriptions-item>
       </el-descriptions>
+    </el-dialog>
+
+    <el-dialog
+      v-model="previewDialogVisible"
+      :title="previewFileName || '技术文件预览'"
+      :width="DialogWidth.xl"
+      destroy-on-close
+      @closed="clearFilePreview"
+    >
+      <div v-loading="previewLoading" class="file-preview-body">
+        <iframe
+          v-if="previewType === 'pdf'"
+          class="pdf-preview"
+          :src="previewFileUrl"
+          :title="previewFileName"
+        />
+        <img
+          v-else-if="previewType === 'image'"
+          class="image-preview"
+          :src="previewFileUrl"
+          :alt="previewFileName"
+        />
+        <div v-else-if="previewType === 'docx'" ref="docxPreviewContainer" class="docx-preview" />
+        <el-empty
+          v-else
+          description="该格式暂不支持在线预览，请下载原文件查看"
+        />
+      </div>
+      <template #footer>
+        <el-button @click="previewDialogVisible = false">关闭</el-button>
+        <el-button type="primary" @click="downloadPreviewFile">下载原文件</el-button>
+      </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { nextTick, onMounted, reactive, ref } from 'vue';
 import { ElMessageBox, type UploadFile, type UploadFiles } from 'element-plus';
 import { Plus, Refresh, UploadFilled } from '@element-plus/icons-vue';
-import type { ProcessListItem } from '@company/api-contract';
+import type { ProcessImportantParameter, ProcessListItem } from '@company/api-contract';
 import { productApi } from '../../api/product';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
@@ -184,6 +250,13 @@ const uploadingProcessId = ref<string | null>(null);
 const uploadFileList = ref<UploadFile[]>([]);
 const selectedFile = ref<File | null>(null);
 const detailRow = ref<ProcessListItem | null>(null);
+/** 文件预览弹窗状态：PDF/图片直接展示，DOCX 下载后在浏览器本地渲染。 */
+const previewDialogVisible = ref(false);
+const previewLoading = ref(false);
+const previewFileName = ref('');
+const previewFileUrl = ref('');
+const previewType = ref<'pdf' | 'image' | 'docx' | 'unsupported'>('unsupported');
+const docxPreviewContainer = ref<HTMLElement | null>(null);
 const query = reactive({
   keyword: '',
   status: '',
@@ -193,6 +266,7 @@ const processForm = reactive({
   processName: '',
   description: '',
   enabled: true,
+  importantParameters: [] as ProcessImportantParameter[],
   remark: '',
 });
 
@@ -235,6 +309,7 @@ const resetProcessForm = () => {
     processName: '',
     description: '',
     enabled: true,
+    importantParameters: [],
     remark: '',
   });
 };
@@ -252,6 +327,7 @@ const openEdit = (row: ProcessListItem) => {
     processName: row.processName,
     description: row.description ?? '',
     enabled: row.status === 1,
+    importantParameters: row.importantParameters.map((item) => ({ ...item })),
     remark: row.remark ?? '',
   });
   processDialogVisible.value = true;
@@ -264,14 +340,106 @@ const openUpload = (row: ProcessListItem) => {
   uploadDialogVisible.value = true;
 };
 
+/** 新增一行工序重要参数定义，参数值留到报工时填写。 */
+const addImportantParameter = () => {
+  processForm.importantParameters.push({ key: '', unit: null });
+};
+
+/** 删除当前工序不再需要记录的参数定义。 */
+const removeImportantParameter = (index: number) => {
+  processForm.importantParameters.splice(index, 1);
+};
+
 const openDetail = (row: ProcessListItem) => {
   detailRow.value = row;
   detailDialogVisible.value = true;
 };
 
+/** 在站内弹窗预览技术文件；DOCX 在浏览器本地解析，不上传到第三方服务。 */
+const openFilePreview = async (row: ProcessListItem) => {
+  if (!row.sopFileUrl || !row.sopFileName) {
+    EMessage.warning('该工序尚未上传技术文件');
+    return;
+  }
+
+  previewFileName.value = row.sopFileName;
+  previewFileUrl.value = row.sopFileUrl;
+  const extension = row.sopFileName.split('.').pop()?.toLowerCase();
+  previewType.value = extension === 'pdf'
+    ? 'pdf'
+    : ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'].includes(extension ?? '')
+      ? 'image'
+      : extension === 'docx'
+        ? 'docx'
+        : 'unsupported';
+  previewDialogVisible.value = true;
+
+  if (previewType.value !== 'docx') {
+    return;
+  }
+
+  previewLoading.value = true;
+  try {
+    await nextTick();
+    const response = await fetch(row.sopFileUrl);
+    if (!response.ok) {
+      throw new Error(`文件加载失败（${response.status}）`);
+    }
+    if (!docxPreviewContainer.value) {
+      throw new Error('预览容器尚未初始化');
+    }
+    docxPreviewContainer.value.innerHTML = '';
+    // DOCX 解析器体积较大，仅在实际预览 DOCX 时按需加载。
+    const { renderAsync } = await import('docx-preview');
+    await renderAsync(await response.arrayBuffer(), docxPreviewContainer.value, undefined, {
+      className: 'docx',
+      inWrapper: true,
+      ignoreWidth: false,
+      ignoreHeight: false,
+      breakPages: true,
+    });
+  } catch (error) {
+    previewType.value = 'unsupported';
+    EMessage.error(error, '技术文件预览失败');
+  } finally {
+    previewLoading.value = false;
+  }
+};
+
+/** 下载当前预览的原始文件，并保留业务人员熟悉的原文件名。 */
+const downloadPreviewFile = () => {
+  if (!previewFileUrl.value) {
+    return;
+  }
+  const link = document.createElement('a');
+  link.href = previewFileUrl.value;
+  link.download = previewFileName.value;
+  link.click();
+};
+
+/** 关闭弹窗后清理 DOCX 生成的页面节点，避免下次预览残留。 */
+const clearFilePreview = () => {
+  if (docxPreviewContainer.value) {
+    docxPreviewContainer.value.innerHTML = '';
+  }
+  previewLoading.value = false;
+  previewFileName.value = '';
+  previewFileUrl.value = '';
+  previewType.value = 'unsupported';
+};
+
 const submitProcess = async () => {
   if (!processForm.processCode.trim() || !processForm.processName.trim()) {
     EMessage.warning('请填写工序编码和工序名称');
+    return;
+  }
+  const parameterKeys = processForm.importantParameters.map((item) => item.key.trim());
+  if (parameterKeys.some((key) => !key)) {
+    EMessage.warning('请填写重要参数名称');
+    return;
+  }
+  if (new Set(parameterKeys).size !== parameterKeys.length) {
+    EMessage.warning('重要参数名称不能重复');
     return;
   }
 
@@ -281,6 +449,7 @@ const submitProcess = async () => {
       processCode: processForm.processCode,
       processName: processForm.processName,
       description: processForm.description,
+      importantParameters: processForm.importantParameters,
       status: processForm.enabled ? 1 : 0,
       remark: processForm.remark,
     };
@@ -458,6 +627,63 @@ onMounted(loadProcesses);
 .dialog-form :deep(.el-select),
 .dialog-form :deep(.el-textarea) {
   width: 100%;
+}
+
+.parameter-section {
+  margin: 4px 0 20px;
+}
+
+.parameter-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.parameter-title {
+  color: #1f2937;
+  font-weight: 600;
+}
+
+.parameter-tip {
+  margin-top: 8px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.parameter-tag {
+  margin: 2px 8px 2px 0;
+}
+
+.file-preview-body {
+  min-height: 520px;
+  max-height: 72vh;
+  overflow: auto;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+}
+
+.pdf-preview {
+  display: block;
+  width: 100%;
+  height: 70vh;
+  border: 0;
+  background: #ffffff;
+}
+
+.image-preview {
+  display: block;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.docx-preview {
+  min-height: 520px;
+  padding: 20px 0;
+}
+
+.docx-preview :deep(.docx-wrapper) {
+  background: #f3f4f6;
 }
 
 .upload-icon {

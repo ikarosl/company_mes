@@ -15,6 +15,7 @@ import type {
   UpdateWorkOrderPayload,
   WorkOrderStatus,
 } from '@company/api-contract';
+import { isProductionProductAttribute } from '@company/api-contract';
 import { DatabaseService, type QueryParam } from '../../database/database.service.js';
 import { AuditContextService } from '../../operation-log/audit-context.service.js';
 import { type PaginationOptions, toPageResult } from '../../shared/request-utils.js';
@@ -290,8 +291,9 @@ export class WorkOrderRepository {
 
   async createOrderBatch(orderId: number, payload: CreateProductionBatchPayload) {
     const order = await this.getOrderRow(orderId);
-    if (!['released', 'doing'].includes(order.status)) {
-      throw new BadRequestException('Only released or doing work orders can assign batches');
+    // 草稿、已下达和生产中都属于未完成工单，可继续拆分生产任务。
+    if (!['draft', 'released', 'doing'].includes(order.status)) {
+      throw new BadRequestException('只能为未完成的工单分配生产批次');
     }
 
     const plannedQuantity = readDecimal(payload.plannedQuantity, 'Invalid batch quantity');
@@ -597,11 +599,11 @@ export class WorkOrderRepository {
       throw new BadRequestException('Product not found or disabled');
     }
     // 工单只能选择成品或半成品，物料类产品只允许进入物料清单和库存批次，不允许直接建生产工单。
-    if (row.product_attribute !== '成品' && row.product_attribute !== '半成品') {
-      throw new BadRequestException('Work order product must be finished or semi-finished');
+    if (!isProductionProductAttribute(row.product_attribute)) {
+      throw new BadRequestException('工单产品必须是成品或半成品');
     }
     if (row.acquire_method !== 'self_made') {
-      throw new BadRequestException('Work order product must be self-made');
+      throw new BadRequestException('工单产品必须是自制产品');
     }
 
     return row;
@@ -762,7 +764,8 @@ export class WorkOrderRepository {
 
   private async refreshOrderStatusByBatches(orderId: number) {
     const order = await this.getOrderRow(orderId);
-    if (!['released', 'doing'].includes(order.status)) {
+    // 草稿工单首次拆分批次后自动进入已下达状态。
+    if (!['draft', 'released', 'doing'].includes(order.status)) {
       return;
     }
 

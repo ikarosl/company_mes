@@ -41,17 +41,17 @@ export class ReworkRepository {
   async list(filters: ReworkFilters, pagination: PaginationOptions) {
     const { where, params } = buildFilters(filters);
     const [count] = await this.database.query<(RowDataPacket & { total:number })[]>(
-      `SELECT COUNT(*) total FROM rework_records rw WHERE ${where}`, params,
+      `SELECT COUNT(*) total FROM v_rework_record_detail rw WHERE ${where}`, params,
     );
     const rows = await this.database.query<ReworkRow[]>(
-      `${this.source()} WHERE ${where} ORDER BY rw.created_at DESC,rw.id DESC LIMIT ? OFFSET ?`,
+      `${this.source()} WHERE ${where} ORDER BY rw.created_at DESC,rw.rework_id DESC LIMIT ? OFFSET ?`,
       [...params,pagination.pageSize,pagination.offset],
     );
     return toPageResult(rows.map(mapRework),Number(count?.total??0),pagination);
   }
 
   async get(id:number) {
-    const [row] = await this.database.query<ReworkRow[]>(`${this.source()} WHERE rw.id=? AND rw.is_deleted=0`,[id]);
+    const [row] = await this.database.query<ReworkRow[]>(`${this.source()} WHERE rw.rework_id=?`,[id]);
     if (!row) throw new NotFoundException('返工记录不存在');
     return mapRework(row);
   }
@@ -162,20 +162,14 @@ export class ReworkRepository {
       AND deleted_at IS NULL LIMIT 1`,[id]);
     if(!row) throw new BadRequestException('返工处理人不存在或已停用');
   }
-  private source(){return `SELECT rw.*,source.inspection_no source_inspection_no,
-    recheck.inspection_no recheck_inspection_no,source.inspection_type,source.result inspection_result,
-    source.disposition inspection_disposition,source.fail_quantity,source.batch_id production_batch_id,
-    pb.batch_no production_batch_no,source.material_batch_id,mb.material_batch_no,p.product_model,p.product_name,
-    ps.step_name,handler.display_name handler_name FROM rework_records rw
-    JOIN inspection_records source ON source.id=rw.source_inspection_id
-    LEFT JOIN inspection_records recheck ON recheck.id=rw.recheck_inspection_id
-    LEFT JOIN production_batches pb ON pb.id=source.batch_id LEFT JOIN material_batches mb ON mb.id=source.material_batch_id
-    LEFT JOIN products p ON p.id=source.product_id_snapshot LEFT JOIN batch_step_records bsr ON bsr.id=source.batch_step_record_id
-    LEFT JOIN process_route_steps prs ON prs.id=bsr.process_route_steps_id LEFT JOIN process_steps ps ON ps.id=prs.process_step_id
-    LEFT JOIN users handler ON handler.id=rw.handler_id`;}
+  /** 返工列表和详情统一读取视图，写入与加锁仍直接操作事实表。 */
+  private source(){return `SELECT rw.rework_id id,rw.*,
+    rw.source_result inspection_result,rw.source_disposition inspection_disposition,
+    rw.source_fail_quantity fail_quantity,rw.batch_id production_batch_id,
+    rw.batch_no production_batch_no FROM v_rework_record_detail rw`;}
 }
 
-const buildFilters=(f:ReworkFilters)=>{const c=['rw.is_deleted=0'],p:QueryParam[]=[];
+const buildFilters=(f:ReworkFilters)=>{const c=['1=1'],p:QueryParam[]=[];
   if(f.status){if(!STATUSES.has(f.status as ReworkStatus))throw new BadRequestException('返工状态无效');c.push('rw.status=?');p.push(f.status)}
   if(f.sourceInspectionId){c.push('rw.source_inspection_id=?');p.push(positiveId(f.sourceInspectionId,'来源检验记录无效'))}
   if(f.handlerId){c.push('rw.handler_id=?');p.push(positiveId(f.handlerId,'处理人无效'))}
