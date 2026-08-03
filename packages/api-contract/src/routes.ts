@@ -36,4 +36,5 @@ export const BUSINESS_API = {
   qualityReworks: '/quality/reworks',
   workerTasks: '/worker/tasks',
   inspectorTasks: '/inspector/tasks',
+  trace: '/trace',
 } as const;

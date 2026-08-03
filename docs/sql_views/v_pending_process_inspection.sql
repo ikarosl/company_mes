@@ -1,4 +1,4 @@
--- 待过程检验任务：由已完成且标记为需要检验的批次工序动态派生，不保存重复任务状态
+-- 待过程检验任务：由已派工且标记为需要检验的批次工序动态派生，不保存重复任务状态
 SET NAMES utf8mb4;
 USE `company_test`;
 
@@ -13,11 +13,23 @@ SELECT
   step.sop_file_id, step.sop_file_name, step.sop_version, step.sop_file_url,
   step.responsible_user_id, step.responsible_user_name, step.output_quantity,
   step.abnormal_quantity,
-  GREATEST(COALESCE(step.output_quantity, 0) - COALESCE(step.abnormal_quantity, 0), 0) AS suggested_inspect_quantity,
+  COALESCE(
+    NULLIF(step.output_quantity, 0),
+    (
+      SELECT GREATEST(COALESCE(previous.output_quantity, 0) - COALESCE(previous.abnormal_quantity, 0), 0)
+      FROM v_batch_step_execution_detail previous
+      WHERE previous.batch_id = step.batch_id
+        AND previous.step_order < step.step_order
+        AND previous.step_status IN ('completed', 'abnormal')
+      ORDER BY previous.step_order DESC, previous.step_record_id DESC
+      LIMIT 1
+    ),
+    step.batch_planned_quantity
+  ) AS suggested_inspect_quantity,
   step.completed_at
 FROM v_batch_step_execution_detail step
 WHERE step.need_inspection = 1
-  AND step.step_status IN ('completed', 'abnormal')
+  AND step.step_status IN ('pending', 'doing', 'completed', 'abnormal')
   AND NOT EXISTS (
     SELECT 1 FROM inspection_records inspection
     WHERE inspection.batch_step_record_id = step.step_record_id

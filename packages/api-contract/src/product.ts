@@ -1,7 +1,5 @@
 import type { ProductionBatchStatus } from './production.js';
 
-import type { ProductionBatchStatus } from './production.js';
-
 /** 产品分类的一级属性：用于区分成品、半成品、物料及其他库存对象。 */
 export type ProductAttribute =
   | 'finished'
@@ -586,8 +584,8 @@ export interface MaterialInboundInspectionPayload {
 export interface MaterialInboundPayload {
   /** 物料产品ID：关联 products.id。 */
   productId: string;
-  /** 物料批次号：作为来料追溯入口。 */
-  materialBatchNo: string;
+  /** 物料批次号：留空时由后端按当天流水规则自动生成。 */
+  materialBatchNo?: string;
   /** 本次入库数量，必须大于0。 */
   quantity: string | number;
   /** 供应商名称快照。 */

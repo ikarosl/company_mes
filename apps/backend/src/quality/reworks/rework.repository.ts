@@ -14,9 +14,11 @@ interface ReworkFilters { keyword?: string; status?: string; sourceInspectionId?
 interface ReworkRow extends RowDataPacket {
   id:number; rework_no:string; source_inspection_id:number; source_inspection_no:string|null;
   recheck_inspection_id:number|null; recheck_inspection_no:string|null; product_identifier:string|null;
+  rework_quantity:string|number|null;
   defect_item:string; defect_desc:string|null; return_step_name:string|null; handler_id:number|null;
+  cause_analysis:string|null; rework_action:string|null; file_url:string|null;
   handler_name:string|null; handling_desc:string|null; status:ReworkStatus; result:ReworkResult;
-  closed_at:Date|null; remark:string|null; inspection_type:InspectionType;
+  started_at:Date|null; completed_at:Date|null; closed_at:Date|null; remark:string|null; inspection_type:InspectionType;
   inspection_result:InspectionResult; inspection_disposition:InspectionDisposition|null;
   fail_quantity:string|number|null; production_batch_id:number|null; production_batch_no:string|null;
   material_batch_id:number|null; material_batch_no:string|null; product_model:string|null;
@@ -60,18 +62,26 @@ export class ReworkRepository {
   async create(payload:CreateReworkPayload,userId:number) {
     const sourceId=positiveId(payload.sourceInspectionId,'来源检验记录无效');
     const defectItem=required(payload.defectItem,'请填写不合格项');
+    const reworkQuantity=positiveQuantity(payload.reworkQuantity,'返工数量必须大于 0');
     const handlerId=nullablePositiveId(payload.handlerId,'返工处理人无效');
     const id=await this.database.transaction(async connection=>{
       const source=await this.lockSource(connection,sourceId);
       if(source.result==='pass'||number(source.fail_quantity)<=0)
         throw new BadRequestException('只有存在不合格数量的检验记录才能创建返工');
+      // 返工数量不能超过来源检验的不合格数量，避免返工事实大于缺陷事实。
+      if(reworkQuantity>number(source.fail_quantity))
+        throw new BadRequestException('返工数量不能超过来源检验的不合格数量');
+      // 来源检验已被 FOR UPDATE 锁定，同一检验的并发请求会串行检查，避免重复生成返工单。
+      const [existing]=await query<(RowDataPacket&{id:number})[]>(connection,
+        `SELECT id FROM rework_records WHERE source_inspection_id=? AND is_deleted=0 LIMIT 1`,[sourceId]);
+      if(existing) throw new BadRequestException('该检验记录已经创建返工单，请勿重复创建');
       if(handlerId) await this.assertUser(connection,handlerId);
       const result=await execute(connection,`INSERT INTO rework_records (
-        rework_no,source_inspection_id,product_identifier,defect_item,defect_desc,return_step_name,
-        handler_id,status,result,remark,created_by,created_at,updated_by,updated_at
-      ) VALUES (?,?,?,?,?,?,?,?,'fail',?,?,NOW(),?,NOW())`,[
-        makeNo('RW'),sourceId,optional(payload.productIdentifier),defectItem,optional(payload.defectDesc),
-        optional(payload.returnStepName),handlerId,handlerId?'doing':'pending',optional(payload.remark),userId,userId,
+        rework_no,source_inspection_id,product_identifier,rework_quantity,defect_item,defect_desc,return_step_name,
+        handler_id,status,result,started_at,remark,created_by,created_at,updated_by,updated_at
+      ) VALUES (?,?,?,?,?,?,?,?,?,'fail',IF(? IS NULL,NULL,NOW()),?,?,NOW(),?,NOW())`,[
+        makeNo('RW'),sourceId,optional(payload.productIdentifier),reworkQuantity,defectItem,optional(payload.defectDesc),
+        optional(payload.returnStepName),handlerId,handlerId?'doing':'pending',handlerId,optional(payload.remark),userId,userId,
       ]);
       await execute(connection,`UPDATE inspection_records SET disposition='rework',updated_by=?,updated_at=NOW()
         WHERE id=? AND is_deleted=0`,[userId,sourceId]);
@@ -84,12 +94,18 @@ export class ReworkRepository {
   async update(id:number,payload:UpdateReworkPayload,userId:number) {
     const before=await this.get(id);
     if(before.status!=='pending') throw new BadRequestException('只有待处理返工单可以编辑');
+    const reworkQuantity=payload.reworkQuantity===undefined
+      ? before.reworkQuantity
+      : positiveQuantity(payload.reworkQuantity,'返工数量必须大于 0');
+    if(reworkQuantity!==null&&reworkQuantity>Number(before.failQuantity??0))
+      throw new BadRequestException('返工数量不能超过来源检验的不合格数量');
     this.auditContext.setBeforeData(before);
     await execute(this.database,`UPDATE rework_records SET product_identifier=?,defect_item=?,defect_desc=?,
-      return_step_name=?,remark=?,updated_by=?,updated_at=NOW() WHERE id=? AND is_deleted=0`,[
+      rework_quantity=?,return_step_name=?,remark=?,updated_by=?,updated_at=NOW() WHERE id=? AND is_deleted=0`,[
       payload.productIdentifier===undefined?before.productIdentifier:optional(payload.productIdentifier),
       payload.defectItem===undefined?before.defectItem:required(payload.defectItem,'请填写不合格项'),
       payload.defectDesc===undefined?before.defectDesc:optional(payload.defectDesc),
+      reworkQuantity,
       payload.returnStepName===undefined?before.returnStepName:optional(payload.returnStepName),
       payload.remark===undefined?before.remark:optional(payload.remark),userId,id,
     ]);
@@ -102,7 +118,8 @@ export class ReworkRepository {
     const before=await this.get(id);
     if(!['pending','doing'].includes(before.status)) throw new BadRequestException('当前返工状态不允许分配处理人');
     await this.assertUser(this.database,handlerId); this.auditContext.setBeforeData(before);
-    await execute(this.database,`UPDATE rework_records SET handler_id=?,status='doing',updated_by=?,updated_at=NOW()
+    await execute(this.database,`UPDATE rework_records SET handler_id=?,status='doing',
+      started_at=COALESCE(started_at,NOW()),updated_by=?,updated_at=NOW()
       WHERE id=? AND is_deleted=0`,[handlerId,userId,id]);
     const after=await this.get(id); this.auditContext.setAfterData(after); return after;
   }
@@ -112,11 +129,16 @@ export class ReworkRepository {
     const before=await this.get(id);
     if(before.status!=='doing') throw new BadRequestException('只有处理中的返工单可以提交结果');
     if(!before.handlerId) throw new BadRequestException('请先分配返工处理人');
-    const result=readResult(payload.result),handlingDesc=required(payload.handlingDesc,'请填写返工处理说明');
+    const result=readResult(payload.result);
+    const causeAnalysis=required(payload.causeAnalysis,'请填写原因分析');
+    const reworkAction=required(payload.reworkAction,'请填写返工措施');
+    const fileUrl=required(payload.fileUrl,'请上传返工文件');
+    const handlingDesc=required(payload.handlingDesc,'请填写返工处理说明');
     this.auditContext.setBeforeData(before);
-    await execute(this.database,`UPDATE rework_records SET handling_desc=?,result=?,status='wait_recheck',
+    await execute(this.database,`UPDATE rework_records SET cause_analysis=?,rework_action=?,file_url=?,
+      handling_desc=?,result=?,status='wait_recheck',completed_at=NOW(),
       remark=COALESCE(?,remark),updated_by=?,updated_at=NOW() WHERE id=? AND is_deleted=0`,
-      [handlingDesc,result,optional(payload.remark),userId,id]);
+      [causeAnalysis,reworkAction,fileUrl,handlingDesc,result,optional(payload.remark),userId,id]);
     const after=await this.get(id); this.auditContext.setAfterData(after); return after;
   }
 
@@ -175,8 +197,8 @@ const buildFilters=(f:ReworkFilters)=>{const c=['1=1'],p:QueryParam[]=[];
   if(f.handlerId){c.push('rw.handler_id=?');p.push(positiveId(f.handlerId,'处理人无效'))}
   if(f.keyword?.trim()){const l=`%${f.keyword.trim()}%`;c.push('(rw.rework_no LIKE ? OR rw.defect_item LIKE ? OR rw.defect_desc LIKE ? OR rw.product_identifier LIKE ?)');p.push(l,l,l,l)}
   return{where:c.join(' AND '),params:p};};
-const mapRework=(r:ReworkRow):ReworkListItem=>({id:String(r.id),reworkNo:r.rework_no,sourceInspectionId:String(r.source_inspection_id),sourceInspectionNo:r.source_inspection_no,recheckInspectionId:nullableString(r.recheck_inspection_id),recheckInspectionNo:r.recheck_inspection_no,productIdentifier:r.product_identifier,defectItem:r.defect_item,defectDesc:r.defect_desc,returnStepName:r.return_step_name,handlerId:nullableString(r.handler_id),handlerName:r.handler_name,handlingDesc:r.handling_desc,status:r.status,result:r.result,closedAt:r.closed_at?.toISOString()??null,remark:r.remark,inspectionType:r.inspection_type,inspectionResult:r.inspection_result,inspectionDisposition:r.inspection_disposition,failQuantity:nullableNumber(r.fail_quantity),productionBatchId:nullableString(r.production_batch_id),productionBatchNo:r.production_batch_no,materialBatchId:nullableString(r.material_batch_id),materialBatchNo:r.material_batch_no,productModel:r.product_model,productName:r.product_name,stepName:r.step_name,createdAt:r.created_at.toISOString(),updatedAt:r.updated_at?.toISOString()??null});
-const normalizeRecheck=(p:CreateReworkRecheckPayload,userId:number)=>{const iq=nonNegative(p.inspectQuantity,'检验数量'),pq=nonNegative(p.passQuantity,'合格数量'),fq=nonNegative(p.failQuantity,'不合格数量');if(iq<=0||Math.abs(pq+fq-iq)>.00005)throw new BadRequestException('检验数量必须大于0，且等于合格数量与不合格数量之和');const expected:InspectionResult=fq===0?'pass':pq===0?'fail':'partial_pass';if(p.result!==expected)throw new BadRequestException('检验结果与合格/不合格数量不一致');const allowed:Record<InspectionResult,InspectionDisposition[]>={pass:['accept'],partial_pass:['conditional_accept','rework','scrap','hold'],fail:['reject','rework','scrap','return_supplier','hold']};const disposition=p.disposition??(expected==='pass'?'accept':expected==='fail'?'reject':'conditional_accept');if(!allowed[expected].includes(disposition))throw new BadRequestException('检验结果与处置方式不一致');return{inspectionName:optional(p.inspectionName)??'返工复检',inspectQuantity:iq,passQuantity:pq,failQuantity:fq,result:expected,disposition,inspectorId:p.inspectorId?positiveId(p.inspectorId,'检验人员无效'):userId,inspectedAt:optional(p.inspectedAt),fileUrl:optional(p.fileUrl),resultSummary:optional(p.resultSummary),remark:optional(p.remark)}};
+const mapRework=(r:ReworkRow):ReworkListItem=>({id:String(r.id),reworkNo:r.rework_no,sourceInspectionId:String(r.source_inspection_id),sourceInspectionNo:r.source_inspection_no,recheckInspectionId:nullableString(r.recheck_inspection_id),recheckInspectionNo:r.recheck_inspection_no,productIdentifier:r.product_identifier,reworkQuantity:nullableNumber(r.rework_quantity),defectItem:r.defect_item,defectDesc:r.defect_desc,returnStepName:r.return_step_name,causeAnalysis:r.cause_analysis,reworkAction:r.rework_action,fileUrl:r.file_url,handlerId:nullableString(r.handler_id),handlerName:r.handler_name,handlingDesc:r.handling_desc,status:r.status,result:r.result,startedAt:r.started_at?.toISOString()??null,completedAt:r.completed_at?.toISOString()??null,closedAt:r.closed_at?.toISOString()??null,remark:r.remark,inspectionType:r.inspection_type,inspectionResult:r.inspection_result,inspectionDisposition:r.inspection_disposition,failQuantity:nullableNumber(r.fail_quantity),productionBatchId:nullableString(r.production_batch_id),productionBatchNo:r.production_batch_no,materialBatchId:nullableString(r.material_batch_id),materialBatchNo:r.material_batch_no,productModel:r.product_model,productName:r.product_name,stepName:r.step_name,createdAt:r.created_at.toISOString(),updatedAt:r.updated_at?.toISOString()??null});
+const normalizeRecheck=(p:CreateReworkRecheckPayload,userId:number)=>{const iq=nonNegative(p.inspectQuantity,'检验数量'),pq=nonNegative(p.passQuantity,'合格数量'),fq=nonNegative(p.failQuantity,'不合格数量');if(iq<=0||Math.abs(pq+fq-iq)>.00005)throw new BadRequestException('检验数量必须大于0，且等于合格数量与不合格数量之和');const expected:InspectionResult=fq===0?'pass':pq===0?'fail':'partial_pass';if(p.result!==expected)throw new BadRequestException('检验结果与合格/不合格数量不一致');const allowed:Record<InspectionResult,InspectionDisposition[]>={pass:['accept'],partial_pass:['conditional_accept','rework','scrap','hold'],fail:['reject','rework','scrap','return_supplier','hold']};const disposition=p.disposition??(expected==='pass'?'accept':expected==='fail'?'reject':'conditional_accept');if(!allowed[expected].includes(disposition))throw new BadRequestException('检验结果与处置方式不一致');return{inspectionName:optional(p.inspectionName)??'返工复检',inspectQuantity:iq,passQuantity:pq,failQuantity:fq,result:expected,disposition,inspectorId:p.inspectorId?positiveId(p.inspectorId,'检验人员无效'):userId,inspectedAt:optional(p.inspectedAt),fileUrl:required(p.fileUrl,'请上传复检文件'),resultSummary:optional(p.resultSummary),remark:optional(p.remark)}};
 const readResult=(v:string)=>{if(!RESULTS.has(v as ReworkResult))throw new BadRequestException('返工结果无效');return v as ReworkResult};
 const positiveId=(v:unknown,m:string)=>{const n=Number(v);if(!Number.isInteger(n)||n<=0)throw new BadRequestException(m);return n};
 const nullablePositiveId=(v:unknown,m:string)=>v===null||v===undefined||v===''?null:positiveId(v,m);
@@ -184,4 +206,6 @@ const required=(v:unknown,m:string)=>{const s=typeof v==='string'?v.trim():'';if
 const optional=(v:unknown)=>typeof v==='string'&&v.trim()?v.trim():null; const number=(v:unknown)=>Number(v??0);
 const nonNegative=(v:unknown,l:string)=>{const n=Number(v);if(!Number.isFinite(n)||n<0)throw new BadRequestException(`${l}必须是非负数`);return Number(n.toFixed(4))};
 const nullableString=(v:number|null)=>v===null?null:String(v);const nullableNumber=(v:string|number|null)=>v===null?null:Number(v);
+/** 返工数量必须为正数，避免创建无实际处理数量的返工单。 */
+const positiveQuantity=(value:unknown,message:string)=>{const parsed=Number(value);if(!Number.isFinite(parsed)||parsed<=0)throw new BadRequestException(message);return parsed;};
 const makeNo=(prefix:string)=>{const d=new Date(),z=(n:number,l=2)=>String(n).padStart(l,'0');return `${prefix}${d.getFullYear()}${z(d.getMonth()+1)}${z(d.getDate())}${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}${z(d.getMilliseconds(),3)}${z(Math.floor(Math.random()*1000),3)}`};

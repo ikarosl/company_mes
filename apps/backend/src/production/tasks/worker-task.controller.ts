@@ -31,6 +31,13 @@ export class WorkerTaskController {
     );
   }
 
+  /** 查询当前员工可见任务关联的产品选项，仅用于“我的任务”筛选。 */
+  @RequirePermission(PERMISSIONS.worker.tasks.view)
+  @Get('product-options')
+  listProductOptions(@CurrentUser('id') userId: string) {
+    return this.tasks.listWorkerTaskProductOptions(userId);
+  }
+
   @RequirePermission(PERMISSIONS.worker.tasks.detail)
   @Get(':id')
   getTask(@CurrentUser('id') userId: string, @Param('id') id: string) {

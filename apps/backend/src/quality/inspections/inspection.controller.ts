@@ -1,6 +1,7 @@
 import type { CreateInspectionPayload, CreateReworkPayload, UpdateInspectionPayload } from '@company/api-contract';
 import { PERMISSIONS } from '@company/constants';
-import { Body, Controller, Get, Inject, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, Post, Put, Query, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { CurrentUser } from '../../auth/current-user.decorator.js';
 import { PermissionGuard } from '../../auth/permission.guard.js';
 import { RequirePermission } from '../../auth/require-permission.decorator.js';
@@ -8,6 +9,7 @@ import { Audit } from '../../operation-log/audit.decorator.js';
 import { readId, readPagination } from '../../shared/request-utils.js';
 import { InspectionRepository } from './inspection.repository.js';
 import { ReworkRepository } from '../reworks/rework.repository.js';
+import { saveInspectionFile, type UploadedInspectionFile } from './inspection-file.storage.js';
 
 @UseGuards(PermissionGuard)
 @Controller('quality/inspections')
@@ -42,6 +44,14 @@ export class InspectionController {
     @Query('keyword') keyword?: string,
   ) {
     return this.inspections.listTargets(targetType, batchId, keyword);
+  }
+
+  /** 上传检验附件到后端本地目录，返回可写入检验记录的访问地址。 */
+  @RequirePermission(PERMISSIONS.quality.inspections.uploadFile)
+  @Post('files')
+  @UseInterceptors(FileInterceptor('file'))
+  uploadFile(@UploadedFile() file: UploadedInspectionFile) {
+    return saveInspectionFile(file);
   }
 
   @RequirePermission(PERMISSIONS.quality.inspections.detail)

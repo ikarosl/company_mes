@@ -29,6 +29,16 @@
             <el-option v-for="user in userOptions" :key="user.id" :label="user.displayName" :value="user.id" />
           </el-select>
         </el-form-item>
+        <el-form-item label="质量等级">
+          <el-select v-model="query.qualityLevel" clearable placeholder="全部">
+            <el-option
+              v-for="item in qualityLevelOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="query.status" placeholder="全部">
             <el-option label="全部" value="" />
@@ -50,7 +60,7 @@
         </el-tooltip>
       </div>
 
-      <el-table v-loading="loading" :data="orders" class="orders-table">
+      <el-table v-loading="loading" :data="orders" class="orders-table" :row-class-name="getOrderRowClassName">
         <el-table-column label="工单号" min-width="160">
           <template #default="{ row }">
             <span class="order-no">{{ row.orderNo }}</span>
@@ -60,6 +70,13 @@
           <template #default="{ row }">
             <div class="product-name">{{ row.productName }}</div>
             <div class="sub-text">{{ row.productModel }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="质量等级" width="120">
+          <template #default="{ row }">
+            <el-tag :type="getQualityLevelMeta(row.qualityLevel).type" effect="light">
+              {{ getQualityLevelMeta(row.qualityLevel).label }}
+            </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="数量" width="150" align="right">
@@ -84,7 +101,12 @@
           </template>
         </el-table-column>
         <el-table-column label="计划完成" width="120">
-          <template #default="{ row }">{{ row.planEndDate || '-' }}</template>
+          <template #default="{ row }">
+            <div>{{ row.planEndDate || '未设置' }}</div>
+            <el-tag :type="getOrderDeliveryMeta(row).type" effect="light" size="small">
+              {{ getOrderDeliveryMeta(row).label }}
+            </el-tag>
+          </template>
         </el-table-column>
         <el-table-column label="操作" width="310" fixed="right">
           <template #default="{ row }">
@@ -105,28 +127,14 @@
         </el-table-column>
       </el-table>
 
-      <div class="table-footer">
-        <span class="total-text">共 {{ total }} 条</span>
-        <el-select v-model="pageSize" class="page-size" @change="handlePageSizeChange">
-          <el-option label="10条/页" :value="10" />
-          <el-option label="20条/页" :value="20" />
-          <el-option label="50条/页" :value="50" />
-        </el-select>
-        <el-pagination
-          v-model:current-page="currentPage"
-          :page-size="pageSize"
-          :total="total"
-          layout="prev, pager, next, jumper"
-          @current-change="loadOrders"
-        />
-      </div>
+      <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total="total" @change="loadOrders" />
     </section>
 
     <el-dialog v-model="orderDialogVisible" :title="editingOrderId ? '编辑工单' : '新增工单'" :width="DialogWidth.lg">
       <el-form class="dialog-form" label-width="108px" :model="orderForm">
         <div class="form-grid">
           <el-form-item label="工单号" required>
-            <el-input v-model="orderForm.orderNo" placeholder="请输入工单号" />
+            <el-input v-model="orderForm.orderNo" placeholder="留空自动生成，如 GD-20260729001" />
           </el-form-item>
           <el-form-item label="产品" required>
             <OrderProductSelect
@@ -147,6 +155,16 @@
           <el-form-item label="负责人">
             <el-select v-model="orderForm.ownerId" clearable filterable placeholder="请选择负责人">
               <el-option v-for="user in userOptions" :key="user.id" :label="user.displayName" :value="user.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="质量等级">
+            <el-select v-model="orderForm.qualityLevel" clearable placeholder="请选择质量等级">
+              <el-option
+                v-for="item in qualityLevelOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
             </el-select>
           </el-form-item>
           <el-form-item label="计划开始">
@@ -176,9 +194,19 @@
           <el-descriptions-item label="已分配">{{ formatQuantity(activeOrder.assignedQuantity) }}</el-descriptions-item>
           <el-descriptions-item label="客户订单号">{{ activeOrder.customerOrderNo || '-' }}</el-descriptions-item>
           <el-descriptions-item label="客户名称">{{ activeOrder.customerName || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="质量等级">
+            <el-tag :type="getQualityLevelMeta(activeOrder.qualityLevel).type" effect="light">
+              {{ getQualityLevelMeta(activeOrder.qualityLevel).label }}
+            </el-tag>
+          </el-descriptions-item>
           <el-descriptions-item label="负责人">{{ activeOrder.ownerName || '-' }}</el-descriptions-item>
           <el-descriptions-item label="状态">{{ getOrderStatusMeta(activeOrder.status).label }}</el-descriptions-item>
           <el-descriptions-item label="计划完成">{{ activeOrder.planEndDate || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="交期状态">
+            <el-tag :type="getOrderDeliveryMeta(activeOrder).type" effect="light">
+              {{ getOrderDeliveryMeta(activeOrder).label }}
+            </el-tag>
+          </el-descriptions-item>
           <el-descriptions-item label="备注" :span="3">{{ activeOrder.remark || '-' }}</el-descriptions-item>
         </el-descriptions>
 
@@ -300,6 +328,7 @@ import type {
   SystemUserListItem,
   WorkOrderDetail,
   WorkOrderListItem,
+  WorkOrderQualityLevel,
   WorkOrderStatus,
 } from '@company/api-contract';
 import { productApi } from '../../api/product';
@@ -308,6 +337,8 @@ import { systemApi } from '../../api/system';
 import OrderProductSelect from '../../components/business/OrderProductSelect.vue';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
+import { getDeliveryMeta } from '../../utils/delivery';
+import TablePagination from '../../components/common/TablePagination.vue';
 
 const orderStatusOptions: Array<{ value: WorkOrderStatus; label: string; type: 'info' | 'primary' | 'success' | 'warning' | 'danger' }> = [
   { value: 'draft', label: '草稿', type: 'info' },
@@ -316,6 +347,17 @@ const orderStatusOptions: Array<{ value: WorkOrderStatus; label: string; type: '
   { value: 'completed', label: '已完工', type: 'success' },
   { value: 'closed', label: '已关闭', type: 'info' },
   { value: 'cancelled', label: '已取消', type: 'danger' },
+];
+
+/** 工单质量等级选项：与数据库 quality_level 字典值保持一致。 */
+const qualityLevelOptions: Array<{
+  value: WorkOrderQualityLevel;
+  label: string;
+  type: 'danger' | 'warning' | 'info';
+}> = [
+  { value: 'military_grade', label: '军品级', type: 'danger' },
+  { value: 'standard_military_grade', label: '准军品级', type: 'warning' },
+  { value: 'industrial_grade', label: '工业级', type: 'info' },
 ];
 
 const batchStatusOptions: Array<{ value: ProductionBatchStatus; label: string; type: 'info' | 'primary' | 'success' | 'danger' }> = [
@@ -354,6 +396,7 @@ const query = reactive({
   customerName: '',
   productId: '',
   ownerId: '',
+  qualityLevel: '' as WorkOrderQualityLevel | '',
   status: '',
 });
 const orderForm = reactive({
@@ -363,6 +406,7 @@ const orderForm = reactive({
   customerOrderNo: '',
   customerName: '',
   ownerId: '',
+  qualityLevel: '' as WorkOrderQualityLevel | '',
   planStartDate: '',
   planEndDate: '',
   remark: '',
@@ -407,6 +451,7 @@ const loadOrders = async () => {
       customerName: query.customerName,
       productId: query.productId,
       ownerId: query.ownerId,
+      qualityLevel: query.qualityLevel || undefined,
       status: query.status,
     });
     orders.value = page.items;
@@ -449,6 +494,7 @@ const resetQuery = async () => {
     customerName: '',
     productId: '',
     ownerId: '',
+    qualityLevel: '',
     status: '',
   });
   currentPage.value = 1;
@@ -468,6 +514,7 @@ const resetOrderForm = () => {
     customerOrderNo: '',
     customerName: '',
     ownerId: '',
+    qualityLevel: '',
     planStartDate: '',
     planEndDate: '',
     remark: '',
@@ -489,6 +536,7 @@ const openEdit = (row: WorkOrderListItem) => {
     customerOrderNo: row.customerOrderNo ?? '',
     customerName: row.customerName ?? '',
     ownerId: row.ownerId ?? '',
+    qualityLevel: row.qualityLevel ?? '',
     planStartDate: row.planStartDate ?? '',
     planEndDate: row.planEndDate ?? '',
     remark: row.remark ?? '',
@@ -499,8 +547,8 @@ const openEdit = (row: WorkOrderListItem) => {
 const handleOrderProductChange = () => {};
 
 const submitOrder = async () => {
-  if (!orderForm.orderNo.trim() || !orderForm.productId || orderForm.plannedQuantity <= 0) {
-    EMessage.warning('请填写工单号、产品和计划数量');
+  if (!orderForm.productId || orderForm.plannedQuantity <= 0) {
+    EMessage.warning('请选择产品并填写正确的计划数量');
     return;
   }
 
@@ -513,6 +561,7 @@ const submitOrder = async () => {
       customerOrderNo: orderForm.customerOrderNo || null,
       customerName: orderForm.customerName || null,
       ownerId: orderForm.ownerId || null,
+      qualityLevel: orderForm.qualityLevel || null,
       planStartDate: orderForm.planStartDate || null,
       planEndDate: orderForm.planEndDate || null,
       remark: orderForm.remark,
@@ -656,7 +705,19 @@ const canEditOrder = (row: WorkOrderListItem) => ['draft', 'released'].includes(
 const canCloseOrder = (row: WorkOrderListItem) => ['released', 'completed'].includes(row.status);
 const canCancelOrder = (row: WorkOrderListItem) => ['draft', 'released', 'doing'].includes(row.status);
 const getOrderStatusMeta = (status: WorkOrderStatus) => orderStatusOptions.find((item) => item.value === status) ?? orderStatusOptions[0];
+/** 未设置质量等级的历史工单统一显示“未设置”，避免页面出现空白。 */
+const getQualityLevelMeta = (qualityLevel: WorkOrderQualityLevel | null) =>
+  qualityLevelOptions.find((item) => item.value === qualityLevel) ?? {
+    label: '未设置',
+    type: 'info' as const,
+  };
 const getBatchStatusMeta = (status: ProductionBatchStatus) => batchStatusOptions.find((item) => item.value === status) ?? batchStatusOptions[0];
+/** 工单交期完成、关闭或取消后不再触发逾期告警。 */
+const getOrderDeliveryMeta = (row: Pick<WorkOrderListItem, 'planEndDate' | 'status'>) =>
+  getDeliveryMeta(row.planEndDate, row.status, ['completed', 'closed', 'cancelled']);
+/** 将逾期、今日到期和 3 天内到期的工单行轻量高亮。 */
+const getOrderRowClassName = ({ row }: { row: WorkOrderListItem }) =>
+  getOrderDeliveryMeta(row).urgent ? 'delivery-urgent-row' : '';
 /** 路线名称附带版本号，避免同名不同版本在批次选择时无法区分。 */
 const formatRoute = (route: ProcessRouteListItem) =>
   `${route.routeName}${route.version ? ` / ${route.version}` : ''}`;
@@ -737,6 +798,14 @@ onMounted(loadPageData);
 
 .orders-table :deep(.el-table__row) {
   height: 56px;
+}
+
+.orders-table :deep(.delivery-urgent-row > td.el-table__cell) {
+  background: #fff7ed;
+}
+
+.orders-table :deep(.delivery-urgent-row:hover > td.el-table__cell) {
+  background: #ffedd5 !important;
 }
 
 .order-no,

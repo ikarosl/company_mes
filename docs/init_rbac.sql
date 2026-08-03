@@ -305,3 +305,15 @@ UNLOCK TABLES;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
 -- Dump completed on 2026-06-17 11:32:35
+
+-- 全流程追溯权限：只读聚合现有生产、质量和库存事实。
+SET NAMES utf8mb4;
+INSERT INTO `permissions` (`id`,`parent_id`,`name`,`code`,`type`,`route_path`,`api_method`,`api_path`,`sort_order`,`status`)
+VALUES
+  (260,0,'追溯中心','trace:page','page','/trace/full','GET','/trace/search',800,1),
+  (261,260,'查看全流程追溯','trace:view','api',NULL,'GET','/trace/batches/{id}',801,1)
+ON DUPLICATE KEY UPDATE `name`=VALUES(`name`),`parent_id`=VALUES(`parent_id`),`route_path`=VALUES(`route_path`),`api_method`=VALUES(`api_method`),`api_path`=VALUES(`api_path`),`status`=1;
+
+-- 默认管理员角色获得追溯页面和详情权限，其他角色由权限管理页面按需分配。
+INSERT IGNORE INTO `role_permissions` (`role_id`,`permission_id`,`created_at`)
+VALUES (1,260,NOW()),(1,261,NOW());

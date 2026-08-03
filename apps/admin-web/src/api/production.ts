@@ -15,6 +15,7 @@ import {
   type UpdateBatchStepRecordPayload,
   type UpdateProductionBatchPayload,
   type WorkerTaskItem,
+  type WorkerTaskProductOption,
   type UpdateWorkOrderPayload,
   type WorkOrderDetail,
   type WorkOrderListItem,
@@ -104,6 +105,12 @@ export const productionApi = {
       url: BUSINESS_API.workerTasks,
       method: 'GET',
       params,
+    }),
+  /** 查询当前员工任务关联的产品筛选项，不读取产品管理完整列表。 */
+  listWorkerTaskProductOptions: () =>
+    requestData<WorkerTaskProductOption[]>({
+      url: `${BUSINESS_API.workerTasks}/product-options`,
+      method: 'GET',
     }),
   getWorkerTask: (id: string) =>
     requestData<ProductionTaskDetail>({

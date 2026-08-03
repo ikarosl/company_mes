@@ -88,16 +88,7 @@
         </el-table-column>
       </el-table>
 
-      <div class="footer">
-        <span>共 {{ total }} 条</span>
-        <el-pagination
-          :current-page="page"
-          :page-size="pageSize"
-          :total="total"
-          layout="prev, pager, next"
-          @current-change="changePage"
-        />
-      </div>
+      <TablePagination v-model:page="page" v-model:page-size="pageSize" :total="total" @change="loadRows" />
     </section>
 
     <el-dialog
@@ -122,8 +113,8 @@
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="物料批次号" required>
-            <el-input v-model="inboundForm.materialBatchNo" />
+          <el-form-item label="物料批次号">
+            <el-input v-model="inboundForm.materialBatchNo" placeholder="留空自动生成，如 WL-20260729001" />
           </el-form-item>
           <el-form-item label="供应商">
             <el-input v-model="inboundForm.supplierName" />
@@ -261,6 +252,7 @@ import { productApi } from "../../api/product";
 import { warehouseApi } from "../../api/warehouse";
 import { DialogWidth } from "../../utils/dialog";
 import { EMessage } from "../../utils/message";
+import TablePagination from "../../components/common/TablePagination.vue";
 
 /**
  * 统一整合物料批次入库记录与逐次领料、退料流水。
@@ -396,11 +388,9 @@ const syncFlowQuantity = () => {
 /** 物料入库：检验记录与唯一物料批次由后端在同一事务内创建。 */
 const submitInbound = async () => {
   if (
-    !inboundForm.productId ||
-    !inboundForm.materialBatchNo.trim() ||
-    inboundForm.quantity <= 0
+    !inboundForm.productId || inboundForm.quantity <= 0
   )
-    return EMessage.warning("请完整填写物料、批次号和入库数量");
+    return EMessage.warning("请选择物料并填写正确的入库数量");
   submitting.value = true;
   try {
     const result = inboundInspectionResult.value;

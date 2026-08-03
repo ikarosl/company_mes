@@ -25,12 +25,13 @@ export class WorkOrderController {
     @Query('customerName') customerName?: string,
     @Query('productId') productId?: string,
     @Query('status') status?: string,
+    @Query('qualityLevel') qualityLevel?: string,
     @Query('ownerId') ownerId?: string,
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
   ) {
     return this.orders.listOrders(
-      { keyword, customerOrderNo, customerName, productId, status, ownerId },
+      { keyword, customerOrderNo, customerName, productId, status, qualityLevel, ownerId },
       readPagination(page, pageSize),
     );
   }

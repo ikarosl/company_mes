@@ -14,6 +14,10 @@ import type {
 import { DatabaseService, type QueryParam } from '../../database/database.service.js';
 import { AuditContextService } from '../../operation-log/audit-context.service.js';
 import { execute, query } from '../../shared/repository.helpers.js';
+import {
+  BUSINESS_NUMBER_PREFIX,
+  generateDailyBusinessNumber,
+} from '../../shared/business-number.js';
 import { type PaginationOptions, toPageResult } from '../../shared/request-utils.js';
 
 interface FinishedTransactionFilters {
@@ -663,33 +667,19 @@ export class FinishedTransactionRepository {
   }
 
   private async generateInventoryBatchNo(connection: PoolConnection) {
-    const dateText = compactDate();
-    const [row] = await query<(RowDataPacket & { total: number })[]>(
-      connection,
-      `
-      SELECT COUNT(*) AS total
-      FROM product_inventory_batches
-      WHERE inventory_batch_no LIKE ? AND is_deleted = 0
-      `,
-      [`PIB-${dateText}-%`],
-    );
-
-    return `PIB-${dateText}-${String(Number(row?.total ?? 0) + 1).padStart(3, '0')}`;
+    return generateDailyBusinessNumber(connection, {
+      prefix: BUSINESS_NUMBER_PREFIX.productInventoryBatch,
+      table: 'product_inventory_batches',
+      column: 'inventory_batch_no',
+    });
   }
 
   private async generateFlowNo(connection: PoolConnection) {
-    const dateText = compactDate();
-    const [row] = await query<(RowDataPacket & { total: number })[]>(
-      connection,
-      `
-      SELECT COUNT(*) AS total
-      FROM product_flow_records
-      WHERE flow_no LIKE ? AND is_deleted = 0
-      `,
-      [`PFR-${dateText}-%`],
-    );
-
-    return `PFR-${dateText}-${String(Number(row?.total ?? 0) + 1).padStart(3, '0')}`;
+    return generateDailyBusinessNumber(connection, {
+      prefix: BUSINESS_NUMBER_PREFIX.productFlow,
+      table: 'product_flow_records',
+      column: 'flow_no',
+    });
   }
 
   private async getInventoryAuditSnapshot(inventoryId: number) {
@@ -871,8 +861,6 @@ const today = () => {
   const date = new Date();
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 };
-
-const compactDate = () => today().replace(/-/g, '');
 
 const formatDate = (value: Date) => value.toISOString().slice(0, 10);
 

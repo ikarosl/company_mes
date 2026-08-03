@@ -11,8 +11,10 @@ SELECT rw.id rework_id,rw.rework_no,rw.source_inspection_id,source.inspection_no
   source.material_batch_id,source.material_batch_no,source.product_inventory_id,source.inventory_batch_no,
   source.batch_step_record_id,source.route_step_id,source.step_order,source.process_step_id,source.step_code,source.step_name,
   source.product_id,source.product_code,source.product_model,source.product_name,
-  rw.product_identifier,rw.defect_item,rw.defect_desc,rw.return_step_name,
-  rw.handler_id,handler.display_name handler_name,rw.handling_desc,rw.status,rw.result,rw.closed_at,rw.remark,
+  rw.product_identifier,rw.rework_quantity,rw.defect_item,rw.defect_desc,rw.return_step_name,
+  rw.cause_analysis,rw.rework_action,rw.file_url,
+  rw.handler_id,handler.display_name handler_name,rw.handling_desc,rw.status,rw.result,
+  rw.started_at,rw.completed_at,rw.closed_at,rw.remark,
   rw.created_by,rw.created_at,rw.updated_by,rw.updated_at
 FROM rework_records rw
 INNER JOIN v_inspection_record_detail source ON source.inspection_id=rw.source_inspection_id

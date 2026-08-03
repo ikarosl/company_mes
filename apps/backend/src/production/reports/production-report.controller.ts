@@ -35,7 +35,7 @@ export class ProductionReportController {
   @RequirePermission(PERMISSIONS.production.reports.finish)
   @Audit({
     module: 'production',
-    action: '修正报工数量',
+    action: '修正报工数据',
     targetType: 'batch_step_record',
     targetParams: { productionBatchId: 'batchId', stepRecordId: 'recordId' },
   })
@@ -45,7 +45,9 @@ export class ProductionReportController {
     @Param('recordId') recordId: string,
     @Body() body: UpdateBatchStepRecordPayload,
   ) {
-    // 报工页只暴露数量和备注修正；仓库层会保留未传字段并校验状态流转与数量格式。
-    return this.tasks.updateStepRecord(readId(batchId), readId(recordId), body);
+    // 管理端允许修正数量、重要参数和备注；仓库层统一校验状态流转、数量及参数完整性。
+    return this.tasks.updateStepRecord(readId(batchId), readId(recordId), body, {
+      allowTerminalCorrection: true,
+    });
   }
 }

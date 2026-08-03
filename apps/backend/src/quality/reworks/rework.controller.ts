@@ -1,12 +1,14 @@
 import type { AssignReworkHandlerPayload, CreateReworkPayload, CreateReworkRecheckPayload, SubmitReworkResultPayload, UpdateReworkPayload } from '@company/api-contract';
 import { PERMISSIONS } from '@company/constants';
-import { Body, Controller, Get, Inject, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, Post, Put, Query, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { CurrentUser } from '../../auth/current-user.decorator.js';
 import { PermissionGuard } from '../../auth/permission.guard.js';
 import { RequirePermission } from '../../auth/require-permission.decorator.js';
 import { Audit } from '../../operation-log/audit.decorator.js';
 import { readId, readPagination } from '../../shared/request-utils.js';
 import { ReworkRepository } from './rework.repository.js';
+import { saveInspectionFile, type UploadedInspectionFile } from '../inspections/inspection-file.storage.js';
 
 @UseGuards(PermissionGuard)
 @Controller('quality/reworks')
@@ -15,6 +17,11 @@ export class ReworkController {
   @RequirePermission(PERMISSIONS.quality.reworks.view)
   @Get()
   list(@Query('keyword') keyword?:string,@Query('status') status?:string,@Query('sourceInspectionId') sourceInspectionId?:string,@Query('handlerId') handlerId?:string,@Query('page') page?:string,@Query('pageSize') pageSize?:string){return this.reworks.list({keyword,status,sourceInspectionId,handlerId},readPagination(page,pageSize));}
+  /** 上传返工报告或现场照片，使用返工结果提交权限。 */
+  @RequirePermission(PERMISSIONS.quality.reworks.submitResult)
+  @Post('files')
+  @UseInterceptors(FileInterceptor('file'))
+  uploadFile(@UploadedFile() file:UploadedInspectionFile){return saveInspectionFile(file);}
   @RequirePermission(PERMISSIONS.quality.reworks.detail)
   @Get(':id') get(@Param('id') id:string){return this.reworks.get(readId(id));}
   @RequirePermission(PERMISSIONS.quality.reworks.create)

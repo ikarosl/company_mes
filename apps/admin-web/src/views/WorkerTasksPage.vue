@@ -33,7 +33,12 @@
         </div>
       </div>
 
-      <el-table v-loading="loading" :data="tasks" class="tasks-table">
+      <el-table
+        v-loading="loading"
+        :data="tasks"
+        class="tasks-table"
+        :row-class-name="getTaskRowClassName"
+      >
         <el-table-column label="生产批次号" min-width="170">
           <template #default="{ row }"><span class="batch-no">{{ row.batchNo }}</span></template>
         </el-table-column>
@@ -49,12 +54,33 @@
             <div class="sub-text">{{ row.productModel }}</div>
           </template>
         </el-table-column>
+        <el-table-column label="工艺文件" min-width="190">
+          <template #default="{ row }">
+            <el-link
+              v-if="row.sopFileUrl"
+              type="primary"
+              :underline="false"
+              @click="viewProcessFile(row.sopFileName, row.sopFileUrl)"
+            >
+              {{ row.sopFileName || '在线查看' }}
+            </el-link>
+            <span v-else class="sub-text">未配置</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="交期" width="155">
+          <template #default="{ row }">
+            <div>{{ row.planEndDate || '未设置' }}</div>
+            <el-tag :type="getTaskDeliveryMeta(row).type" effect="light" size="small">
+              {{ getTaskDeliveryMeta(row).label }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="计划数量" width="110" align="right">
           <template #default="{ row }">{{ formatQuantity(row.plannedQuantity) }}</template>
         </el-table-column>
-        <el-table-column label="完成/返工/异常" width="150" align="right">
+        <el-table-column label="合格/报工/异常" width="150" align="right">
           <template #default="{ row }">
-            {{ formatQuantity(row.outputQuantity) }} / {{ formatQuantity(row.returnQuantity) }} / {{ formatQuantity(row.abnormalQuantity) }}
+            {{ formatQuantity(qualifiedQuantity(row)) }} / {{ formatQuantity(row.outputQuantity) }} / {{ formatQuantity(row.abnormalQuantity) }}
           </template>
         </el-table-column>
         <el-table-column label="报工状态" width="110">
@@ -89,15 +115,7 @@
         </el-table-column>
       </el-table>
 
-      <div class="table-footer">
-        <span class="total-text">共 {{ total }} 条</span>
-        <el-select v-model="pageSize" class="page-size" @change="handlePageSizeChange">
-          <el-option label="10条/页" :value="10" />
-          <el-option label="20条/页" :value="20" />
-          <el-option label="50条/页" :value="50" />
-        </el-select>
-        <el-pagination v-model:current-page="currentPage" :page-size="pageSize" :total="total" layout="prev, pager, next, jumper" @current-change="loadTasks" />
-      </div>
+      <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total="total" @change="loadTasks" />
     </section>
 
     <el-dialog v-model="detailDialogVisible" title="任务详情" :width="DialogWidth.xl">
@@ -121,9 +139,9 @@
               <el-table-column label="状态" width="110">
                 <template #default="{ row }">{{ getStepStatusMeta(row.status).label }}</template>
               </el-table-column>
-              <el-table-column label="完成/返工/异常" width="150" align="right">
+              <el-table-column label="合格/报工/异常" width="150" align="right">
                 <template #default="{ row }">
-                  {{ formatQuantity(row.outputQuantity) }} / {{ formatQuantity(row.returnQuantity) }} / {{ formatQuantity(row.abnormalQuantity) }}
+                  {{ formatQuantity(qualifiedQuantity(row)) }} / {{ formatQuantity(row.outputQuantity) }} / {{ formatQuantity(row.abnormalQuantity) }}
                 </template>
               </el-table-column>
               <el-table-column label="重要参数" min-width="200" show-overflow-tooltip>
@@ -146,14 +164,14 @@
         <el-form-item label="当前工序">
           <el-input :model-value="reportStepName" disabled />
         </el-form-item>
-        <el-form-item label="返工数量">
-          <el-input-number v-model="reportForm.returnQuantity" :min="0" :precision="4" :step="1" />
-        </el-form-item>
-        <el-form-item label="完成数量" required>
-          <el-input-number v-model="reportForm.outputQuantity" :min="0" :precision="4" :step="1" />
+        <el-form-item label="合格数量" required>
+          <el-input-number v-model="reportForm.qualifiedQuantity" :min="0" :precision="4" :step="1" />
         </el-form-item>
         <el-form-item label="异常数量">
           <el-input-number v-model="reportForm.abnormalQuantity" :min="0" :precision="4" :step="1" />
+        </el-form-item>
+        <el-form-item label="报工总数">
+          <el-input :model-value="formatQuantity(reportTotalQuantity)" disabled />
         </el-form-item>
         <div v-if="reportForm.parameterValues.length" class="report-parameters">
           <div class="report-parameters-title">重要参数</div>
@@ -168,12 +186,6 @@
             </el-input>
           </el-form-item>
         </div>
-        <el-form-item label="结果状态">
-          <el-select v-model="reportForm.status">
-            <el-option label="已完成" value="completed" />
-            <el-option label="异常" value="abnormal" />
-          </el-select>
-        </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="reportForm.remark" type="textarea" :rows="3" />
         </el-form-item>
@@ -183,23 +195,53 @@
         <el-button type="primary" :loading="submitting" @click="submitReport">提交报工</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="previewDialogVisible"
+      :title="previewFileName || '工艺文件在线预览'"
+      :width="DialogWidth.xl"
+      destroy-on-close
+      @closed="clearFilePreview"
+    >
+      <div v-loading="previewLoading" class="file-preview-body">
+        <iframe
+          v-if="previewType === 'pdf'"
+          class="pdf-preview"
+          :src="previewFileUrl"
+          :title="previewFileName"
+        />
+        <img
+          v-else-if="previewType === 'image'"
+          class="image-preview"
+          :src="previewFileUrl"
+          :alt="previewFileName"
+        />
+        <div v-else-if="previewType === 'docx'" ref="docxPreviewContainer" class="docx-preview" />
+        <el-empty v-else description="该格式暂不支持在线预览，请下载原文件查看" />
+      </div>
+      <template #footer>
+        <el-button @click="previewDialogVisible = false">关闭</el-button>
+        <el-button type="primary" @click="downloadPreviewFile">下载原文件</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
 import type {
   BatchStepStatus,
   BatchStepParameterValue,
-  ProductListItem,
   ProductionTaskDetail,
   WorkerTaskItem,
+  WorkerTaskProductOption,
 } from '@company/api-contract';
-import { productApi } from '../api/product';
 import { productionApi } from '../api/production';
 import { DialogWidth } from '../utils/dialog';
+import { getDeliveryMeta } from '../utils/delivery';
 import { EMessage } from '../utils/message';
+import TablePagination from '../components/common/TablePagination.vue';
 
 const stepStatusOptions: Array<{ value: BatchStepStatus; label: string; type: 'info' | 'primary' | 'success' | 'danger' }> = [
   { value: 'pending', label: '待开始', type: 'info' },
@@ -210,7 +252,8 @@ const stepStatusOptions: Array<{ value: BatchStepStatus; label: string; type: 'i
 ];
 
 const tasks = ref<WorkerTaskItem[]>([]);
-const productOptions = ref<ProductListItem[]>([]);
+/** 产品筛选项：仅包含当前员工任务所关联的启用产品。 */
+const productOptions = ref<WorkerTaskProductOption[]>([]);
 const activeTask = ref<ProductionTaskDetail | null>(null);
 const activeWorkerTask = ref<WorkerTaskItem | null>(null);
 const loading = ref(false);
@@ -221,12 +264,18 @@ const pageSize = ref(10);
 const detailDialogVisible = ref(false);
 const reportDialogVisible = ref(false);
 const reportingTask = ref<WorkerTaskItem | null>(null);
+/** 工艺文件在线预览状态：PDF/图片直接展示，DOCX 在浏览器中渲染。 */
+const previewDialogVisible = ref(false);
+const previewLoading = ref(false);
+const previewFileName = ref('');
+const previewFileUrl = ref('');
+const previewType = ref<'pdf' | 'image' | 'docx' | 'unsupported'>('unsupported');
+const docxPreviewContainer = ref<HTMLElement | null>(null);
 
 const query = reactive({ keyword: '', productId: '', status: '' });
 const reportForm = reactive({
-  status: 'completed' as Extract<BatchStepStatus, 'completed' | 'abnormal'>,
-  returnQuantity: 0,
-  outputQuantity: 0,
+  /** 合格数量：允许继续流转到下一工序。 */
+  qualifiedQuantity: 0,
   abnormalQuantity: 0,
   // 重要参数值：字段定义来自工序资料，只有报工时填写实际值。
   parameterValues: [] as BatchStepParameterValue[],
@@ -234,10 +283,13 @@ const reportForm = reactive({
 });
 
 const reportStepName = computed(() => reportingTask.value?.stepName ?? '');
+/** 报工总数公式：合格数量 + 异常数量。 */
+const reportTotalQuantity = computed(
+  () => reportForm.qualifiedQuantity + reportForm.abnormalQuantity,
+);
 
 const loadOptions = async () => {
-  const products = await productApi.listProducts({ page: 1, pageSize: 100, status: 'enabled' });
-  productOptions.value = products.items;
+  productOptions.value = await productionApi.listWorkerTaskProductOptions();
 };
 
 const loadTasks = async () => {
@@ -309,9 +361,7 @@ const openReport = async (row: WorkerTaskItem) => {
     }
     reportingTask.value = row;
     Object.assign(reportForm, {
-      status: Number(row.abnormalQuantity ?? 0) > 0 ? 'abnormal' : 'completed',
-      returnQuantity: Number(row.returnQuantity ?? 0),
-      outputQuantity: Number(row.outputQuantity ?? 0),
+      qualifiedQuantity: qualifiedQuantity(row),
       abnormalQuantity: Number(row.abnormalQuantity ?? 0),
       parameterValues: stepDetail.parameterValues.map((item) => ({ ...item })),
       remark: stepDetail.remark ?? '',
@@ -327,13 +377,8 @@ const submitReport = async () => {
     return;
   }
 
-  if (reportForm.outputQuantity <= 0 && reportForm.abnormalQuantity <= 0) {
-    EMessage.warning('请填写完成数量或异常数量');
-    return;
-  }
-  // 异常数量包含在完成数量中，不能形成负数合格数量。
-  if (reportForm.abnormalQuantity > reportForm.outputQuantity) {
-    EMessage.warning('异常数量不能超过完成数量');
+  if (reportTotalQuantity.value <= 0) {
+    EMessage.warning('请填写合格数量或异常数量');
     return;
   }
   if (reportForm.parameterValues.some((item) => !item.value?.trim())) {
@@ -344,11 +389,11 @@ const submitReport = async () => {
   submitting.value = true;
   try {
     await productionApi.updateWorkerTaskStep(reportingTask.value.id, reportingTask.value.stepRecordId, {
-      status: reportForm.status,
+      // 只要存在异常数量就标记异常提醒；异常不阻断合格数量继续流转。
+      status: reportForm.abnormalQuantity > 0 ? 'abnormal' : 'completed',
       startedAt: reportingTask.value.startedAt ?? new Date().toISOString(),
       completedAt: new Date().toISOString(),
-      returnQuantity: reportForm.returnQuantity,
-      outputQuantity: reportForm.outputQuantity,
+      outputQuantity: reportTotalQuantity.value,
       abnormalQuantity: reportForm.abnormalQuantity,
       parameterValues: reportForm.parameterValues,
       remark: reportForm.remark,
@@ -365,7 +410,15 @@ const submitReport = async () => {
 
 const canReport = (row: WorkerTaskItem) => row.stepStatus === 'doing';
 const getStepStatusMeta = (status: BatchStepStatus) => stepStatusOptions.find((item) => item.value === status) ?? stepStatusOptions[0];
-const formatProduct = (product: ProductListItem) => `${product.productModel} / ${product.productName}`;
+/** 员工任务交期提示：已完成、异常结束或跳过的工序不再参与紧急任务提醒。 */
+const getTaskDeliveryMeta = (row: Pick<WorkerTaskItem, 'planEndDate' | 'stepStatus'>) =>
+  getDeliveryMeta(row.planEndDate, row.stepStatus, ['completed', 'abnormal', 'skipped']);
+/** 逾期、今日到期和三天内到期的待执行任务使用浅色背景，便于员工判断优先级。 */
+const getTaskRowClassName = ({ row }: { row: WorkerTaskItem }) =>
+  getTaskDeliveryMeta(row).urgent ? 'delivery-urgent-row' : '';
+/** 组合员工任务产品选项文本，不展示库存、BOM 或工艺路线等管理信息。 */
+const formatProduct = (product: WorkerTaskProductOption) =>
+  [product.code, product.specification, product.name].filter(Boolean).join(' / ');
 const formatQuantity = (value: string | number | null) => {
   if (value === null || value === undefined || value === '') {
     return '-';
@@ -376,11 +429,102 @@ const formatQuantity = (value: string | number | null) => {
     ? amount.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 4 })
     : '-';
 };
+/** 合格数量公式：报工总数 - 异常数量。 */
+const qualifiedQuantity = (row: Pick<WorkerTaskItem, 'outputQuantity' | 'abnormalQuantity'>) =>
+  Math.max(Number(row.outputQuantity ?? 0) - Number(row.abnormalQuantity ?? 0), 0);
 /** 将报工参数整理为紧凑文本，供任务详情快速核对。 */
 const formatParameterValues = (items: BatchStepParameterValue[]) =>
   items.length
     ? items.map((item) => `${item.key}：${item.value || '-'}${item.unit || ''}`).join('；')
     : '-';
+
+/**
+ * 查看当前任务工序关联的工艺文件。
+ * 文件地址来自员工任务详情，不额外开放产品、工艺路线等管理接口。
+ */
+const viewProcessFile = async (fileName: string | null, fileUrl: string | null) => {
+  if (!fileName || !fileUrl) {
+    EMessage.warning('该工序尚未配置工艺文件');
+    return;
+  }
+
+  previewFileName.value = fileName;
+  previewFileUrl.value = fileUrl;
+  const extension = fileName.split('.').pop()?.toLowerCase();
+  previewType.value = extension === 'pdf'
+    ? 'pdf'
+    : ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'].includes(extension ?? '')
+      ? 'image'
+      : extension === 'docx'
+        ? 'docx'
+        : 'unsupported';
+  previewDialogVisible.value = true;
+
+  if (previewType.value === 'unsupported') {
+    return;
+  }
+
+  previewLoading.value = true;
+  try {
+    // 预览前校验文件响应，避免静态服务回退到 HTML 后显示空白内容。
+    const response = await fetch(fileUrl);
+    if (!response.ok) {
+      throw new Error(`文件加载失败（${response.status}）`);
+    }
+    const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+    if (contentType.includes('text/html')) {
+      throw new Error('原文件不存在，请联系管理人员重新上传');
+    }
+    if (previewType.value === 'pdf' && !contentType.includes('application/pdf')) {
+      throw new Error('服务器返回的不是有效 PDF 文件');
+    }
+    if (previewType.value === 'image' && !contentType.startsWith('image/')) {
+      throw new Error('服务器返回的不是有效图片文件');
+    }
+    if (previewType.value !== 'docx') {
+      return;
+    }
+
+    await nextTick();
+    if (!docxPreviewContainer.value) {
+      throw new Error('预览容器尚未初始化');
+    }
+    docxPreviewContainer.value.innerHTML = '';
+    const { renderAsync } = await import('docx-preview');
+    await renderAsync(await response.arrayBuffer(), docxPreviewContainer.value, undefined, {
+      className: 'docx',
+      inWrapper: true,
+      ignoreWidth: false,
+      ignoreHeight: false,
+      breakPages: true,
+    });
+  } catch (error) {
+    previewType.value = 'unsupported';
+    EMessage.error(error, '工艺文件预览失败，请检查原文件是否存在');
+  } finally {
+    previewLoading.value = false;
+  }
+};
+
+/** 下载当前预览的工艺文件，并保留后台配置的原文件名。 */
+const downloadPreviewFile = () => {
+  if (!previewFileUrl.value) return;
+  const link = document.createElement('a');
+  link.href = previewFileUrl.value;
+  link.download = previewFileName.value;
+  link.click();
+};
+
+/** 关闭预览后清理 DOCX 渲染内容，避免再次打开时残留旧文档。 */
+const clearFilePreview = () => {
+  if (docxPreviewContainer.value) {
+    docxPreviewContainer.value.innerHTML = '';
+  }
+  previewLoading.value = false;
+  previewFileName.value = '';
+  previewFileUrl.value = '';
+  previewType.value = 'unsupported';
+};
 const formatDateTime = (value: string | null) => (value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '-');
 
 onMounted(loadPageData);
@@ -497,6 +641,45 @@ onMounted(loadPageData);
 
 .detail-tabs {
   margin-top: 18px;
+}
+
+.file-preview-body {
+  min-height: 520px;
+  max-height: 72vh;
+  overflow: auto;
+  border: 1px solid #e5e7eb;
+  background: #f3f4f6;
+}
+
+.pdf-preview {
+  display: block;
+  width: 100%;
+  height: 70vh;
+  border: 0;
+  background: #ffffff;
+}
+
+.image-preview {
+  display: block;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.docx-preview {
+  min-height: 520px;
+  padding: 20px 0;
+}
+
+.docx-preview :deep(.docx-wrapper) {
+  background: #f3f4f6;
+}
+
+.tasks-table :deep(.delivery-urgent-row > td.el-table__cell) {
+  background: #fff7ed;
+}
+
+.tasks-table :deep(.delivery-urgent-row:hover > td.el-table__cell) {
+  background: #ffedd5 !important;
 }
 
 .report-parameters {

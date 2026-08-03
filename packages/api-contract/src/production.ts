@@ -1,4 +1,6 @@
 export type WorkOrderStatus = 'draft' | 'released' | 'doing' | 'completed' | 'closed' | 'cancelled';
+/** 工单质量等级：用于区分军品、准军品和工业品的生产质量要求。 */
+export type WorkOrderQualityLevel = 'military_grade' | 'standard_military_grade' | 'industrial_grade';
 /** 生产批次主状态，仅表达批次执行阶段。 */
 export type ProductionBatchStatus =
   | 'pending'
@@ -70,8 +72,11 @@ export interface BatchStepRecordItem {
   status: BatchStepStatus;
   startedAt: string | null;
   completedAt: string | null;
+  /** 报工总数：合格数量与异常数量之和。 */
   outputQuantity: string | null;
+  /** 历史返工数量兼容字段；普通报工不再直接填写。 */
   returnQuantity: string | null;
+  /** 异常数量：等待管理或检验人员决定返工、报废等处置。 */
   abnormalQuantity: string | null;
   /** 当前工序配置的重要参数及本次报工填写值。 */
   parameterValues: BatchStepParameterValue[];
@@ -85,6 +90,10 @@ export interface WorkerTaskItem extends ProductionBatchItem {
   processRouteStepsId: string;
   stepOrder: number;
   stepName: string;
+  /** 当前员工任务工序最终生效的工艺文件名：优先批次派工文件，其次工序默认文件。 */
+  sopFileName: string | null;
+  /** 当前员工任务工序最终生效的工艺文件在线访问地址。 */
+  sopFileUrl: string | null;
   stepStatus: BatchStepStatus;
   canStart: boolean;
   startedAt: string | null;
@@ -94,6 +103,18 @@ export interface WorkerTaskItem extends ProductionBatchItem {
   abnormalQuantity: string | null;
   responsibleUserId: string | null;
   responsibleUserName: string | null;
+}
+
+/** 员工任务页产品筛选选项：仅包含当前员工关联任务中的轻量产品信息。 */
+export interface WorkerTaskProductOption {
+  /** 产品 ID：用于提交员工任务筛选条件。 */
+  id: string;
+  /** 产品编码：供员工快速识别；未配置时返回空字符串。 */
+  code: string;
+  /** 产品名称：用于筛选下拉展示。 */
+  name: string;
+  /** 产品型号或规格：用于区分同名产品。 */
+  specification?: string;
 }
 
 export interface TaskMaterialRequirementItem {
@@ -188,6 +209,8 @@ export interface WorkOrderListItem {
   assignedQuantity: string;
   customerOrderNo: string | null;
   customerName: string | null;
+  /** 工单质量等级；未设置时返回 null。 */
+  qualityLevel: WorkOrderQualityLevel | null;
   ownerId: string | null;
   ownerName: string | null;
   status: WorkOrderStatus;
@@ -212,16 +235,20 @@ export interface WorkOrderQuery {
   productId?: string;
   ownerId?: string;
   status?: WorkOrderStatus;
+  qualityLevel?: WorkOrderQualityLevel;
   page?: number;
   pageSize?: number;
 }
 
 export interface CreateWorkOrderPayload {
-  orderNo: string;
+  /** 工单编号：留空时由后端按当天流水规则自动生成。 */
+  orderNo?: string;
   productId: string;
   plannedQuantity: string | number;
   customerOrderNo?: string | null;
   customerName?: string | null;
+  /** 质量等级；允许留空以兼容未分级工单。 */
+  qualityLevel?: WorkOrderQualityLevel | null;
   ownerId?: string | null;
   planStartDate?: string | null;
   planEndDate?: string | null;
@@ -234,6 +261,8 @@ export interface UpdateWorkOrderPayload {
   plannedQuantity?: string | number;
   customerOrderNo?: string | null;
   customerName?: string | null;
+  /** 质量等级；传 null 表示清空。 */
+  qualityLevel?: WorkOrderQualityLevel | null;
   ownerId?: string | null;
   planStartDate?: string | null;
   planEndDate?: string | null;
@@ -296,8 +325,11 @@ export interface UpdateBatchStepRecordPayload {
   status?: BatchStepStatus;
   startedAt?: string | null;
   completedAt?: string | null;
+  /** 报工总数：调用方应按合格数量 + 异常数量计算。 */
   outputQuantity?: string | number | null;
+  /** 历史兼容字段；普通员工报工不应提交。 */
   returnQuantity?: string | number | null;
+  /** 本次异常数量。 */
   abnormalQuantity?: string | number | null;
   /** 本次报工填写的重要参数值。 */
   parameterValues?: BatchStepParameterValue[];

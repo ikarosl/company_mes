@@ -37,7 +37,7 @@
         </div>
       </div>
 
-      <el-table v-loading="loading" :data="tasks" class="tasks-table">
+      <el-table v-loading="loading" :data="tasks" class="tasks-table" :row-class-name="getTaskRowClassName">
         <el-table-column label="批次号" min-width="170">
           <template #default="{ row }"><span class="batch-no">{{ row.batchNo }}</span></template>
         </el-table-column>
@@ -80,6 +80,14 @@
         <el-table-column label="负责人" width="120">
           <template #default="{ row }">{{ row.ownerName || '-' }}</template>
         </el-table-column>
+        <el-table-column label="交期" width="155">
+          <template #default="{ row }">
+            <div>{{ row.planEndDate || '未设置' }}</div>
+            <el-tag :type="getTaskDeliveryMeta(row).type" effect="light" size="small">
+              {{ getTaskDeliveryMeta(row).label }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="440" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">查看</el-button>
@@ -100,15 +108,7 @@
         </el-table-column>
       </el-table>
 
-      <div class="table-footer">
-        <span class="total-text">共 {{ total }} 条</span>
-        <el-select v-model="pageSize" class="page-size" @change="handlePageSizeChange">
-          <el-option label="10条/页" :value="10" />
-          <el-option label="20条/页" :value="20" />
-          <el-option label="50条/页" :value="50" />
-        </el-select>
-        <el-pagination v-model:current-page="currentPage" :page-size="pageSize" :total="total" layout="prev, pager, next, jumper" @current-change="loadTasks" />
-      </div>
+      <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total="total" @change="loadTasks" />
     </section>
 
     <el-dialog v-model="taskDialogVisible" :title="editingTaskId ? '编辑任务' : '新增任务'" :width="DialogWidth.xl" class="business-dialog">
@@ -249,6 +249,12 @@
           <el-descriptions-item label="工艺路线">{{ activeTask.routeName || '-' }}</el-descriptions-item>
           <el-descriptions-item label="计划数量">{{ formatQuantity(activeTask.plannedQuantity) }}</el-descriptions-item>
           <el-descriptions-item label="负责人">{{ activeTask.ownerName || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="计划交期">{{ activeTask.planEndDate || '未设置' }}</el-descriptions-item>
+          <el-descriptions-item label="交期状态">
+            <el-tag :type="getTaskDeliveryMeta(activeTask).type" effect="light">
+              {{ getTaskDeliveryMeta(activeTask).label }}
+            </el-tag>
+          </el-descriptions-item>
         </el-descriptions>
         <el-tabs class="detail-tabs">
           <el-tab-pane label="工序执行">
@@ -280,8 +286,8 @@
               <el-table-column label="状态" width="110">
                 <template #default="{ row }">{{ stepStatusLabels[row.status] ?? row.status }}</template>
               </el-table-column>
-              <el-table-column label="完成/返工/异常" width="150">
-                <template #default="{ row }">{{ formatQuantity(row.outputQuantity) }} / {{ formatQuantity(row.returnQuantity) }} / {{ formatQuantity(row.abnormalQuantity) }}</template>
+              <el-table-column label="合格/报工/异常" width="150">
+                <template #default="{ row }">{{ formatQuantity(stepQualifiedQuantity(row)) }} / {{ formatQuantity(row.outputQuantity) }} / {{ formatQuantity(row.abnormalQuantity) }}</template>
               </el-table-column>
               <el-table-column label="操作" width="90" fixed="right">
                 <template #default="{ row }">
@@ -458,8 +464,8 @@
           </el-link>
           <span v-else>未配置</span>
         </el-descriptions-item>
-        <el-descriptions-item label="产出数量">{{ formatQuantity(activeStep.outputQuantity) }}</el-descriptions-item>
-        <el-descriptions-item label="返工数量">{{ formatQuantity(activeStep.returnQuantity) }}</el-descriptions-item>
+        <el-descriptions-item label="报工总数">{{ formatQuantity(activeStep.outputQuantity) }}</el-descriptions-item>
+        <el-descriptions-item label="合格数量">{{ formatQuantity(stepQualifiedQuantity(activeStep)) }}</el-descriptions-item>
         <el-descriptions-item label="异常数量">{{ formatQuantity(activeStep.abnormalQuantity) }}</el-descriptions-item>
         <el-descriptions-item label="备注">{{ activeStep.remark || '-' }}</el-descriptions-item>
         <el-descriptions-item label="重要参数" :span="2">
@@ -529,6 +535,8 @@ import { systemApi } from '../../api/system';
 import OrderProductSelect from '../../components/business/OrderProductSelect.vue';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
+import { getDeliveryMeta } from '../../utils/delivery';
+import TablePagination from '../../components/common/TablePagination.vue';
 
 /** 生产任务状态字典：只表达批次执行阶段，物料和派工状态单独展示。 */
 const taskStatusOptions: Array<{ value: ProductionBatchStatus; label: string; type: 'info' | 'primary' | 'success' | 'danger' }> = [
@@ -1160,6 +1168,12 @@ const getMaterialStatusMeta = (status: ProductionBatchItem['materialStatus']) =>
   materialStatusOptions[status ?? 'missing_demand'];
 const getDispatchStatusMeta = (status: ProductionBatchItem['dispatchStatus']) =>
   dispatchStatusOptions[status ?? 'missing_steps'];
+/** 任务交期只对未结束批次告警，已完成和已取消不再标记逾期。 */
+const getTaskDeliveryMeta = (row: Pick<ProductionBatchItem, 'planEndDate' | 'status'>) =>
+  getDeliveryMeta(row.planEndDate, row.status, ['completed', 'cancelled']);
+/** 逾期、今日到期和 3 天内到期的任务行使用轻量背景提醒。 */
+const getTaskRowClassName = ({ row }: { row: ProductionBatchItem }) =>
+  getTaskDeliveryMeta(row).urgent ? 'delivery-urgent-row' : '';
 const canConfigureTask = (row: ProductionBatchItem) =>
   !['doing', 'completed', 'cancelled'].includes(row.status);
 const canStartTask = (row: ProductionBatchItem) =>
@@ -1178,6 +1192,9 @@ const formatQuantity = (value: string | number | null) => {
     ? amount.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 4 })
     : '-';
 };
+/** 合格数量公式：报工总数 - 异常数量，最低为 0。 */
+const stepQualifiedQuantity = (step: BatchStepRecordItem) =>
+  Math.max(Number(step.outputQuantity ?? 0) - Number(step.abnormalQuantity ?? 0), 0);
 
 const canUploadStepFile = (row: BatchStepRecordItem) => Boolean(editingTaskId.value && row.batchId !== '0');
 const createStepSopUploadHandler = (row: BatchStepRecordItem & { sopFileId: string | null }) =>
@@ -1372,6 +1389,14 @@ onMounted(loadPageData);
   margin-left: 4px;
   color: #909399;
   font-size: 12px;
+}
+
+.tasks-table :deep(.delivery-urgent-row > td.el-table__cell) {
+  background: #fff7ed;
+}
+
+.tasks-table :deep(.delivery-urgent-row:hover > td.el-table__cell) {
+  background: #ffedd5 !important;
 }
 
 .business-dialog :deep(.el-dialog__body) {

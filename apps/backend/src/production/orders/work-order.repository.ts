@@ -13,12 +13,17 @@ import type {
   ProductionBatchStatus,
   UpdateProductionBatchPayload,
   UpdateWorkOrderPayload,
+  WorkOrderQualityLevel,
   WorkOrderStatus,
 } from '@company/api-contract';
 import { isProductionProductAttribute } from '@company/api-contract';
 import { DatabaseService, type QueryParam } from '../../database/database.service.js';
 import { AuditContextService } from '../../operation-log/audit-context.service.js';
 import { type PaginationOptions, toPageResult } from '../../shared/request-utils.js';
+import {
+  BUSINESS_NUMBER_PREFIX,
+  generateDailyBusinessNumber,
+} from '../../shared/business-number.js';
 import type {
   CountRow,
   ProductionBatchListRow,
@@ -46,6 +51,7 @@ export interface WorkOrderFilters {
   productId?: string;
   status?: string;
   ownerId?: string;
+  qualityLevel?: string;
 }
 
 const WORK_ORDER_STATUSES = new Set<WorkOrderStatus>([
@@ -55,6 +61,12 @@ const WORK_ORDER_STATUSES = new Set<WorkOrderStatus>([
   'completed',
   'closed',
   'cancelled',
+]);
+/** 工单质量等级白名单：所有查询和写入都只接受数据库约束内的值。 */
+const WORK_ORDER_QUALITY_LEVELS = new Set<WorkOrderQualityLevel>([
+  'military_grade',
+  'standard_military_grade',
+  'industrial_grade',
 ]);
 const BATCH_STATUSES = new Set<ProductionBatchStatus>([
   'pending',
@@ -95,6 +107,7 @@ export class WorkOrderRepository {
         COALESCE(b.assigned_quantity, 0) AS assigned_quantity,
         wo.customer_order_no,
         wo.customer_name,
+        wo.quality_level,
         wo.owner_id,
         u.display_name AS owner_name,
         wo.status,
@@ -130,10 +143,12 @@ export class WorkOrderRepository {
   }
 
   async createOrder(payload: CreateWorkOrderPayload) {
-    const orderNo = readRequiredString(payload.orderNo, 'Missing order no');
+    // 测试阶段允许留空，由统一编号工具生成当天递增工单号；手工编号仍可覆盖。
+    const orderNo = normalizeOptionalString(payload.orderNo) ?? (await this.generateOrderNo());
     const productId = readPositiveId(payload.productId, 'Missing product');
     const plannedQuantity = readDecimal(payload.plannedQuantity, 'Invalid planned quantity');
     const ownerId = nullableId(payload.ownerId);
+    const qualityLevel = readWorkOrderQualityLevel(payload.qualityLevel);
 
     await this.assertProductAvailable(productId);
     await this.assertUserAvailable(ownerId);
@@ -142,10 +157,10 @@ export class WorkOrderRepository {
     const result = (await this.database.execute(
       `
       INSERT INTO work_orders (
-        order_no, product_id, planned_quantity, owner_id, customer_order_no, customer_name,
+        order_no, product_id, planned_quantity, owner_id, customer_order_no, customer_name, quality_level,
         status, plan_start_date, plan_end_date, remark, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, NOW(), NOW())
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, NOW(), NOW())
     `,
       [
         orderNo,
@@ -154,6 +169,7 @@ export class WorkOrderRepository {
         ownerId,
         normalizeOptionalString(payload.customerOrderNo),
         normalizeOptionalString(payload.customerName),
+        qualityLevel,
         normalizeDate(payload.planStartDate),
         normalizeDate(payload.planEndDate),
         normalizeOptionalString(payload.remark),
@@ -186,6 +202,10 @@ export class WorkOrderRepository {
       payload.customerName === undefined
         ? current.customer_name
         : normalizeOptionalString(payload.customerName);
+    const qualityLevel =
+      payload.qualityLevel === undefined
+        ? readWorkOrderQualityLevel(current.quality_level)
+        : readWorkOrderQualityLevel(payload.qualityLevel);
 
     await this.assertUserAvailable(ownerId);
     await this.assertOrderNoAvailable(orderNo, id);
@@ -199,6 +219,7 @@ export class WorkOrderRepository {
         owner_id = ?,
         customer_order_no = ?,
         customer_name = ?,
+        quality_level = ?,
         plan_start_date = ?,
         plan_end_date = ?,
         remark = ?,
@@ -214,6 +235,7 @@ export class WorkOrderRepository {
         ownerId,
         customerOrderNo,
         customerName,
+        qualityLevel,
         payload.planStartDate === undefined
           ? formatDate(current.plan_start_date)
           : normalizeDate(payload.planStartDate),
@@ -440,6 +462,11 @@ export class WorkOrderRepository {
       params.push(readWorkOrderStatus(filters.status.trim()));
     }
 
+    if (filters.qualityLevel?.trim()) {
+      clauses.push('wo.quality_level = ?');
+      params.push(readWorkOrderQualityLevel(filters.qualityLevel));
+    }
+
     return { where: clauses.join(' AND '), params };
   }
 
@@ -448,7 +475,7 @@ export class WorkOrderRepository {
       `
       SELECT wo.id, wo.order_no, wo.product_id,
         p.default_route_id AS product_default_route_id, wo.planned_quantity,
-        wo.customer_order_no, wo.customer_name, wo.owner_id, wo.status, wo.plan_start_date, wo.plan_end_date, wo.remark
+        wo.customer_order_no, wo.customer_name, wo.quality_level, wo.owner_id, wo.status, wo.plan_start_date, wo.plan_end_date, wo.remark
       FROM work_orders wo
       INNER JOIN products p ON p.id = wo.product_id AND p.is_deleted = 0
       WHERE wo.id = ? AND wo.is_deleted = 0
@@ -477,6 +504,7 @@ export class WorkOrderRepository {
         COALESCE(b.assigned_quantity, 0) AS assigned_quantity,
         wo.customer_order_no,
         wo.customer_name,
+        wo.quality_level,
         wo.owner_id,
         u.display_name AS owner_name,
         wo.status,
@@ -808,18 +836,20 @@ export class WorkOrderRepository {
   }
 
   private async generateBatchNo() {
-    const today = new Date();
-    const dateText = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
-    const [row] = await this.database.query<(RowDataPacket & { total: number })[]>(
-      `
-      SELECT COUNT(*) AS total
-      FROM production_batches
-      WHERE batch_no LIKE ? AND is_deleted = 0
-    `,
-      [`SCPC-${dateText}-%`],
-    );
+    return generateDailyBusinessNumber(this.database, {
+      prefix: BUSINESS_NUMBER_PREFIX.productionBatch,
+      table: 'production_batches',
+      column: 'batch_no',
+    });
+  }
 
-    return `SCPC-${dateText}-${String(Number(row?.total ?? 0) + 1).padStart(3, '0')}`;
+  /** 生成当天递增的工单编号，例如 GD-20260729001。 */
+  private async generateOrderNo() {
+    return generateDailyBusinessNumber(this.database, {
+      prefix: BUSINESS_NUMBER_PREFIX.workOrder,
+      table: 'work_orders',
+      column: 'order_no',
+    });
   }
 }
 
@@ -829,6 +859,24 @@ const readWorkOrderStatus = (value: string) => {
   }
 
   return value as WorkOrderStatus;
+};
+
+/**
+ * 读取可空质量等级。
+ * 空值用于兼容历史未分级工单，非空值必须符合数据库枚举约束。
+ */
+const readWorkOrderQualityLevel = (
+  value: string | null | undefined,
+): WorkOrderQualityLevel | null => {
+  const normalized = normalizeOptionalString(value);
+  if (normalized === null) {
+    return null;
+  }
+  if (!WORK_ORDER_QUALITY_LEVELS.has(normalized as WorkOrderQualityLevel)) {
+    throw new BadRequestException('Invalid work order quality level');
+  }
+
+  return normalized as WorkOrderQualityLevel;
 };
 
 const readBatchStatus = (value: string) => {

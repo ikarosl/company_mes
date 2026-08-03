@@ -1,12 +1,14 @@
 import type { SubmitProcessInspectionPayload } from '@company/api-contract';
 import { PERMISSIONS } from '@company/constants';
-import { Body, Controller, Get, Inject, Param, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, Post, Put, Query, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { CurrentUser } from '../../auth/current-user.decorator.js';
 import { PermissionGuard } from '../../auth/permission.guard.js';
 import { RequirePermission } from '../../auth/require-permission.decorator.js';
 import { Audit } from '../../operation-log/audit.decorator.js';
 import { readId, readPagination } from '../../shared/request-utils.js';
 import { InspectionRepository } from './inspection.repository.js';
+import { saveInspectionFile, type UploadedInspectionFile } from './inspection-file.storage.js';
 
 /** 检测端待检任务接口：任务由已完成的需检工序动态派生。 */
 @UseGuards(PermissionGuard)
@@ -19,6 +21,14 @@ export class InspectorTaskController {
   @Get()
   list(@Query('keyword') keyword?: string, @Query('page') page?: string, @Query('pageSize') pageSize?: string) {
     return this.inspections.listPendingProcessTasks(keyword, readPagination(page, pageSize));
+  }
+
+  /** 检测端上传附件到本地存储，上传成功后将地址随检验结果一并提交。 */
+  @RequirePermission(PERMISSIONS.inspector.tasks.uploadFile)
+  @Post('files')
+  @UseInterceptors(FileInterceptor('file'))
+  uploadFile(@UploadedFile() file: UploadedInspectionFile) {
+    return saveInspectionFile(file);
   }
 
   /** 提交后写入正式检验记录，任务会自动从待检列表消失。 */

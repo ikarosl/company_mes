@@ -9,13 +9,19 @@ CREATE TABLE `rework_records` (
   `source_inspection_id` bigint unsigned NOT NULL COMMENT '来源检验记录ID',
   `recheck_inspection_id` bigint unsigned DEFAULT NULL COMMENT '返工完成后的复检记录ID',
   `product_identifier` varchar(100) DEFAULT NULL COMMENT '产品标识或序号',
+  `rework_quantity` decimal(12,4) DEFAULT NULL COMMENT '本次返工处理数量',
   `defect_item` varchar(255) NOT NULL COMMENT '不合格项',
   `defect_desc` text COMMENT '问题描述',
   `return_step_name` varchar(100) DEFAULT NULL COMMENT '返工退回工序名称',
+  `cause_analysis` text COMMENT '缺陷原因分析',
+  `rework_action` text COMMENT '实际返工措施',
+  `file_url` varchar(500) DEFAULT NULL COMMENT '返工报告、照片或其他附件地址',
   `handler_id` bigint unsigned DEFAULT NULL COMMENT '返工处理人ID',
   `handling_desc` text COMMENT '处理说明',
   `status` varchar(50) NOT NULL DEFAULT 'pending' COMMENT '状态：pending/doing/wait_recheck/completed/closed',
   `result` varchar(50) NOT NULL DEFAULT 'fail' COMMENT '返工结果：pass/fail/partial_pass',
+  `started_at` datetime DEFAULT NULL COMMENT '返工开始时间',
+  `completed_at` datetime DEFAULT NULL COMMENT '返工处理完成时间',
   `closed_at` datetime DEFAULT NULL COMMENT '关闭时间',
   `remark` text COMMENT '补充说明',
   `created_by` bigint unsigned DEFAULT NULL COMMENT '创建人ID',
@@ -47,5 +53,7 @@ CREATE TABLE `rework_records` (
   CONSTRAINT `chk_rework_records_status`
     CHECK (`status` IN ('pending','doing','wait_recheck','completed','closed')),
   CONSTRAINT `chk_rework_records_result`
-    CHECK (`result` IN ('pass','fail','partial_pass'))
+    CHECK (`result` IN ('pass','fail','partial_pass')),
+  CONSTRAINT `chk_rework_records_quantity`
+    CHECK ((`rework_quantity` IS NULL) OR (`rework_quantity` > 0))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='检验问题返工闭环记录表';

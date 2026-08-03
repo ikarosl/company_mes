@@ -87,16 +87,7 @@
         </el-table-column>
       </el-table>
 
-      <div class="footer">
-        <span>共 {{ total }} 条</span>
-        <el-pagination
-          :current-page="page"
-          :page-size="pageSize"
-          :total="total"
-          layout="prev, pager, next"
-          @current-change="changePage"
-        />
-      </div>
+      <TablePagination v-model:page="page" v-model:page-size="pageSize" :total="total" @change="loadRows" />
     </section>
 
     <el-dialog v-model="inboundVisible" title="成/半成品入库" :width="DialogWidth.lg" class="business-dialog">
@@ -261,6 +252,7 @@ import { productApi } from '../../api/product';
 import { warehouseApi } from '../../api/warehouse';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
+import TablePagination from '../../components/common/TablePagination.vue';
 
 /** 入库来源类型字典：与 product_inventory_batches.source_type 保持一致。 */
 const sourceTypeOptions: Array<{ value: FinishedInventorySourceType; label: string }> = [

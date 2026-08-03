@@ -2,6 +2,7 @@ import {
   BUSINESS_API,
   type CreateInspectionPayload,
   type InspectionListItem,
+  type InspectionFileUploadResult,
   type PendingProcessInspectionItem,
   type InspectionTargetOption,
   type PageResult,
@@ -16,6 +17,16 @@ import {
 } from '@company/api-contract';
 import { requestData, type QueryParams } from './shared/request-data';
 export const qualityApi = {
+  /** 上传管理端检验附件，文件暂存于后端本地目录。 */
+  uploadInspectionFile: (data: FormData) =>
+    requestData<InspectionFileUploadResult>({
+      url: `${BUSINESS_API.qualityInspections}/files`, method: 'POST', data,
+    }),
+  /** 上传检测任务附件，使用检测端独立权限。 */
+  uploadInspectorTaskFile: (data: FormData) =>
+    requestData<InspectionFileUploadResult>({
+      url: `${BUSINESS_API.inspectorTasks}/files`, method: 'POST', data,
+    }),
   /** 查询检测端由需检工序动态派生的待检任务。 */
   listPendingProcessTasks: (params?: QueryParams) =>
     requestData<PageResult<PendingProcessInspectionItem>>({
@@ -63,6 +74,11 @@ export const qualityApi = {
       url: BUSINESS_API.qualityReworks,
       method: 'GET',
       params,
+    }),
+  /** 上传返工报告、照片或复检附件。 */
+  uploadReworkFile: (data: FormData) =>
+    requestData<InspectionFileUploadResult>({
+      url: `${BUSINESS_API.qualityReworks}/files`, method: 'POST', data,
     }),
   /** 查询单条返工记录详情。 */
   getRework: (id: string) =>

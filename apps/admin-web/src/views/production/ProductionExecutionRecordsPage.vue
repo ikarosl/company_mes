@@ -38,7 +38,12 @@
       <el-empty v-else-if="!taskRecords.length" description="暂无符合条件的生产任务" />
 
       <div v-else class="task-list">
-        <article v-for="task in taskRecords" :key="task.id" class="task-block">
+        <article
+          v-for="task in taskRecords"
+          :key="task.id"
+          class="task-block"
+          :class="{ 'delivery-urgent-block': getTaskDeliveryMeta(task).urgent }"
+        >
           <header class="task-header">
             <div class="task-identity">
               <div class="task-title-row">
@@ -52,6 +57,12 @@
                 <span>{{ task.productModel }} / {{ task.productName }}</span>
                 <span>计划 {{ formatQuantity(task.plannedQuantity) }}</span>
                 <span>负责人 {{ task.ownerName || '-' }}</span>
+                <span class="delivery-meta">
+                  交期 {{ task.planEndDate || '未设置' }}
+                  <el-tag :type="getTaskDeliveryMeta(task).type" effect="light" size="small">
+                    {{ getTaskDeliveryMeta(task).label }}
+                  </el-tag>
+                </span>
               </div>
             </div>
 
@@ -142,7 +153,7 @@
                   :disabled="!canCorrectStep(row)"
                   @click="openCorrectionDialog(task, row)"
                 >
-                  修正数量
+                  修正报工
                 </el-button>
               </template>
             </el-table-column>
@@ -150,20 +161,7 @@
         </article>
       </div>
 
-      <div class="table-footer">
-        <el-select v-model="pageSize" class="page-size" @change="handlePageSizeChange">
-          <el-option label="5条/页" :value="5" />
-          <el-option label="10条/页" :value="10" />
-          <el-option label="20条/页" :value="20" />
-        </el-select>
-        <el-pagination
-          v-model:current-page="currentPage"
-          :page-size="pageSize"
-          :total="total"
-          layout="prev, pager, next, jumper"
-          @current-change="loadTasks"
-        />
-      </div>
+      <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total="total" :page-sizes="[5, 10, 20]" @change="loadTasks" />
     </section>
 
     <el-dialog v-model="detailVisible" title="工序报工详情" :width="DialogWidth.lg">
@@ -182,7 +180,7 @@
         <el-descriptions-item label="完工时间">
           {{ formatDateTime(detailStep.completedAt) }}
         </el-descriptions-item>
-        <el-descriptions-item label="完成数量">
+        <el-descriptions-item label="报工总数">
           {{ formatQuantity(stepOutputQuantity(detailStep)) }}
         </el-descriptions-item>
         <el-descriptions-item label="合格数量">
@@ -190,9 +188,6 @@
         </el-descriptions-item>
         <el-descriptions-item label="异常数量">
           {{ formatQuantity(stepAbnormalQuantity(detailStep)) }}
-        </el-descriptions-item>
-        <el-descriptions-item label="返工数量">
-          {{ formatQuantity(stepReturnQuantity(detailStep)) }}
         </el-descriptions-item>
         <el-descriptions-item label="重要参数" :span="2">
           <template v-if="detailStep.parameterValues.length">
@@ -213,7 +208,7 @@
       </el-descriptions>
     </el-dialog>
 
-    <el-dialog v-model="correctionVisible" title="修正报工数量" :width="DialogWidth.md">
+    <el-dialog v-model="correctionVisible" title="修正报工数据" :width="DialogWidth.md">
       <el-form class="dialog-form" label-width="108px" :model="correctionForm">
         <el-form-item label="生产批次">
           <el-input :model-value="correctionTask?.batchNo || '-'" disabled />
@@ -221,15 +216,28 @@
         <el-form-item label="工序">
           <el-input :model-value="correctionStep?.stepName || '-'" disabled />
         </el-form-item>
-        <el-form-item label="完成数量" required>
-          <el-input-number v-model="correctionForm.outputQuantity" :min="0" :precision="4" :step="1" />
-        </el-form-item>
-        <el-form-item label="返工数量">
-          <el-input-number v-model="correctionForm.returnQuantity" :min="0" :precision="4" :step="1" />
+        <el-form-item label="合格数量" required>
+          <el-input-number v-model="correctionForm.qualifiedQuantity" :min="0" :precision="4" :step="1" />
         </el-form-item>
         <el-form-item label="异常数量">
           <el-input-number v-model="correctionForm.abnormalQuantity" :min="0" :precision="4" :step="1" />
         </el-form-item>
+        <el-form-item label="报工总数">
+          <el-input :model-value="formatQuantity(correctionTotalQuantity)" disabled />
+        </el-form-item>
+        <template v-if="correctionForm.parameterValues.length">
+          <div class="correction-parameters-title">重要参数</div>
+          <el-form-item
+            v-for="parameter in correctionForm.parameterValues"
+            :key="parameter.key"
+            :label="parameter.key"
+            required
+          >
+            <el-input v-model="parameter.value" :placeholder="`请输入${parameter.key}`">
+              <template v-if="parameter.unit" #append>{{ parameter.unit }}</template>
+            </el-input>
+          </el-form-item>
+        </template>
         <el-form-item label="备注">
           <el-input v-model="correctionForm.remark" type="textarea" :rows="3" />
         </el-form-item>
@@ -245,11 +253,12 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import { EditPen, Refresh } from '@element-plus/icons-vue';
 import type {
   BatchStepRecordItem,
+  BatchStepParameterValue,
   BatchStepStatus,
   ProductionBatchStatus,
   ProductionTaskDetail,
@@ -257,6 +266,8 @@ import type {
 import { productionApi } from '../../api/production';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
+import { getDeliveryMeta } from '../../utils/delivery';
+import TablePagination from '../../components/common/TablePagination.vue';
 
 /** 生产批次状态字典：用于查询筛选和任务头部状态标签。 */
 const taskStatusOptions: Array<{ value: ProductionBatchStatus; label: string }> = [
@@ -284,7 +295,7 @@ const detailTask = ref<ProductionTaskDetail | null>(null);
 const detailStep = ref<BatchStepRecordItem | null>(null);
 /** 任务级开始/完工按钮 loading 标识，避免重复提交同一批次状态流转。 */
 const operatingTaskId = ref<string | null>(null);
-/** 修正数量弹窗状态：保存当前批次、当前工序和表单提交 loading。 */
+/** 修正报工弹窗状态：保存当前批次、当前工序和表单提交 loading。 */
 const correctionVisible = ref(false);
 const correctionTask = ref<ProductionTaskDetail | null>(null);
 const correctionStep = ref<BatchStepRecordItem | null>(null);
@@ -296,13 +307,19 @@ const query = reactive({
   status: '',
 });
 
-/** 报工数量修正表单：只允许修正数量和备注，不修改派工、文件或工序时间。 */
+/** 报工数据修正表单：允许管理人员修正数量、重要参数和备注，不修改派工、文件或工序时间。 */
 const correctionForm = reactive({
-  outputQuantity: 0,
-  returnQuantity: 0,
+  /** 合格数量：修正后仍可进入下一工序的数量。 */
+  qualifiedQuantity: 0,
   abnormalQuantity: 0,
+  /** 重要参数实际值：定义名称和单位沿用批次工序快照。 */
+  parameterValues: [] as BatchStepParameterValue[],
   remark: '',
 });
+/** 修正后的报工总数公式：合格数量 + 异常数量。 */
+const correctionTotalQuantity = computed(
+  () => correctionForm.qualifiedQuantity + correctionForm.abnormalQuantity,
+);
 
 /** 加载报工任务列表，后端会返回每个批次下的工序报工记录。 */
 const loadTasks = async () => {
@@ -349,41 +366,47 @@ const openStepDetail = (task: ProductionTaskDetail, step: BatchStepRecordItem) =
   detailVisible.value = true;
 };
 
-/** 打开修正弹窗，并用当前工序数量初始化表单。 */
+/** 打开修正弹窗，并用当前工序数量、重要参数和备注初始化表单。 */
 const openCorrectionDialog = (task: ProductionTaskDetail, step: BatchStepRecordItem) => {
   correctionTask.value = task;
   correctionStep.value = step;
   Object.assign(correctionForm, {
-    outputQuantity: stepOutputQuantity(step),
-    returnQuantity: stepReturnQuantity(step),
+    qualifiedQuantity: stepQualifiedQuantity(step),
     abnormalQuantity: stepAbnormalQuantity(step),
+    parameterValues: step.parameterValues.map((parameter) => ({ ...parameter })),
     remark: step.remark ?? '',
   });
   correctionVisible.value = true;
 };
 
-/** 提交报工数量修正；后端会保留未传字段并写入操作审计。 */
+/** 提交报工数据修正；后端会校验数量及重要参数完整性，并写入操作审计。 */
 const submitCorrection = async () => {
   if (!correctionTask.value || !correctionStep.value) {
     return;
   }
 
   if (
-    correctionForm.outputQuantity < 0 ||
-    correctionForm.returnQuantity < 0 ||
+    correctionForm.qualifiedQuantity < 0 ||
     correctionForm.abnormalQuantity < 0
   ) {
     EMessage.warning('报工数量不能小于 0');
     return;
   }
-  // 合格数量 = 完成数量 - 异常数量，异常数量不能使合格数量变为负数。
-  if (correctionForm.abnormalQuantity > correctionForm.outputQuantity) {
-    EMessage.warning('异常数量不能超过完成数量');
+  if (correctionTotalQuantity.value <= 0) {
+    EMessage.warning('请填写合格数量或异常数量');
+    return;
+  }
+  // 已结束工序的重要参数必须全部填写，避免修正后形成不完整追溯记录。
+  if (
+    ['completed', 'abnormal'].includes(correctionStep.value.status) &&
+    correctionForm.parameterValues.some((parameter) => !parameter.value?.trim())
+  ) {
+    EMessage.warning('请填写全部工序重要参数');
     return;
   }
 
   try {
-    await ElMessageBox.confirm('确认保存该工序的报工数量修正？', '修正报工数量', {
+    await ElMessageBox.confirm('确认保存该工序的报工数据修正？', '修正报工数据', {
       confirmButtonText: '确认保存',
       cancelButtonText: '取消',
       type: 'warning',
@@ -396,16 +419,16 @@ const submitCorrection = async () => {
   try {
     await productionApi.updateExecutionRecordStep(correctionTask.value.id, correctionStep.value.id, {
       status: correctionStep.value.status,
-      outputQuantity: correctionForm.outputQuantity,
-      returnQuantity: correctionForm.returnQuantity,
+      outputQuantity: correctionTotalQuantity.value,
       abnormalQuantity: correctionForm.abnormalQuantity,
+      parameterValues: correctionForm.parameterValues,
       remark: correctionForm.remark,
     });
-    EMessage.success('报工数量已修正');
+    EMessage.success('报工数据已修正');
     correctionVisible.value = false;
     await loadTasks();
   } catch (error) {
-    EMessage.error(error, '报工数量修正失败');
+    EMessage.error(error, '报工数据修正失败');
   } finally {
     submittingCorrection.value = false;
   }
@@ -489,8 +512,7 @@ const finishTask = async (task: ProductionTaskDetail) => {
 
 const stepOutputQuantity = (step: BatchStepRecordItem) => Number(step.outputQuantity ?? 0);
 const stepAbnormalQuantity = (step: BatchStepRecordItem) => Number(step.abnormalQuantity ?? 0);
-const stepReturnQuantity = (step: BatchStepRecordItem) => Number(step.returnQuantity ?? 0);
-/** 合格数量公式：完成数量 - 异常数量，最低为 0。 */
+/** 合格数量公式：报工总数 - 异常数量，最低为 0。 */
 const stepQualifiedQuantity = (step: BatchStepRecordItem) =>
   Math.max(stepOutputQuantity(step) - stepAbnormalQuantity(step), 0);
 
@@ -508,6 +530,11 @@ const getTaskStatusMeta = (status: ProductionBatchStatus) => {
   };
   return meta[status];
 };
+
+/** 生产报工交期提示：已完成和已取消批次不再标记逾期。 */
+const getTaskDeliveryMeta = (
+  task: Pick<ProductionTaskDetail, 'planEndDate' | 'status'>,
+) => getDeliveryMeta(task.planEndDate, task.status, ['completed', 'cancelled']);
 
 const getStepStatusMeta = (status: BatchStepStatus) => {
   const meta: Record<
@@ -621,6 +648,11 @@ onMounted(loadTasks);
   background: #ffffff;
 }
 
+/* 临近或超过交期的报工批次使用轻量边框提醒，不改变主体表格布局。 */
+.task-block.delivery-urgent-block {
+  border-color: #f59e0b;
+}
+
 .task-header {
   display: grid;
   grid-template-columns: minmax(280px, 1.4fr) minmax(220px, 0.8fr) minmax(310px, 1fr);
@@ -653,6 +685,12 @@ onMounted(loadTasks);
   flex-wrap: wrap;
   gap: 6px 18px;
   margin-top: 8px;
+}
+
+.delivery-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .task-progress {
@@ -753,6 +791,13 @@ onMounted(loadTasks);
 
 .parameter-tag {
   margin: 2px 8px 2px 0;
+}
+
+/* 重要参数分组标题：与数量字段分区，便于管理人员核对报工实测值。 */
+.correction-parameters-title {
+  margin: 4px 0 16px;
+  color: #1f2937;
+  font-weight: 600;
 }
 
 @media (max-width: 1180px) {

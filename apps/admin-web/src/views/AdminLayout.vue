@@ -163,6 +163,11 @@ const menuGroups: MenuGroup[] = [
     ],
   },
   {
+    title: '追溯中心',
+    index: '/trace',
+    items: [{ title: '全流程追溯', path: '/trace/full', permission: PERMISSIONS.trace.page }],
+  },
+  {
     title: '员工端',
     index: '/worker',
     items: [

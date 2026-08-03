@@ -135,21 +135,7 @@
         </el-table-column>
       </el-table>
 
-      <div class="table-footer">
-        <span class="total-text">共 {{ total }} 条</span>
-        <el-select v-model="pageSize" class="page-size" @change="handlePageSizeChange">
-          <el-option label="10条/页" :value="10" />
-          <el-option label="20条/页" :value="20" />
-          <el-option label="50条/页" :value="50" />
-        </el-select>
-        <el-pagination
-          v-model:current-page="currentPage"
-          :page-size="pageSize"
-          :total="total"
-          layout="prev, pager, next, jumper"
-          @current-change="loadInventory"
-        />
-      </div>
+      <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total="total" @change="loadInventory" />
     </section>
 
     <el-dialog
@@ -405,6 +391,7 @@ import { productApi } from '../../api/product';
 import { warehouseApi } from '../../api/warehouse';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
+import TablePagination from '../../components/common/TablePagination.vue';
 
 const statusOptions: Array<{ value: MaterialBatchStatus; label: string; type: 'success' | 'warning' | 'info' | 'danger' }> = [
   { value: 'available', label: '可用', type: 'success' },
@@ -748,11 +735,9 @@ const formatProductAttribute = (value: string | null | undefined) =>
 
 const formatObjectType = (row: MaterialBatchListItem) => {
   if (getInventoryType(row) === 'product') {
+    // 产品库存的 objectType 已经表示成品/半成品，不能再拼接同义的产品一级属性。
     const objectType = formatProductObjectType(row.objectType);
-    const category = row.productAttribute && row.productType
-      ? `${formatProductAttribute(row.productAttribute)} / ${row.productType}`
-      : '';
-    return category ? `${objectType} · ${category}` : objectType;
+    return row.productType ? `${objectType} / ${row.productType}` : objectType;
   }
 
   return row.productAttribute && row.productType

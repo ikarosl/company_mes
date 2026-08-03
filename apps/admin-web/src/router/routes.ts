@@ -25,6 +25,7 @@ import MaterialTransactionsPage from '../views/warehouse/MaterialTransactionsPag
 import InventoryStocktakesPage from '../views/warehouse/InventoryStocktakesPage.vue';
 import InspectionRecordsPage from '../views/quality/InspectionRecordsPage.vue';
 import InspectorTasksPage from '../views/quality/InspectorTasksPage.vue';
+import FullTracePage from '../views/trace/FullTracePage.vue';
 // import ProcessTemplatesPage from '../views/ProcessTemplatesPage.vue';
 // import ProductionBatchDetailPage from '../views/ProductionBatchDetailPage.vue';
 // import ProductionBatchesPage from '../views/ProductionBatchesPage.vue';
@@ -262,6 +263,11 @@ export const routes: RouteRecordRaw[] = [
         meta: { title: '检验记录', section: '质量管理', permission: PERMISSIONS.quality.inspections.page } },
       { path: 'quality/reworks', name: 'quality-reworks', component: ReworkRecordsPage,
         meta: { title: '返工记录', section: '质量管理', permission: PERMISSIONS.quality.reworks.page } },
+
+      {
+        path: 'trace/full', name: 'trace-full', component: FullTracePage,
+        meta: { title: '全流程追溯', section: '追溯中心', permission: PERMISSIONS.trace.page },
+      },
 
       plannedPage(
         'production/orders/:id/complete',

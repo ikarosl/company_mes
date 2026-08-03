@@ -5,12 +5,12 @@
         <el-form-item label="关键字">
           <el-input v-model="query.keyword" clearable placeholder="批次、工单、产品、路线、负责人或物料" />
         </el-form-item>
-        <el-form-item label="产品">
-          <el-select v-model="query.productId" clearable filterable placeholder="全部">
+        <el-form-item label="生产产品">
+          <el-select v-model="query.productId" clearable filterable placeholder="全部成品/半成品">
             <el-option v-for="product in productOptions" :key="product.id" :label="formatProduct(product)" :value="product.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="物料">
+        <el-form-item label="需求物料">
           <el-input v-model="query.materialKeyword" clearable placeholder="物料型号/名称" />
         </el-form-item>
         <el-form-item label="关键物料">
@@ -43,7 +43,13 @@
 
       <div v-loading="loading" class="batch-list">
         <el-empty v-if="!allocationRows.length" description="暂无物料需求" />
-        <section v-for="batch in allocationRows" v-else :key="batch.id" class="batch-section">
+        <section
+          v-for="batch in allocationRows"
+          v-else
+          :key="batch.id"
+          class="batch-section"
+          :class="{ 'delivery-urgent-section': getAllocationDeliveryMeta(batch).urgent }"
+        >
           <div class="batch-header">
             <div>
               <span class="batch-no">{{ batch.batchNo }}</span>
@@ -51,6 +57,10 @@
             </div>
             <div class="batch-meta">
               <span>计划 {{ formatQuantity(batch.plannedQuantity) }}</span>
+              <span>交期 {{ batch.planEndDate || '未设置' }}</span>
+              <el-tag :type="getAllocationDeliveryMeta(batch).type" effect="light" size="small">
+                {{ getAllocationDeliveryMeta(batch).label }}
+              </el-tag>
               <el-tag :type="getMaterialStatusMeta(batch.materialStatus).type" effect="light">
                 {{ getMaterialStatusMeta(batch.materialStatus).label }}
               </el-tag>
@@ -114,7 +124,7 @@
         v-model:page-size="pageSize"
         :total="total"
         :page-sizes="[5, 10, 20]"
-        @change="handlePaginationChange"
+        @change="loadAllocations"
       />
     </section>
 
@@ -221,6 +231,7 @@ import { productApi } from '../../api/product';
 import TablePagination from '../../components/common/TablePagination.vue';
 import { productionApi } from '../../api/production';
 import { DialogWidth } from '../../utils/dialog';
+import { getDeliveryMeta } from '../../utils/delivery';
 import { EMessage } from '../../utils/message';
 
 /** 批次级物料状态字典：统一物料分配页面的中文文案和状态颜色。 */
@@ -265,10 +276,6 @@ const dialogShortageQuantity = computed(() => Math.max(
   0,
 ));
 
-/** 统一分页组件变更后，使用组件给出的页码重新查询后端。 */
-const handlePaginationChange = ({ page }: { page: number; pageSize: number }) => {
-  void loadAllocations(page);
-};
 /** 分配明细弹窗：展示同一需求的多次预留流水。 */
 const allocationDetailVisible = ref(false);
 
@@ -280,7 +287,13 @@ const allocateForm = reactive({
 });
 
 const loadOptions = async () => {
-  const page = await productApi.listProducts({ page: 1, pageSize: 200, status: 'enabled' });
+  // 生产产品筛选只提供成品和半成品，避免与旁边的需求物料搜索口径混淆。
+  const page = await productApi.listProducts({
+    page: 1,
+    pageSize: 200,
+    status: 'enabled',
+    productAttributes: 'finished,semi_finished',
+  });
   productOptions.value = page.items;
 };
 
@@ -420,6 +433,10 @@ const replaceAllocationRow = (updated: MaterialAllocationBatchItem) => {
 
 const getMaterialStatusMeta = (status: MaterialAllocationBatchItem['materialStatus']) => materialStatusOptions[status] ?? materialStatusOptions.unallocated;
 const getRequirementStatusMeta = (status: MaterialAllocationRequirementItem['allocationStatus']) => requirementStatusOptions[status] ?? requirementStatusOptions.unallocated;
+/** 物料分配交期提示：已完成和已取消批次不再触发逾期告警。 */
+const getAllocationDeliveryMeta = (
+  batch: Pick<MaterialAllocationBatchItem, 'planEndDate' | 'status'>,
+) => getDeliveryMeta(batch.planEndDate, batch.status, ['completed', 'cancelled']);
 const formatProduct = (product: ProductListItem) => `${product.productModel} / ${product.productName}`;
 const formatQuantity = (value: string | number | null | undefined) => {
   const amount = Number(value ?? 0);
@@ -513,6 +530,12 @@ onMounted(async () => {
   overflow: hidden;
 }
 
+/* 逾期、今日到期和三天内到期的批次使用轻量边框，突出需要优先分配的物料。 */
+.delivery-urgent-section {
+  border-color: #fca5a5;
+  box-shadow: 0 0 0 1px rgb(239 68 68 / 8%);
+}
+
 .batch-section + .batch-section {
   margin-top: 16px;
 }
@@ -534,6 +557,8 @@ onMounted(async () => {
 
 .batch-meta {
   gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   color: #6b7280;
   font-size: 13px;
 }

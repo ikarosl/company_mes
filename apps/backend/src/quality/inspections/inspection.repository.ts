@@ -92,7 +92,7 @@ interface PendingProcessInspectionRow extends RowDataPacket {
   step_code: string | null; step_name: string; sop_file_name: string | null;
   sop_version: string | null; sop_file_url: string | null; responsible_user_name: string | null;
   output_quantity: string | number; abnormal_quantity: string | number;
-  suggested_inspect_quantity: string | number; completed_at: Date | null;
+  suggested_inspect_quantity: string | number; plan_end_date: Date | string | null; completed_at: Date | null;
 }
 
 const inspectionTypes: InspectionType[] = [
@@ -135,7 +135,7 @@ export class InspectionRepository {
     return toPageResult(rows.map(mapInspection), Number(count?.total ?? 0), pagination);
   }
 
-  /** 查询已报工、需要检验且尚未提交过程检验结果的工序。 */
+  /** 查询已派工、需要检验且尚未提交检验结果的工序。 */
   async listPendingProcessTasks(keyword: string | undefined, pagination: PaginationOptions) {
     const params: QueryParam[] = [];
     let where = '1=1';
@@ -149,15 +149,21 @@ export class InspectionRepository {
       `SELECT COUNT(*) total FROM v_pending_process_inspection WHERE ${where}`, params,
     );
     const rows = await this.database.query<PendingProcessInspectionRow[]>(
-      `SELECT * FROM v_pending_process_inspection WHERE ${where}
-       ORDER BY completed_at ASC, inspection_task_id ASC LIMIT ? OFFSET ?`,
+      `SELECT pending.*, work_order.plan_end_date
+       FROM (SELECT * FROM v_pending_process_inspection WHERE ${where}) pending
+       INNER JOIN work_orders work_order ON work_order.id = pending.work_order_id AND work_order.is_deleted = 0
+       ORDER BY pending.completed_at ASC, pending.inspection_task_id ASC LIMIT ? OFFSET ?`,
       [...params, pagination.pageSize, pagination.offset],
     );
     return toPageResult(rows.map(mapPendingProcessInspection), Number(count?.total ?? 0), pagination);
   }
 
-  /** 锁定已完成需检工序并提交唯一过程检验，防止多人重复填写同一任务。 */
+  /**
+   * 提交唯一过程检验。
+   * 锁定需检工序，并在同一事务内完成工序和写入检验记录，防止重复提交或状态不一致。
+   */
   async submitPendingProcessTask(id: number, payload: SubmitProcessInspectionPayload, userId: number) {
+    const fileUrl = requiredInspectionFileUrl(payload.fileUrl);
     const inspectQuantity = quantity(payload.inspectQuantity, '检验数量');
     const passQuantity = quantity(payload.passQuantity, '合格数量');
     const failQuantity = quantity(payload.failQuantity, '不合格数量');
@@ -175,12 +181,17 @@ export class InspectionRepository {
         INNER JOIN work_orders work_order ON work_order.id=batch.work_order_id
         WHERE record.id=? AND record.is_deleted=0 FOR UPDATE`, [id]);
       const step = stepRows[0];
-      if (!step || step.need_inspection !== 1 || !['completed', 'abnormal'].includes(step.status))
+      if (!step || step.need_inspection !== 1 || !['pending', 'doing', 'completed', 'abnormal'].includes(step.status))
         throw new BadRequestException('待检任务不存在，工序可能尚未完成或无需检验');
       const [duplicateRows] = await connection.query<RowDataPacket[]>(
         `SELECT id FROM inspection_records WHERE batch_step_record_id=?
          AND inspection_type='process' AND is_deleted=0 LIMIT 1`, [id]);
       if (duplicateRows[0]) throw new BadRequestException('该工序已提交过程检验，请刷新任务列表');
+      // 检验即该工序的执行动作：工序完成状态与质量记录必须在同一事务内落库。
+      await execute(connection, `UPDATE batch_step_records
+        SET status=?,started_at=COALESCE(started_at,NOW()),completed_at=NOW(),
+          output_quantity=?,abnormal_quantity=?,updated_by=?,updated_at=NOW()
+        WHERE id=?`, [result === 'pass' ? 'completed' : 'abnormal', passQuantity, failQuantity, userId, id]);
       const inserted = await execute(connection, `INSERT INTO inspection_records (
         batch_id,product_id_snapshot,inspection_no,inspection_object_type,inspection_type,inspection_name,
         batch_step_record_id,inspect_quantity,pass_quantity,fail_quantity,result,disposition,inspector_id,
@@ -188,7 +199,7 @@ export class InspectionRepository {
       ) VALUES (?,?,?,'batch_step','process',?,?,?,?,?,?,?,?,COALESCE(?,NOW()),?,?,?,?,NOW(),?,NOW())`, [
         step.batch_id,step.product_id,makeInspectionNo('process'),optional(payload.inspectionName)??'过程检验',
         id,inspectQuantity,passQuantity,failQuantity,result,disposition,userId,optional(payload.inspectedAt),
-        optional(payload.fileUrl),optional(payload.resultSummary),optional(payload.remark),userId,userId,
+        fileUrl,optional(payload.resultSummary),optional(payload.remark),userId,userId,
       ]);
       return inserted.insertId;
     });
@@ -345,6 +356,7 @@ export class InspectionRepository {
 
   /** 统一解析目标关系，防止前端篡改 ID 后把检验记录挂到错误批次或工序。 */
   private async normalize(payload: SaveInspectionPayload, editingId?: number) {
+    const fileUrl = requiredInspectionFileUrl(payload.fileUrl);
     const inspectionType = enumValue(payload.inspectionType, inspectionTypes, '检验类型无效');
     const result = enumValue(payload.result, results, '检验结果无效');
     let disposition = payload.disposition
@@ -434,7 +446,7 @@ export class InspectionRepository {
       disposition,
       inspectorId: nullablePositiveId(payload.inspectorId, '检验人员无效'),
       inspectedAt: optional(payload.inspectedAt),
-      fileUrl: optional(payload.fileUrl),
+      fileUrl,
       resultSummary: optional(payload.resultSummary),
       remark: optional(payload.remark),
     };
@@ -559,6 +571,9 @@ const mapPendingProcessInspection = (row: PendingProcessInspectionRow): PendingP
   sopFileName:row.sop_file_name,sopVersion:row.sop_version,sopFileUrl:row.sop_file_url,
   responsibleUserName:row.responsible_user_name,outputQuantity:Number(row.output_quantity??0),
   abnormalQuantity:Number(row.abnormal_quantity??0),suggestedInspectQuantity:Number(row.suggested_inspect_quantity??0),
+  planEndDate:row.plan_end_date instanceof Date
+    ? row.plan_end_date.toISOString().slice(0,10)
+    : row.plan_end_date ? String(row.plan_end_date).slice(0,10) : null,
   completedAt:row.completed_at?.toISOString()??null,
 });
 const enumValue = <T extends string>(value: string, allowed: readonly T[], message: string): T => {
@@ -586,6 +601,12 @@ const optional = (value: unknown) =>
   typeof value === 'string' && value.trim() ? value.trim() : null;
 const nullableString = (value: number | null) => (value === null ? null : String(value));
 const nullableNumber = (value: string | number | null) => (value === null ? null : Number(value));
+/** 检验记录必须保留检测依据文件，禁止仅由前端控制必填。 */
+const requiredInspectionFileUrl = (value: unknown) => {
+  const fileUrl = optional(value);
+  if (!fileUrl) throw new BadRequestException('请上传检测文件');
+  return fileUrl;
+};
 /** 数量决定检验结论，检验结论再约束可选处置，避免相互矛盾的数据进入追溯链。 */
 const validateInspectionOutcome = (
   inspectionType: InspectionType,

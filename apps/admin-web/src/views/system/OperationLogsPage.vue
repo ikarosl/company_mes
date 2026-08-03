@@ -92,16 +92,7 @@
         </template>
       </el-table-column>
     </el-table>
-    <div class="table-footer">
-      <span class="total-text">共 {{ total }} 条</span>
-      <el-pagination
-        v-model:current-page="currentPage"
-        :page-size="pageSize"
-        :total="total"
-        layout="prev, pager, next, jumper"
-        @current-change="loadLogs"
-      />
-    </div>
+    <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total="total" @change="loadLogs" />
 
     <el-dialog v-model="detailVisible" title="日志详情" :width="DialogWidth.lg">
       <el-descriptions v-if="activeLog" border :column="1" class="detail-block">
@@ -146,6 +137,7 @@ import { OPERATION_LOG_MODULE_OPTIONS, type OperationLogListItem } from '@compan
 import { systemApi } from '../../api/system';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
+import TablePagination from '../../components/common/TablePagination.vue';
 
 /** 日志列表和筛选条件保持在页面级，详情仅通过 Modal 查看。 */
 const loading = ref(false);
@@ -153,7 +145,7 @@ const detailVisible = ref(false);
 const logs = ref<OperationLogListItem[]>([]);
 const total = ref(0);
 const currentPage = ref(1);
-const pageSize = 10;
+const pageSize = ref(10);
 const activeLog = ref<OperationLogListItem | null>(null);
 const activeDiff = computed(() =>
   buildDiff(activeLog.value?.beforeData, activeLog.value?.afterData),
@@ -196,7 +188,7 @@ const loadLogs = async () => {
   try {
     const page = await systemApi.listOperationLogs({
       page: currentPage.value,
-      pageSize,
+      pageSize: pageSize.value,
       keyword: query.keyword || undefined,
       logType: query.logType || undefined,
       module: query.module || undefined,

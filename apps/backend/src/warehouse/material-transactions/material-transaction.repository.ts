@@ -18,6 +18,10 @@ import { DatabaseService, type QueryParam } from '../../database/database.servic
 import { AuditContextService } from '../../operation-log/audit-context.service.js';
 import { execute, query } from '../../shared/repository.helpers.js';
 import { type PaginationOptions, toPageResult } from '../../shared/request-utils.js';
+import {
+  BUSINESS_NUMBER_PREFIX,
+  generateDailyBusinessNumber,
+} from '../../shared/business-number.js';
 
 interface TransactionFilters {
   keyword?: string;
@@ -178,7 +182,7 @@ export class MaterialTransactionRepository {
 
   async inbound(payload: MaterialInboundPayload, userId: number) {
     const productId = positiveId(payload.productId, '请选择物料');
-    const batchNo = required(payload.materialBatchNo, '请填写物料批次号');
+    const providedBatchNo = optional(payload.materialBatchNo);
     const quantity = positiveDecimal(payload.quantity, '入库数量必须大于0');
     const inspection = normalizeInboundInspection(payload.inspection, quantity, userId);
 
@@ -189,6 +193,14 @@ export class MaterialTransactionRepository {
      * 3. 同事务创建 incoming_material 检验记录，保证每个入库批次至少有一条检验记录
      */
     const created = await this.database.transaction(async (connection) => {
+      // 留空时生成 WL-yyyyMMdd001；保留手工批次号以兼容供应商原始批号。
+      const batchNo =
+        providedBatchNo ??
+        (await generateDailyBusinessNumber(connection, {
+          prefix: BUSINESS_NUMBER_PREFIX.materialBatch,
+          table: 'material_batches',
+          column: 'material_batch_no',
+        }));
       const [existing] = await query<(RowDataPacket & { id: number })[]>(
         connection,
         'SELECT id FROM material_batches WHERE material_batch_no = ? LIMIT 1 FOR UPDATE',
@@ -238,7 +250,11 @@ export class MaterialTransactionRepository {
         [
           batchResult.insertId,
           productId,
-          makeIncomingInspectionNo(),
+          await generateDailyBusinessNumber(connection, {
+            prefix: BUSINESS_NUMBER_PREFIX.inspection,
+            table: 'inspection_records',
+            column: 'inspection_no',
+          }),
           inspection.inspectionName,
           inspection.inspectQuantity,
           inspection.passQuantity,
@@ -704,12 +720,6 @@ const normalizeInboundInspection = (
 };
 
 /** 来料检验单号：时间到毫秒并附加随机数，降低并发创建时的重复概率。 */
-const makeIncomingInspectionNo = () => {
-  const now = new Date();
-  const part = (value: number, length = 2) => String(value).padStart(length, '0');
-  return `IQC${now.getFullYear()}${part(now.getMonth() + 1)}${part(now.getDate())}${part(now.getHours())}${part(now.getMinutes())}${part(now.getSeconds())}${part(now.getMilliseconds(), 3)}${part(Math.floor(Math.random() * 1000), 3)}`;
-};
-
 const nonNegativeDecimal = (
   value: string | number | null | undefined,
   message: string,

@@ -44,6 +44,8 @@ export type QueryParams = PageQuery & {
   productId?: string;
   customerOrderNo?: string;
   customerName?: string;
+  /** 工单质量等级筛选值。 */
+  qualityLevel?: string;
   workOrderId?: string;
   plannedQuantity?: string | number;
   productAttribute?: string;

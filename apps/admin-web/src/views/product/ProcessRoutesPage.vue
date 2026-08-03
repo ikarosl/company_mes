@@ -67,21 +67,7 @@
         </el-table-column>
       </el-table>
 
-      <div class="table-footer">
-        <span class="total-text">共 {{ total }} 条</span>
-        <el-select v-model="pageSize" class="page-size" @change="handlePageSizeChange">
-          <el-option label="10条/页" :value="10" />
-          <el-option label="20条/页" :value="20" />
-          <el-option label="50条/页" :value="50" />
-        </el-select>
-        <el-pagination
-          v-model:current-page="currentPage"
-          :page-size="pageSize"
-          :total="total"
-          layout="prev, pager, next, jumper"
-          @current-change="loadRoutes"
-        />
-      </div>
+      <TablePagination v-model:page="currentPage" v-model:page-size="pageSize" :total="total" @change="loadRoutes" />
     </section>
 
     <el-dialog
@@ -251,6 +237,7 @@ import { systemApi } from '../../api/system';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
 import ProductCategorySelect from '../../components/business/ProductCategorySelect.vue';
+import TablePagination from '../../components/common/TablePagination.vue';
 
 type StepFormRow = {
   /** 已有路线步骤 ID；新增步骤为空，保存时用于原位更新而不是重建记录。 */

@@ -59,6 +59,14 @@ export interface SaveInspectionPayload {
 export type CreateInspectionPayload = SaveInspectionPayload;
 export type UpdateInspectionPayload = SaveInspectionPayload;
 
+/** 检验附件上传结果：fileUrl 可直接写入检验记录。 */
+export interface InspectionFileUploadResult {
+  /** 用户上传时的原始文件名。 */
+  fileName: string;
+  /** 后端静态文件访问地址。 */
+  fileUrl: string;
+}
+
 /** 检测端待过程检验任务查询条件。 */
 export interface PendingProcessInspectionQuery extends PageQuery {
   keyword?: string;
@@ -86,6 +94,8 @@ export interface PendingProcessInspectionItem {
   outputQuantity: number;
   abnormalQuantity: number;
   suggestedInspectQuantity: number;
+  /** 所属工单计划交期：供检测端判断待检任务优先级。 */
+  planEndDate: string | null;
   completedAt: string | null;
 }
 
@@ -162,15 +172,22 @@ export interface ReworkListItem {
   recheckInspectionId: string | null;
   recheckInspectionNo: string | null;
   productIdentifier: string | null;
+  /** 本次需要返工处理的数量。 */
+  reworkQuantity: number | null;
   defectItem: string;
   defectDesc: string | null;
   returnStepName: string | null;
+  causeAnalysis: string | null;
+  reworkAction: string | null;
+  fileUrl: string | null;
   handlerId: string | null;
   handlerName: string | null;
   handlingDesc: string | null;
   status: ReworkStatus;
   result: ReworkResult;
   closedAt: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
   remark: string | null;
   inspectionType: InspectionType;
   inspectionResult: InspectionResult;
@@ -191,6 +208,8 @@ export interface ReworkListItem {
 export interface CreateReworkPayload {
   sourceInspectionId: string;
   productIdentifier?: string | null;
+  /** 返工数量：默认使用来源检验的不合格数量。 */
+  reworkQuantity: number;
   defectItem: string;
   defectDesc?: string | null;
   returnStepName?: string | null;
@@ -200,6 +219,8 @@ export interface CreateReworkPayload {
 
 export interface UpdateReworkPayload {
   productIdentifier?: string | null;
+  /** 待处理阶段可修正的返工数量。 */
+  reworkQuantity?: number;
   defectItem?: string;
   defectDesc?: string | null;
   returnStepName?: string | null;
@@ -213,8 +234,14 @@ export interface AssignReworkHandlerPayload {
 
 /** 提交返工处理结果并进入待复检。 */
 export interface SubmitReworkResultPayload {
+  /** 原因分析：记录缺陷形成原因。 */
+  causeAnalysis: string;
+  /** 返工措施：记录实际采取的操作。 */
+  reworkAction: string;
   handlingDesc: string;
   result: ReworkResult;
+  /** 返工报告、照片或其他处理依据。 */
+  fileUrl: string;
   remark?: string | null;
 }
 

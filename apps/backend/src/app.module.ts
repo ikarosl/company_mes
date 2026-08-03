@@ -12,6 +12,7 @@ import { QualityModule } from './quality/quality.module.js';
 import { SystemModule } from './system/system.module.js';
 import { WarehouseModule } from './warehouse/warehouse.module.js';
 import { TrimRequestValuesInterceptor } from './shared/trim-request-values.js';
+import { TraceModule } from './trace/trace.module.js';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { TrimRequestValuesInterceptor } from './shared/trim-request-values.js';
     WarehouseModule,
     ProductionModule,
     QualityModule,
+    TraceModule,
   ],
   controllers: [AppController],
   providers: [

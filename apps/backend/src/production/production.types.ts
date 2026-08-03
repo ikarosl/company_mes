@@ -14,6 +14,7 @@ export interface WorkOrderListRow extends RowDataPacket {
   assigned_quantity: string | number | null;
   customer_order_no: string | null;
   customer_name: string | null;
+  quality_level: string | null;
   owner_id: number | null;
   owner_name: string | null;
   status: string;
@@ -33,6 +34,7 @@ export interface WorkOrderRow extends RowDataPacket {
   planned_quantity: string | number;
   customer_order_no: string | null;
   customer_name: string | null;
+  quality_level: string | null;
   owner_id: number | null;
   status: string;
   plan_start_date: Date | null;
@@ -104,6 +106,8 @@ export interface WorkerTaskListRow extends ProductionTaskListRow {
   process_route_steps_id: number;
   step_order: number;
   step_name: string;
+  sop_file_name: string | null;
+  sop_file_url: string | null;
   step_status: string;
   can_start: number;
   step_started_at: Date | null;

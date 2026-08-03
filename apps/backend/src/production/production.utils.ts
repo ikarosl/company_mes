@@ -8,6 +8,7 @@ import type {
   WorkerTaskItem,
   TaskMaterialRequirementItem,
   WorkOrderListItem,
+  WorkOrderQualityLevel,
   WorkOrderStatus,
 } from '@company/api-contract';
 import type {
@@ -41,6 +42,7 @@ export const mapWorkOrder = (row: WorkOrderListRow): WorkOrderListItem => {
     assignedQuantity: decimalString(row.assigned_quantity),
     customerOrderNo: row.customer_order_no,
     customerName: row.customer_name,
+    qualityLevel: row.quality_level as WorkOrderQualityLevel | null,
     ownerId: row.owner_id === null ? null : String(row.owner_id),
     ownerName: row.owner_name,
     status,
@@ -200,6 +202,8 @@ export const mapWorkerTask = (row: WorkerTaskListRow): WorkerTaskItem => ({
   processRouteStepsId: String(row.process_route_steps_id),
   stepOrder: row.step_order,
   stepName: row.step_name,
+  sopFileName: row.sop_file_name,
+  sopFileUrl: row.sop_file_url,
   stepStatus: row.step_status as BatchStepStatus,
   canStart: row.can_start === 1,
   startedAt: row.step_started_at ? row.step_started_at.toISOString() : null,
